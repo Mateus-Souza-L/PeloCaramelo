@@ -35,26 +35,30 @@ const allowedOrigins = (process.env.CORS_ORIGIN || "http://localhost:5173")
   .filter(Boolean);
 
 // Se você for usar cookies no futuro, mantenha credentials:true
-app.use(
-  cors({
-    origin: function (origin, callback) {
-      // origin undefined acontece em curl/postman/healthcheck
-      if (!origin) return callback(null, true);
+const corsOptions = {
+  origin: function (origin, callback) {
+    // origin undefined = curl, postman, healthcheck
+    if (!origin) return callback(null, true);
 
-      // libera se estiver na lista
-      if (allowedOrigins.includes(origin)) return callback(null, true);
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
 
-      // bloqueia o resto
-      return callback(new Error(`CORS bloqueado para origem: ${origin}`));
-    },
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-  })
-);
+    return callback(new Error(`CORS bloqueado para origem: ${origin}`));
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "Cache-Control",
+    "Pragma",
+  ],
+};
 
-// garante preflight
-app.options("*", cors());
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
+
 
 // ===== Body parsers (SEM tapa-buraco) =====
 // ✅ JSON + urlencoded devem vir ANTES das rotas
