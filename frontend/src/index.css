@@ -1,0 +1,236 @@
+@import "@fontsource/lato/index.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================= */
+/* VARIÁVEIS DE CORES (IDENTIDADE VISUAL) */
+/* ============================= */
+:root {
+  --cor-fundo: #EBCBA9;       /* Bege base do site */
+  --cor-marrom: #5A3A22;      /* Marrom escuro principal */
+  --cor-acento: #95301F;      /* Vermelho queimado */
+  --cor-destaque: #D2A679;    /* Bege dourado */
+  --cor-amarelo: #FFD700;     /* Amarelo ouro (logo "Caramelo") */
+  --cor-clara: #FFF8F0;       /* Fundo claro de seções */
+}
+
+/* ============================= */
+/* BASE GERAL */
+/* ============================= */
+body {
+  font-family: "Lato", sans-serif;
+  background: var(--cor-fundo);
+  color: var(--cor-marrom);
+}
+
+/* ============================= */
+/* REACT CALENDAR */
+/* ============================= */
+.react-calendar {
+  background: #fff;
+  border: none;
+  padding: 1rem;
+  border-radius: 0.75rem;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+  font-family: "Lato", sans-serif;
+}
+
+.react-calendar__tile {
+  padding: 0.75rem 0.5rem;
+  text-align: center;
+  border-radius: 50%;
+  transition: all 0.2s ease-in-out;
+  color: var(--cor-marrom);
+  background: transparent;
+}
+
+.react-calendar__tile:enabled:hover {
+  background: var(--cor-destaque);
+  color: #fff;
+}
+
+.react-calendar__tile--now {
+  background: var(--cor-destaque) !important;
+  color: #fff !important;
+  font-weight: bold;
+}
+
+.react-calendar__tile--active,
+.react-calendar__tile--range,
+.react-calendar__tile--rangeStart,
+.react-calendar__tile--rangeEnd,
+.react-calendar__tile--rangeBothEnds {
+  background: var(--cor-acento) !important;
+  color: #fff !important;
+}
+
+/* ===================================================== */
+/* ✅ PELOCARAMELO CALENDAR FIX (pintura por classes)     */
+/* Use com tileClassName retornando:                      */
+/* pc-cal / pc-cal--today / pc-cal--saved / --adding / --removing */
+/* ===================================================== */
+
+/* Base */
+.react-calendar__tile.pc-cal {
+  border-radius: 9999px !important;
+}
+
+/* Hoje (se você usar pc-cal--today no Dashboard) */
+.react-calendar__tile.pc-cal--today {
+  background: var(--cor-destaque) !important;
+  color: #fff !important;
+  font-weight: 700 !important;
+}
+
+/* Salvo no servidor */
+.react-calendar__tile.pc-cal--saved {
+  background: #15803d !important; /* green-700 */
+  color: #fff !important;
+}
+
+/* Vai remover (estava salvo, mas desmarcou) */
+.react-calendar__tile.pc-cal--removing {
+  background: #f87171 !important; /* red-400 */
+  color: #fff !important;
+  text-decoration: line-through !important;
+}
+
+/* Vai adicionar (não estava salvo, mas marcou) */
+.react-calendar__tile.pc-cal--adding {
+  background: #22c55e !important; /* green-500 */
+  color: #fff !important;
+  font-weight: 700 !important;
+}
+
+/* Hover suave */
+.react-calendar__tile.pc-cal:enabled:hover {
+  filter: brightness(0.97);
+}
+
+/* Dias indisponíveis com X visual */
+.unavailable-day {
+  position: relative;
+  color: #d28c8c !important;
+  cursor: not-allowed;
+}
+.unavailable-day::after {
+  content: "✘";
+  position: absolute;
+  font-size: 0.75rem;
+  color: rgba(149, 48, 31, 0.6);
+  top: 2px;
+  right: 4px;
+}
+
+/* Botão "Limpar seleção" */
+.clear-dates-btn {
+  margin-top: 1rem;
+  background: #b25b38;
+  color: #fff;
+  font-weight: 600;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  transition: background 0.2s;
+}
+.clear-dates-btn:hover {
+  background: var(--cor-acento);
+}
+
+/* ============================= */
+/* CAMPOS DE FORMULÁRIO PADRÃO */
+/* ============================= */
+.input,
+.textarea {
+  @apply border border-[#5A3A22] rounded-lg px-3 py-2 w-full bg-white focus:outline-none focus:ring-2 focus:ring-[#95301F];
+}
+
+/* ============================= */
+/* ESCONDER BOTÃO DE REVELAR SENHA NATIVO */
+/* ============================= */
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear {
+  display: none;
+}
+input[type="password"]::-webkit-credentials-auto-fill-button {
+  visibility: hidden;
+  display: none !important;
+  pointer-events: none;
+}
+
+/* ============================= */
+/* CARDS PADRÃO PELOCARAMELO */
+/* ============================= */
+.pc-card {
+  @apply bg-white rounded-2xl shadow p-6 text-[#5A3A22];
+}
+.pc-card-accent {
+  @apply border-l-4;
+  border-left-color: var(--cor-amarelo); /* amarelo ouro igual ao nome "Caramelo" */
+}
+
+/* ============================= */
+/* PELOCARAMELO - REACT CALENDAR STATES (Dashboard) */
+/* ============================= */
+
+/* garante que o tile aceite nosso estilo (mesmo com CSS do react-calendar) */
+.react-calendar__tile.pc-cal-saved,
+.react-calendar__tile.pc-cal-new,
+.react-calendar__tile.pc-cal-remove,
+.react-calendar__tile.pc-cal-today {
+  border-radius: 9999px !important;
+  font-weight: 700;
+}
+
+/* HOJE */
+.react-calendar__tile.pc-cal-today {
+  background: var(--cor-destaque) !important;
+  color: #fff !important;
+}
+
+/* SALVO (já está no servidor/cache) */
+.react-calendar__tile.pc-cal-saved {
+  background: #15803d !important; /* green-700 */
+  color: #fff !important;
+}
+
+/* NOVO (selecionado mas ainda não salvo) */
+.react-calendar__tile.pc-cal-new {
+  background: #22c55e !important; /* green-500 */
+  color: #fff !important;
+}
+
+/* REMOVER (estava salvo, agora desmarcado) */
+.react-calendar__tile.pc-cal-remove {
+  background: #ef4444 !important; /* red-500 */
+  color: #fff !important;
+  text-decoration: line-through !important;
+}
+
+/* PASSADO (apenas visual, não impede os outros estados) */
+.react-calendar__tile.pc-cal-past {
+  opacity: 0.55;
+}
+
+/* IMPORTANTE:
+   o react-calendar aplica estilos em disabled. Garantimos que nossos estados continuem visíveis. */
+.react-calendar__tile:disabled.pc-cal-saved,
+.react-calendar__tile:disabled.pc-cal-new,
+.react-calendar__tile:disabled.pc-cal-remove,
+.react-calendar__tile:disabled.pc-cal-today {
+  opacity: 1 !important;
+}
+
+/* Se o dia é passado e está disabled, mantém legível mas “apagado” */
+.react-calendar__tile:disabled.pc-cal-past {
+  opacity: 0.55 !important;
+}
+
+/* hover não pode “estragar” as cores dos estados */
+.react-calendar__tile:enabled.pc-cal-saved:hover,
+.react-calendar__tile:enabled.pc-cal-new:hover,
+.react-calendar__tile:enabled.pc-cal-remove:hover,
+.react-calendar__tile:enabled.pc-cal-today:hover {
+  filter: brightness(0.95);
+}
