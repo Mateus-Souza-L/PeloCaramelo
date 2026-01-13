@@ -26,8 +26,7 @@ const BASE_FIELDS = `
   u.cep,
   u.services,
   u.prices,
-  u.courses,
-  u.available_dates
+  u.courses
 `;
 
 const RATING_LATERAL = `
@@ -84,7 +83,7 @@ router.get("/", async (req, res) => {
       ${RATING_LATERAL}
       ${COMPLETED_LATERAL}
       WHERE u.role = 'caregiver'
-        AND u.blocked = false
+        AND (u.blocked IS NOT TRUE)
       ORDER BY u.id DESC;
     `;
 
@@ -117,7 +116,7 @@ router.get("/:id", async (req, res) => {
       ${RATING_LATERAL}
       ${COMPLETED_LATERAL}
       WHERE u.role = 'caregiver'
-        AND u.blocked = false
+        AND (u.blocked IS NOT TRUE)
         AND u.id = $1
       LIMIT 1;
     `;
