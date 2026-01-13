@@ -8,7 +8,8 @@ function toIntId(v) {
 
 /**
  * Cria uma nova mensagem no chat.
- * Retorna a linha criada.
+ * Usa o schema REAL do banco:
+ * chat_messages(reservation_id, sender_id, receiver_id, message, created_at, is_read)
  */
 async function createChatMessage({ reservationId, fromUserId, toUserId, message }) {
   const rid = toIntId(reservationId);
@@ -23,23 +24,23 @@ async function createChatMessage({ reservationId, fromUserId, toUserId, message 
   if (!msg) throw new Error("message inválida.");
 
   const query = `
-    INSERT INTO messages (
+    INSERT INTO chat_messages (
       reservation_id,
-      from_user_id,
-      to_user_id,
+      sender_id,
+      receiver_id,
       message,
       created_at,
-      read_at
+      is_read
     )
-    VALUES ($1, $2, $3, $4, NOW(), NULL)
+    VALUES ($1, $2, $3, $4, NOW(), FALSE)
     RETURNING
       id,
       reservation_id,
-      from_user_id,
-      to_user_id,
+      sender_id,
+      receiver_id,
       message,
       created_at,
-      read_at;
+      is_read;
   `;
 
   const values = [rid, fromId, toId, msg];
@@ -58,12 +59,12 @@ async function listChatMessagesByReservation(reservationId) {
     SELECT
       id,
       reservation_id,
-      from_user_id,
-      to_user_id,
+      sender_id,
+      receiver_id,
       message,
       created_at,
-      read_at
-    FROM messages
+      is_read
+    FROM chat_messages
     WHERE reservation_id = $1
     ORDER BY created_at ASC;
   `;
@@ -75,7 +76,8 @@ async function listChatMessagesByReservation(reservationId) {
 /**
  * Marca como LIDAS todas as mensagens dessa reserva
  * cujo destinatário é o usuário logado.
- * Retorna quantas linhas foram atualizadas.
+ *
+ * No seu schema é: receiver_id + is_read
  */
 async function markMessagesAsRead({ reservationId, userId }) {
   const rid = toIntId(reservationId);
@@ -87,10 +89,10 @@ async function markMessagesAsRead({ reservationId, userId }) {
   const result = await pool.query(
     `
     UPDATE chat_messages
-    SET read_at = NOW()
+    SET is_read = TRUE
     WHERE reservation_id = $1
-      AND to_user_id = $2
-      AND read_at IS NULL
+      AND receiver_id = $2
+      AND (is_read IS NULL OR is_read = FALSE)
     `,
     [rid, uid]
   );
@@ -100,6 +102,8 @@ async function markMessagesAsRead({ reservationId, userId }) {
 
 /**
  * Lista IDs de reservas que têm mensagem NÃO lida para esse usuário.
+ *
+ * No seu schema é: receiver_id + is_read
  */
 async function listUnreadReservationsByUser(userId) {
   const uid = toIntId(userId);
@@ -108,9 +112,9 @@ async function listUnreadReservationsByUser(userId) {
   const result = await pool.query(
     `
     SELECT DISTINCT reservation_id
-    FROM messages
-    WHERE to_user_id = $1
-      AND read_at IS NULL
+    FROM chat_messages
+    WHERE receiver_id = $1
+      AND (is_read IS NULL OR is_read = FALSE)
     ORDER BY reservation_id DESC;
     `,
     [uid]
