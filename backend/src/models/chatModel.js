@@ -23,7 +23,7 @@ async function createChatMessage({ reservationId, fromUserId, toUserId, message 
   if (!msg) throw new Error("message inválida.");
 
   const query = `
-    INSERT INTO chat_messages (
+    INSERT INTO messages (
       reservation_id,
       from_user_id,
       to_user_id,
@@ -63,7 +63,7 @@ async function listChatMessagesByReservation(reservationId) {
       message,
       created_at,
       read_at
-    FROM chat_messages
+    FROM messages
     WHERE reservation_id = $1
     ORDER BY created_at ASC;
   `;
@@ -108,7 +108,7 @@ async function listUnreadReservationsByUser(userId) {
   const result = await pool.query(
     `
     SELECT DISTINCT reservation_id
-    FROM chat_messages
+    FROM messages
     WHERE to_user_id = $1
       AND read_at IS NULL
     ORDER BY reservation_id DESC;

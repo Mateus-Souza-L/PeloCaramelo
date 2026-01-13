@@ -240,8 +240,7 @@ function selectReservationWithReviewJoins(whereSql) {
 
       r.pets_ids,
       r.pets_names,
-      r.pets_snapshot,
-
+      
       r.created_at,
       r.updated_at,
       r.reject_reason
