@@ -7,19 +7,14 @@ const morgan = require("morgan");
 const app = express();
 
 /* ===========================================================
-   ✅ CORS
-   - Produção (Vercel): https://pelo-caramelo.vercel.app
-   - Preview/Deploy Vercel: https://pelo-caramelo-<hash>-<user>.vercel.app
-   - Dev: http://localhost:5173
-   - Configure no Render:
-     CORS_ORIGIN="http://localhost:5173,https://pelo-caramelo.vercel.app"
+   CORS
    =========================================================== */
 const allowedOrigins = (process.env.CORS_ORIGIN || "http://localhost:5173")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
 
-// ✅ libera qualquer preview do seu projeto na Vercel (pelo-caramelo-*.vercel.app)
+// libera qualquer preview do seu projeto na Vercel
 function isAllowedVercelPreview(origin) {
   if (typeof origin !== "string") return false;
   return /^https:\/\/pelo-caramelo-.*\.vercel\.app$/.test(origin);
@@ -27,7 +22,6 @@ function isAllowedVercelPreview(origin) {
 
 const corsOptions = {
   origin: function (origin, callback) {
-    // origin undefined = curl, postman, healthcheck
     if (!origin) return callback(null, true);
 
     if (allowedOrigins.includes(origin) || isAllowedVercelPreview(origin)) {
@@ -42,58 +36,74 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-// Preflight
 app.options("*", cors(corsOptions));
 
 /* ===========================================================
-   ✅ Body parsers (ANTES das rotas)
+   Body parsers
    =========================================================== */
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-// logs
+/* ===========================================================
+   DB
+   =========================================================== */
+const pool = require("./config/db");
+
+/* ===========================================================
+   HEALTHCHECKS
+   =========================================================== */
+app.get("/health", (req, res) => {
+  res.status(200).json({ ok: true, status: "up" });
+});
+
+app.get("/health/db", async (req, res) => {
+  try {
+    const r = await pool.query("select 1 as ok");
+    res.status(200).json({ ok: true, db: true, result: r.rows[0] });
+  } catch (e) {
+    res.status(500).json({ ok: false, db: false, error: e.message });
+  }
+});
+
+/* ===========================================================
+   Logs
+   =========================================================== */
 app.use(morgan("dev"));
 
 /* ===========================================================
-   ===== Rotas =====
+   Rotas
    =========================================================== */
-const authRoutes = require("./routes/authRoutes"); // /auth/...
-const userRoutes = require("./routes/userRoutes"); // /users/...
-const caregiverRoutes = require("./routes/caregiverRoutes"); // /caregivers/...
-const reservationRoutes = require("./routes/reservationRoutes"); // /reservations/...
-const chatRoutes = require("./routes/chatRoutes"); // /chat/...
-const petRoutes = require("./routes/petRoutes"); // /pets/...
-const adminRoutes = require("./routes/adminRoutes"); // /admin/...
-const reviewRoutes = require("./routes/reviewRoutes"); // /reviews/...
-
-// ✅ availability
-const availabilityRoutes = require("./routes/availabilityRoutes"); // /availability/...
-
-// ✅ notifications
-const notificationRoutes = require("./routes/notificationRoutes"); // /notifications/...
+const authRoutes = require("./routes/authRoutes");
+const userRoutes = require("./routes/userRoutes");
+const caregiverRoutes = require("./routes/caregiverRoutes");
+const reservationRoutes = require("./routes/reservationRoutes");
+const chatRoutes = require("./routes/chatRoutes");
+const petRoutes = require("./routes/petRoutes");
+const adminRoutes = require("./routes/adminRoutes");
+const reviewRoutes = require("./routes/reviewRoutes");
+const availabilityRoutes = require("./routes/availabilityRoutes");
+const notificationRoutes = require("./routes/notificationRoutes");
 
 /* ===========================================================
-   ===== Middlewares =====
+   Middlewares
    =========================================================== */
 const authMiddleware = require("./middleware/authMiddleware");
 const adminMiddleware = require("./middleware/adminMiddleware");
 
 /* ===========================================================
-   ===== Rotas PÚBLICAS =====
+   Rotas públicas
    =========================================================== */
 app.use("/auth", authRoutes);
 app.use("/caregivers", caregiverRoutes);
 
 /* ===========================================================
-   ===== Rotas MISTAS =====
+   Rotas mistas
    =========================================================== */
 app.use("/availability", availabilityRoutes);
-
-// 🔒 Notifications: auth já é aplicado dentro de notificationRoutes (router.use)
 app.use("/notifications", notificationRoutes);
 
 /* ===========================================================
-   ===== Rotas PROTEGIDAS =====
+   Rotas protegidas
    =========================================================== */
 app.use("/users", authMiddleware, userRoutes);
 app.use("/reservations", authMiddleware, reservationRoutes);
@@ -101,29 +111,29 @@ app.use("/chat", authMiddleware, chatRoutes);
 app.use("/pets", authMiddleware, petRoutes);
 
 /* ===========================================================
-   ===== Rotas ADMIN =====
+   Rotas admin
    =========================================================== */
 app.use("/admin", authMiddleware, adminMiddleware, adminRoutes);
 
 /* ===========================================================
-   Reviews públicas/privadas conforme seu reviewRoutes
+   Reviews
    =========================================================== */
 app.use("/reviews", reviewRoutes);
 
 /* ===========================================================
-   ✅ Healthcheck simples
+   Root (assinatura de build)
    =========================================================== */
 app.get("/", (req, res) => {
   res.json({
     ok: true,
-    message: "PeloCaramelo API rodando 🐾",
+    message: "PeloCaramelo API rodando 🐾 (BUILD: health-v1)",
     allowedOrigins,
     allowVercelPreview: true,
   });
 });
 
 /* ===========================================================
-   ✅ Erros de parse / payload
+   Tratamento de erros
    =========================================================== */
 app.use((err, req, res, next) => {
   const isJsonSyntaxError =
@@ -139,44 +149,37 @@ app.use((err, req, res, next) => {
   if (err?.type === "entity.too.large") {
     return res.status(413).json({
       ok: false,
-      error:
-        "Payload muito grande. Envie imagens menores (thumbnail) ou reduza o tamanho do conteúdo enviado.",
+      error: "Payload muito grande.",
     });
   }
 
-  // ✅ CORS bloqueado (melhor mensagem)
   if (String(err?.message || "").startsWith("CORS bloqueado para origem:")) {
     return res.status(403).json({
       ok: false,
       error: err.message,
-      hint:
-        "Adicione essa origem na env CORS_ORIGIN do backend (Render) e faça redeploy. " +
-        "Se for preview da Vercel, confira se começa com https://pelo-caramelo- e termina com .vercel.app.",
     });
   }
 
   return next(err);
 });
 
-/* ===========================================================
-   ✅ Fallback de erro (último middleware)
-   =========================================================== */
 app.use((err, req, res, next) => {
   console.error("[SERVER ERROR]", err);
-  return res.status(500).json({
+  res.status(500).json({
     ok: false,
     error: "Erro interno no servidor.",
   });
 });
 
 /* ===========================================================
-   ✅ Start do servidor
+   Start
    =========================================================== */
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
   console.log(`🚀 API ouvindo na porta ${PORT}`);
   console.log("🌐 CORS_ORIGIN =", process.env.CORS_ORIGIN || "(default localhost)");
   console.log("🌐 Vercel preview liberado: https://pelo-caramelo-*.vercel.app");
+  console.log("🩺 Health endpoints ativos: /health e /health/db");
 });
 
 module.exports = app;
