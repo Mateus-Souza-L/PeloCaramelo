@@ -822,47 +822,33 @@ export default function CaregiverDetail() {
     }
   };
 
-  // pets do tutor logado (server-first: GET /pets + fallback local)
+  // pets do tutor logado (fonte: backend /pets)
   useEffect(() => {
     let cancelled = false;
 
-    const clearPets = () => {
-      if (cancelled) return;
-      setPets([]);
-      setSelectedPetIds([]);
-      setAllPetsSelected(false);
-    };
-
-    const normalizePet = (p) => {
-      if (!p) return null;
-      return {
-        ...p,
-        id: p.id != null ? String(p.id) : p.id,
-        name: p.name ?? p.nome ?? "",
-        image: p.image ?? p.photo ?? p.img ?? null,
-        photo: p.photo ?? p.image ?? null,
-      };
-    };
-
     const loadPets = async () => {
       if (!user || user.role !== "tutor") {
-        clearPets();
+        if (!cancelled) {
+          setPets([]);
+          setSelectedPetIds([]);
+          setAllPetsSelected(false);
+        }
         return;
       }
 
-      const storageKey = `pets_${user.id}`;
-
-      // 1) fonte de verdade: backend
+      // tenta backend primeiro
       if (token) {
         try {
           const data = await authRequest("/pets", token);
-          const listRaw = Array.isArray(data?.pets)
-            ? data.pets
-            : Array.isArray(data)
-              ? data
-              : [];
+          const list = Array.isArray(data?.pets) ? data.pets : Array.isArray(data) ? data : [];
 
-          const normalized = listRaw.map(normalizePet).filter(Boolean);
+          // normaliza id -> número (ou string numérica)
+          const normalized = list
+            .map((p) => ({
+              ...p,
+              id: p?.id, // mantém
+            }))
+            .filter((p) => p?.id != null);
 
           if (!cancelled) {
             setPets(normalized);
@@ -870,33 +856,33 @@ export default function CaregiverDetail() {
             setAllPetsSelected(false);
           }
 
-          // cache local (compat / offline)
+          // opcional: cache local
           try {
-            localStorage.setItem(storageKey, JSON.stringify(normalized));
+            localStorage.setItem(`pets_${user.id}`, JSON.stringify(normalized));
           } catch {
             // ignore
           }
-
           return;
-        } catch {
-          // cai no fallback local
+        } catch (e) {
+          console.error("Erro ao carregar pets do backend:", e);
         }
       }
 
-      // 2) fallback localStorage
+      // fallback local
       try {
+        const storageKey = `pets_${user.id}`;
         const saved = safeJsonParse(localStorage.getItem(storageKey) || "[]", []) || [];
-        const normalized = (Array.isArray(saved) ? saved : [])
-          .map(normalizePet)
-          .filter(Boolean);
-
         if (!cancelled) {
-          setPets(normalized);
+          setPets(Array.isArray(saved) ? saved : []);
           setSelectedPetIds([]);
           setAllPetsSelected(false);
         }
       } catch {
-        clearPets();
+        if (!cancelled) {
+          setPets([]);
+          setSelectedPetIds([]);
+          setAllPetsSelected(false);
+        }
       }
     };
 
@@ -1157,7 +1143,14 @@ export default function CaregiverDetail() {
         .filter(Boolean)
         .join(", ");
 
-      const petsIdsClean = Array.from(selectedIdSet);
+      const petsIdsClean = Array.from(selectedIdSet)
+        .map((v) => Number(v))
+        .filter((n) => Number.isFinite(n) && Number.isInteger(n));
+
+      if (pets.length > 0 && petsIdsClean.length === 0) {
+        showToast("Selecione pelo menos 1 pet válido para reservar.", "error");
+        return;
+      }
 
       const petsSnapshot = await buildPetsSnapshot(selectedPets);
 
