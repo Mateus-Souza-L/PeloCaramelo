@@ -118,9 +118,7 @@ function normalizePetsIds(input) {
 
   if (!Array.isArray(arr)) return [];
 
-  const ids = arr
-    .map((x) => toInt(x))
-    .filter((n) => n != null);
+  const ids = arr.map((x) => toInt(x)).filter((n) => n != null);
 
   return Array.from(new Set(ids));
 }
@@ -211,7 +209,7 @@ async function createReservation({
     endDate,
     total,
     status || "Pendente",
-    petsIdsIntArray, // ✅ agora é array de int
+    petsIdsIntArray,
     petsNames || null,
     petsSnapshotJson,
     null,
@@ -323,12 +321,13 @@ async function updateReservationStatus(id, status, rejectReason = null) {
       ? rejectReason.trim()
       : null;
 
+  // ✅ força o mesmo tipo para o parâmetro $2 em TODOS os usos
   const sql = `
     UPDATE reservations
     SET
-      status = $2,
+      status = $2::varchar,
       reject_reason = CASE
-        WHEN $2 = 'Recusada' THEN $3
+        WHEN $2::varchar = 'Recusada' THEN $3
         ELSE NULL
       END,
       updated_at = NOW()

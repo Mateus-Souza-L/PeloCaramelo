@@ -2,7 +2,9 @@
 const reservationModel = require("../models/reservationModel");
 const availabilityModel = require("../models/availabilityModel"); // usado para validar disponibilidade
 const pool = require("../config/db"); // fallback/queries auxiliares
-const { createReservationNotification } = require("../models/notificationModel"); // ✅ notif
+const {
+  createReservationNotification,
+} = require("../models/notificationModel"); // ✅ notif
 
 // -----------------------------------------------------------------------------
 // Helpers
@@ -165,6 +167,7 @@ async function notifyReservationEventSafe({
 
     if (!tId || !cId) return;
 
+    // manda pro "outro lado"
     const targetUserId = actorId === tId ? cId : tId;
 
     await createReservationNotification({
@@ -185,7 +188,8 @@ async function notifyReservationEventSafe({
  */
 async function attachMyReviewFields(reservations, reviewerId) {
   try {
-    if (!Array.isArray(reservations) || reservations.length === 0) return reservations;
+    if (!Array.isArray(reservations) || reservations.length === 0)
+      return reservations;
 
     const rid = reviewerId != null ? String(reviewerId) : "";
     if (!rid) return reservations;
@@ -256,10 +260,17 @@ async function assertRangeIsFullyAvailableOrThrow(caregiverId, startKey, endKey)
     };
   }
 
-  if (availabilityModel && typeof availabilityModel.isRangeAvailable === "function") {
+  if (
+    availabilityModel &&
+    typeof availabilityModel.isRangeAvailable === "function"
+  ) {
     const ok = await availabilityModel.isRangeAvailable(caregiverIdStr, s, e);
     if (!ok) {
-      return { ok: false, code: "NOT_AVAILABLE", message: "Período sem disponibilidade." };
+      return {
+        ok: false,
+        code: "NOT_AVAILABLE",
+        message: "Período sem disponibilidade.",
+      };
     }
     return { ok: true };
   }
@@ -286,7 +297,11 @@ async function assertRangeIsFullyAvailableOrThrow(caregiverId, startKey, endKey)
     const available = Number(row?.available_days ?? 0);
 
     if (!Number.isFinite(total) || total <= 0 || available !== total) {
-      return { ok: false, code: "NOT_AVAILABLE", message: "Período sem disponibilidade." };
+      return {
+        ok: false,
+        code: "NOT_AVAILABLE",
+        message: "Período sem disponibilidade.",
+      };
     }
 
     return { ok: true };
@@ -300,7 +315,12 @@ async function assertRangeIsFullyAvailableOrThrow(caregiverId, startKey, endKey)
   }
 }
 
-async function assertCapacityOrThrow(caregiverId, startKey, endKey, excludeReservationId = null) {
+async function assertCapacityOrThrow(
+  caregiverId,
+  startKey,
+  endKey,
+  excludeReservationId = null
+) {
   if (typeof reservationModel.assertCaregiverCanBeBooked !== "function") {
     return { ok: true };
   }
@@ -319,7 +339,11 @@ async function assertCapacityOrThrow(caregiverId, startKey, endKey, excludeReser
   );
 
   if (!check?.available) {
-    return { ok: false, code: "NOT_AVAILABLE", message: "Período sem disponibilidade." };
+    return {
+      ok: false,
+      code: "NOT_AVAILABLE",
+      message: "Período sem disponibilidade.",
+    };
   }
 
   if (check.maxOverlapping >= check.capacity) {
@@ -342,10 +366,15 @@ async function createReservationController(req, res) {
     const user = req.user;
 
     if (!user?.id) {
-      return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
+      return res
+        .status(401)
+        .json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
     }
     if (user.role !== "tutor") {
-      return res.status(403).json({ error: "Apenas tutor pode criar reserva.", code: "FORBIDDEN_ROLE" });
+      return res.status(403).json({
+        error: "Apenas tutor pode criar reserva.",
+        code: "FORBIDDEN_ROLE",
+      });
     }
 
     const body = parseBodySafe(req.body);
@@ -357,19 +386,25 @@ async function createReservationController(req, res) {
     const neighborhood = body.neighborhood ?? null;
     const service = body.service ?? null;
 
-    const pricePerDay = body.pricePerDay ?? body.price_per_day ?? body.price ?? null;
+    const pricePerDay =
+      body.pricePerDay ?? body.price_per_day ?? body.price ?? null;
     const startDate = body.startDate ?? body.start_date ?? null;
     const endDate = body.endDate ?? body.end_date ?? null;
     const total = body.total ?? null;
 
-    const petsIds = body.petsIds ?? body.pets_ids ?? null;
+    // ⚠️ pets podem vir em vários formatos (array, string "1,2", string JSON etc.)
+    const petsIdsRaw = body.petsIds ?? body.pets_ids ?? null;
     const petsNames = body.petsNames ?? body.pets_names ?? null;
-    const petsSnapshot = body.petsSnapshot ?? body.pets_snapshot ?? null;
+    const petsSnapshotRaw = body.petsSnapshot ?? body.pets_snapshot ?? null;
 
     const tutorId = String(user.id);
     const tutorName =
-      (typeof user.name === "string" && user.name.trim() ? user.name.trim() : null) ||
-      (typeof user.email === "string" && user.email.trim() ? user.email.trim() : null) ||
+      (typeof user.name === "string" && user.name.trim()
+        ? user.name.trim()
+        : null) ||
+      (typeof user.email === "string" && user.email.trim()
+        ? user.email.trim()
+        : null) ||
       "Tutor";
 
     // valida obrigatórios com missing detalhado
@@ -381,6 +416,13 @@ async function createReservationController(req, res) {
 
     const ppd = toNum(pricePerDay);
     if (ppd == null || ppd <= 0) missing.push("pricePerDay/price_per_day (> 0)");
+
+    // opcional, mas ajuda a evitar reserva sem pets por engano
+    // (se você quiser permitir sem pet, é só remover isso)
+    const petsProvided =
+      petsIdsRaw != null ||
+      (Array.isArray(petsSnapshotRaw) && petsSnapshotRaw.length > 0);
+    if (!petsProvided) missing.push("petsIds/pets_snapshot (selecione ao menos 1 pet)");
 
     if (missing.length) {
       return res.status(400).json({
@@ -394,7 +436,9 @@ async function createReservationController(req, res) {
 
     const range = normalizeDateRange(startDate, endDate);
     if (!range) {
-      return res.status(400).json({ error: "Intervalo de datas inválido.", code: "INVALID_DATES" });
+      return res
+        .status(400)
+        .json({ error: "Intervalo de datas inválido.", code: "INVALID_DATES" });
     }
 
     const caregiverIdStr = String(caregiverId);
@@ -425,9 +469,11 @@ async function createReservationController(req, res) {
       });
     }
 
-    const petsIdsClean = Array.isArray(petsIds) ? petsIds.map(String) : [];
-    const petsSnapshotClean = Array.isArray(petsSnapshot) ? petsSnapshot : [];
+    const petsSnapshotClean = Array.isArray(petsSnapshotRaw)
+      ? petsSnapshotRaw
+      : [];
 
+    // ✅ passa o RAW pro model (ele normaliza p/ int[] e jsonb)
     const reservation = await reservationModel.createReservation({
       tutorId,
       caregiverId: caregiverIdStr,
@@ -441,7 +487,7 @@ async function createReservationController(req, res) {
       endDate: range.endDate,
       total: toNum(total),
       status: "Pendente",
-      petsIds: petsIdsClean,
+      petsIds: petsIdsRaw,
       petsNames: typeof petsNames === "string" ? petsNames : null,
       petsSnapshot: petsSnapshotClean,
     });
@@ -456,7 +502,10 @@ async function createReservationController(req, res) {
     return res.status(201).json({ reservation });
   } catch (err) {
     console.error("Erro em POST /reservations:", err);
-    return res.status(500).json({ error: "Erro ao criar reserva.", code: "CREATE_RESERVATION_FAILED" });
+    return res.status(500).json({
+      error: "Erro ao criar reserva.",
+      code: "CREATE_RESERVATION_FAILED",
+    });
   }
 }
 
@@ -466,20 +515,22 @@ async function createReservationController(req, res) {
 async function listTutorReservationsController(req, res) {
   try {
     const user = req.user;
-    if (!user?.id) return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
+    if (!user?.id)
+      return res
+        .status(401)
+        .json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
 
     // admin: permite listar tudo (MVP operacional)
     if (String(user.role) === "admin") {
-      const qTutorId = req.query?.tutorId != null ? String(req.query.tutorId) : null;
+      const qTutorId =
+        req.query?.tutorId != null ? String(req.query.tutorId) : null;
 
       let rows = [];
       if (qTutorId) {
-        // lista reservas de um tutor específico
         rows = await reservationModel.listTutorReservations(String(qTutorId));
       } else if (typeof reservationModel.listAllReservations === "function") {
         rows = await reservationModel.listAllReservations();
       } else {
-        // fallback simples
         const { rows: dbRows } = await pool.query(
           `SELECT * FROM reservations ORDER BY created_at DESC NULLS LAST, id DESC LIMIT 500`
         );
@@ -489,15 +540,19 @@ async function listTutorReservationsController(req, res) {
       return res.json({ reservations: rows });
     }
 
-    let reservations = await reservationModel.listTutorReservations(String(user.id));
+    let reservations = await reservationModel.listTutorReservations(
+      String(user.id)
+    );
 
-    // ✅ injeta minha avaliação (tutor avaliando cuidador) na própria lista
     reservations = await attachMyReviewFields(reservations, user.id);
 
     return res.json({ reservations });
   } catch (err) {
     console.error("Erro em GET /reservations/tutor:", err);
-    return res.status(500).json({ error: "Erro ao buscar reservas.", code: "LIST_TUTOR_RES_FAILED" });
+    return res.status(500).json({
+      error: "Erro ao buscar reservas.",
+      code: "LIST_TUTOR_RES_FAILED",
+    });
   }
 }
 
@@ -507,7 +562,10 @@ async function listTutorReservationsController(req, res) {
 async function listCaregiverReservationsController(req, res) {
   try {
     const user = req.user;
-    if (!user?.id) return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
+    if (!user?.id)
+      return res
+        .status(401)
+        .json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
 
     // admin: permite listar tudo (MVP operacional)
     if (String(user.role) === "admin") {
@@ -516,7 +574,9 @@ async function listCaregiverReservationsController(req, res) {
 
       let rows = [];
       if (qCaregiverId) {
-        rows = await reservationModel.listCaregiverReservations(String(qCaregiverId));
+        rows = await reservationModel.listCaregiverReservations(
+          String(qCaregiverId)
+        );
       } else if (typeof reservationModel.listAllReservations === "function") {
         rows = await reservationModel.listAllReservations();
       } else {
@@ -529,15 +589,19 @@ async function listCaregiverReservationsController(req, res) {
       return res.json({ reservations: rows });
     }
 
-    let reservations = await reservationModel.listCaregiverReservations(String(user.id));
+    let reservations = await reservationModel.listCaregiverReservations(
+      String(user.id)
+    );
 
-    // ✅ injeta minha avaliação (caregiver avaliando tutor) na própria lista
     reservations = await attachMyReviewFields(reservations, user.id);
 
     return res.json({ reservations });
   } catch (err) {
     console.error("Erro em GET /reservations/caregiver:", err);
-    return res.status(500).json({ error: "Erro ao buscar reservas.", code: "LIST_CAREGIVER_RES_FAILED" });
+    return res.status(500).json({
+      error: "Erro ao buscar reservas.",
+      code: "LIST_CAREGIVER_RES_FAILED",
+    });
   }
 }
 
@@ -547,34 +611,41 @@ async function listCaregiverReservationsController(req, res) {
 async function getReservationDetailController(req, res) {
   try {
     const user = req.user;
-    if (!user?.id) return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
+    if (!user?.id)
+      return res
+        .status(401)
+        .json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
 
     const { id } = req.params;
 
-    // ✅ se veio do middleware de ownership, reaproveita (evita refetch)
     let reservation = req.reservation || null;
-
     if (!reservation) {
       reservation = await reservationModel.getReservationById(id);
     }
 
     if (!reservation) {
-      return res.status(404).json({ error: "Reserva não encontrada.", code: "RESERVATION_NOT_FOUND" });
+      return res.status(404).json({
+        error: "Reserva não encontrada.",
+        code: "RESERVATION_NOT_FOUND",
+      });
     }
 
-    // (redundante por causa do middleware, mas mantém fail-safe)
     if (!canAccessReservation(user, reservation)) {
-      return res.status(403).json({ error: "Sem permissão para acessar esta reserva.", code: "FORBIDDEN_OWNERSHIP" });
+      return res.status(403).json({
+        error: "Sem permissão para acessar esta reserva.",
+        code: "FORBIDDEN_OWNERSHIP",
+      });
     }
 
-    // ✅ injeta dados da MINHA review nesta reserva (pra detalhe ficar consistente)
     const enrichedArr = await attachMyReviewFields([reservation], user.id);
     reservation = enrichedArr?.[0] || reservation;
 
     return res.json({ reservation });
   } catch (err) {
     console.error("Erro em GET /reservations/:id:", err);
-    return res.status(500).json({ error: "Erro ao buscar reserva.", code: "GET_RESERVATION_FAILED" });
+    return res
+      .status(500)
+      .json({ error: "Erro ao buscar reserva.", code: "GET_RESERVATION_FAILED" });
   }
 }
 
@@ -584,23 +655,32 @@ async function getReservationDetailController(req, res) {
 async function updateReservationStatusController(req, res) {
   try {
     const user = req.user;
-    if (!user?.id) return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
+    if (!user?.id)
+      return res
+        .status(401)
+        .json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
 
     const { id } = req.params;
 
     const body = parseBodySafe(req.body);
-    const status = body.status;
+    const rawStatus = body.status;
     const rejectReason = body.rejectReason ?? body.reject_reason ?? null;
 
-    if (!status) {
-      return res.status(400).json({ error: "Status é obrigatório.", code: "MISSING_STATUS" });
+    const nextStatus = typeof rawStatus === "string" ? rawStatus.trim() : "";
+    if (!nextStatus) {
+      return res
+        .status(400)
+        .json({ error: "Status é obrigatório.", code: "MISSING_STATUS" });
     }
 
-    // ✅ se veio do middleware, reaproveita
     let reservation = req.reservation || null;
     if (!reservation) reservation = await reservationModel.getReservationById(id);
 
-    if (!reservation) return res.status(404).json({ error: "Reserva não encontrada.", code: "RESERVATION_NOT_FOUND" });
+    if (!reservation)
+      return res.status(404).json({
+        error: "Reserva não encontrada.",
+        code: "RESERVATION_NOT_FOUND",
+      });
 
     const prevStatus = getResStatus(reservation);
 
@@ -613,12 +693,17 @@ async function updateReservationStatusController(req, res) {
     const isAdmin = role === "admin";
 
     if (!isAdmin && !isOwnerTutor && !isOwnerCaregiver) {
-      return res.status(403).json({ error: "Sem permissão para alterar esta reserva.", code: "FORBIDDEN_OWNERSHIP" });
+      return res.status(403).json({
+        error: "Sem permissão para alterar esta reserva.",
+        code: "FORBIDDEN_OWNERSHIP",
+      });
     }
 
-    const nextStatus = String(status).trim();
     const currentStatus = getResStatus(reservation);
-    const { start: startKey, end: endKey } = getStartEndSafe(reservation, reservation);
+    const { start: startKey, end: endKey } = getStartEndSafe(
+      reservation,
+      reservation
+    );
 
     if (!startKey || !endKey) {
       return res.status(400).json({
@@ -630,22 +715,39 @@ async function updateReservationStatusController(req, res) {
     // Tutor cancelando
     if (!isAdmin && role === "tutor") {
       if (!isOwnerTutor) {
-        return res.status(403).json({ error: "Apenas o tutor responsável pode cancelar.", code: "FORBIDDEN_OWNERSHIP" });
+        return res.status(403).json({
+          error: "Apenas o tutor responsável pode cancelar.",
+          code: "FORBIDDEN_OWNERSHIP",
+        });
       }
       if (nextStatus !== "Cancelada") {
-        return res.status(403).json({ error: "Tutor só pode alterar o status para Cancelada.", code: "FORBIDDEN_STATUS" });
+        return res.status(403).json({
+          error: "Tutor só pode alterar o status para Cancelada.",
+          code: "FORBIDDEN_STATUS",
+        });
       }
       if (!["Pendente", "Aceita"].includes(currentStatus)) {
-        return res.status(400).json({ error: "Não é possível cancelar neste status.", code: "INVALID_STATUS_TRANSITION" });
+        return res.status(400).json({
+          error: "Não é possível cancelar neste status.",
+          code: "INVALID_STATUS_TRANSITION",
+        });
       }
 
-      const updated = await reservationModel.updateReservationStatus(id, "Cancelada", null);
+      const updated = await reservationModel.updateReservationStatus(
+        id,
+        "Cancelada",
+        null
+      );
 
       await notifyReservationEventSafe({
         reservation: updated,
         actorUser: user,
         type: "status",
-        payload: { reservationId: updated?.id, prevStatus, nextStatus: "Cancelada" },
+        payload: {
+          reservationId: updated?.id,
+          prevStatus,
+          nextStatus: "Cancelada",
+        },
       });
 
       return res.json({ reservation: updated });
@@ -660,9 +762,17 @@ async function updateReservationStatusController(req, res) {
         });
       }
 
-      const allowed = new Set(["Aceita", "Recusada", "Concluida", "Concluída", "Finalizada"]);
+      const allowed = new Set([
+        "Aceita",
+        "Recusada",
+        "Concluida",
+        "Concluída",
+        "Finalizada",
+      ]);
       if (!allowed.has(nextStatus)) {
-        return res.status(400).json({ error: "Status inválido para cuidador.", code: "INVALID_STATUS" });
+        return res
+          .status(400)
+          .json({ error: "Status inválido para cuidador.", code: "INVALID_STATUS" });
       }
 
       if (nextStatus === "Aceita") {
@@ -673,7 +783,11 @@ async function updateReservationStatusController(req, res) {
           });
         }
 
-        const availCheck = await assertRangeIsFullyAvailableOrThrow(caregiverId, startKey, endKey);
+        const availCheck = await assertRangeIsFullyAvailableOrThrow(
+          caregiverId,
+          startKey,
+          endKey
+        );
         if (!availCheck.ok) {
           return res.status(409).json({
             code: availCheck.code || "NOT_AVAILABLE",
@@ -681,7 +795,12 @@ async function updateReservationStatusController(req, res) {
           });
         }
 
-        const capCheck = await assertCapacityOrThrow(caregiverId, startKey, endKey, id);
+        const capCheck = await assertCapacityOrThrow(
+          caregiverId,
+          startKey,
+          endKey,
+          id
+        );
         if (!capCheck.ok) {
           return res.status(409).json({
             code: capCheck.code,
@@ -710,7 +829,11 @@ async function updateReservationStatusController(req, res) {
     // Admin
     if (isAdmin) {
       if (nextStatus === "Aceita") {
-        const availCheck = await assertRangeIsFullyAvailableOrThrow(caregiverId, startKey, endKey);
+        const availCheck = await assertRangeIsFullyAvailableOrThrow(
+          caregiverId,
+          startKey,
+          endKey
+        );
         if (!availCheck.ok) {
           return res.status(409).json({
             code: availCheck.code || "NOT_AVAILABLE",
@@ -718,7 +841,12 @@ async function updateReservationStatusController(req, res) {
           });
         }
 
-        const capCheck = await assertCapacityOrThrow(caregiverId, startKey, endKey, id);
+        const capCheck = await assertCapacityOrThrow(
+          caregiverId,
+          startKey,
+          endKey,
+          id
+        );
         if (!capCheck.ok) {
           return res.status(409).json({
             code: capCheck.code,
@@ -744,10 +872,15 @@ async function updateReservationStatusController(req, res) {
       return res.json({ reservation: updated });
     }
 
-    return res.status(403).json({ error: "Sem permissão para alterar o status.", code: "FORBIDDEN" });
+    return res
+      .status(403)
+      .json({ error: "Sem permissão para alterar o status.", code: "FORBIDDEN" });
   } catch (err) {
     console.error("Erro em PATCH /reservations/:id/status:", err);
-    return res.status(500).json({ error: "Erro ao atualizar status da reserva.", code: "UPDATE_STATUS_FAILED" });
+    return res.status(500).json({
+      error: "Erro ao atualizar status da reserva.",
+      code: "UPDATE_STATUS_FAILED",
+    });
   }
 }
 
@@ -757,7 +890,10 @@ async function updateReservationStatusController(req, res) {
 async function updateReservationRatingController(req, res) {
   try {
     const user = req.user;
-    if (!user?.id) return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
+    if (!user?.id)
+      return res
+        .status(401)
+        .json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
 
     const { id } = req.params;
 
@@ -767,26 +903,40 @@ async function updateReservationRatingController(req, res) {
 
     const r = toNum(rating);
     if (r == null || r < 1 || r > 5) {
-      return res.status(400).json({ error: "Nota inválida. Use 1 a 5.", code: "INVALID_RATING" });
+      return res
+        .status(400)
+        .json({ error: "Nota inválida. Use 1 a 5.", code: "INVALID_RATING" });
     }
 
-    // ✅ se veio do middleware, reaproveita
     let reservation = req.reservation || null;
     if (!reservation) reservation = await reservationModel.getReservationById(id);
 
-    if (!reservation) return res.status(404).json({ error: "Reserva não encontrada.", code: "RESERVATION_NOT_FOUND" });
+    if (!reservation)
+      return res.status(404).json({
+        error: "Reserva não encontrada.",
+        code: "RESERVATION_NOT_FOUND",
+      });
 
     if (!canAccessReservation(user, reservation)) {
-      return res.status(403).json({ error: "Sem permissão para avaliar esta reserva.", code: "FORBIDDEN_OWNERSHIP" });
+      return res.status(403).json({
+        error: "Sem permissão para avaliar esta reserva.",
+        code: "FORBIDDEN_OWNERSHIP",
+      });
     }
 
     const currentStatus = getResStatus(reservation);
     if (!isConcludedStatus(currentStatus)) {
-      return res.status(409).json({ error: "Só é possível avaliar após concluir.", code: "NOT_CONCLUDED" });
+      return res.status(409).json({
+        error: "Só é possível avaliar após concluir.",
+        code: "NOT_CONCLUDED",
+      });
     }
 
     if (!["tutor", "caregiver"].includes(user.role)) {
-      return res.status(403).json({ error: "Apenas tutor ou cuidador podem avaliar.", code: "FORBIDDEN_ROLE" });
+      return res.status(403).json({
+        error: "Apenas tutor ou cuidador podem avaliar.",
+        code: "FORBIDDEN_ROLE",
+      });
     }
 
     const updated = await reservationModel.updateReservationRating(
@@ -810,7 +960,10 @@ async function updateReservationRatingController(req, res) {
     return res.json({ reservation: updated });
   } catch (err) {
     console.error("Erro em PATCH /reservations/:id/rating:", err);
-    return res.status(500).json({ error: "Erro ao salvar avaliação.", code: "UPDATE_RATING_FAILED" });
+    return res.status(500).json({
+      error: "Erro ao salvar avaliação.",
+      code: "UPDATE_RATING_FAILED",
+    });
   }
 }
 
@@ -821,14 +974,14 @@ async function updateReservationRatingController(req, res) {
 async function listMyEvaluationsController(req, res) {
   try {
     const user = req.user;
-    if (!user?.id) return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
+    if (!user?.id)
+      return res
+        .status(401)
+        .json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
 
     const isAdmin = String(user.role || "").toLowerCase() === "admin";
     const idStr = String(user.id);
 
-    // ✅ Fonte da verdade: reviews
-    // - reviewed_id = eu (recebi a avaliação)
-    // - para usuário comum: NÃO retorna as ocultas
     const sql = `
       SELECT
         r.id AS reservation_id,
@@ -866,7 +1019,9 @@ async function listMyEvaluationsController(req, res) {
     return res.json({ evaluations: result.rows || [] });
   } catch (err) {
     console.error("Erro em GET /reservations/my-evaluations:", err);
-    return res.status(500).json({ error: "Erro ao buscar avaliações.", code: "LIST_EVAL_FAILED" });
+    return res
+      .status(500)
+      .json({ error: "Erro ao buscar avaliações.", code: "LIST_EVAL_FAILED" });
   }
 }
 
