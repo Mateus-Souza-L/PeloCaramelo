@@ -137,15 +137,15 @@ function isConcludedStatus(status) {
 function getStartEndSafe(obj, fallbackReservation) {
   const start = toDateKey(
     obj?.startDate ??
-      obj?.start_date ??
-      fallbackReservation?.startDate ??
-      fallbackReservation?.start_date
+    obj?.start_date ??
+    fallbackReservation?.startDate ??
+    fallbackReservation?.start_date
   );
   const end = toDateKey(
     obj?.endDate ??
-      obj?.end_date ??
-      fallbackReservation?.endDate ??
-      fallbackReservation?.end_date
+    obj?.end_date ??
+    fallbackReservation?.endDate ??
+    fallbackReservation?.end_date
   );
   return { start, end };
 }
@@ -358,6 +358,31 @@ async function assertCapacityOrThrow(
   return { ok: true };
 }
 
+function normalizeIntIds(input) {
+  if (input == null) return [];
+
+  let arr = input;
+
+  // aceita string "1,2" ou string JSON "[1,2]"
+  if (typeof arr === "string") {
+    const s = arr.trim();
+    if (!s) return [];
+    try {
+      arr = JSON.parse(s);
+    } catch {
+      arr = s.split(",").map((x) => x.trim());
+    }
+  }
+
+  if (!Array.isArray(arr)) arr = [arr];
+
+  const out = arr
+    .map((x) => Number(x))
+    .filter((n) => Number.isFinite(n) && Number.isInteger(n));
+
+  return Array.from(new Set(out));
+}
+
 // -----------------------------------------------------------------------------
 // CREATE (tutor)
 // -----------------------------------------------------------------------------
@@ -469,11 +494,20 @@ async function createReservationController(req, res) {
       });
     }
 
-    const petsSnapshotClean = Array.isArray(petsSnapshotRaw)
-      ? petsSnapshotRaw
-      : [];
+    const petsSnapshotClean = Array.isArray(petsSnapshotRaw) ? petsSnapshotRaw : [];
 
-    // ✅ passa o RAW pro model (ele normaliza p/ int[] e jsonb)
+    // ✅ normaliza ids aqui (garante int[])
+    const petsIdsClean = normalizeIntIds(petsIdsRaw);
+
+    // ✅ fallback: se não vier petsNames, monta pelo snapshot
+    const petsNamesClean =
+      typeof petsNames === "string" && petsNames.trim()
+        ? petsNames.trim()
+        : petsSnapshotClean
+          .map((p) => p?.name)
+          .filter(Boolean)
+          .join(", ") || null;
+
     const reservation = await reservationModel.createReservation({
       tutorId,
       caregiverId: caregiverIdStr,
@@ -487,8 +521,8 @@ async function createReservationController(req, res) {
       endDate: range.endDate,
       total: toNum(total),
       status: "Pendente",
-      petsIds: petsIdsRaw,
-      petsNames: typeof petsNames === "string" ? petsNames : null,
+      petsIds: petsIdsClean,              // ✅ agora é int[]
+      petsNames: petsNamesClean,          // ✅ string
       petsSnapshot: petsSnapshotClean,
     });
 
