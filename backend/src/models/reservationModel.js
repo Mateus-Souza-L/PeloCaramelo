@@ -167,7 +167,23 @@ async function createReservation({
   petsNames,
   petsSnapshot,
 }) {
-  const petsIdsIntArray = normalizePetsIds(petsIds); // ✅ int[]
+  let petsIdsIntArray = normalizePetsIds(petsIds);
+
+  // fallback: se não vier petsIds, tenta extrair do snapshot
+  if (!petsIdsIntArray.length && Array.isArray(petsSnapshot)) {
+    const fromSnap = petsSnapshot
+      .map((p) => toInt(p?.id))
+      .filter((n) => n != null);
+    petsIdsIntArray = Array.from(new Set(fromSnap));
+  }
+
+  // ✅ não permite criar reserva sem pets selecionados
+  if (!petsIdsIntArray.length) {
+    const err = new Error("Selecione ao menos 1 pet válido.");
+    err.code = "INVALID_PETS";
+    throw err;
+  }
+
   const petsSnapshotJson = toJsonbArray(petsSnapshot);
 
   const sql = `
