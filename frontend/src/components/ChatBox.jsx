@@ -40,6 +40,19 @@ export default function ChatBox({
   // chat visível na tela?
   const isInViewportRef = useRef(true);
 
+  const getSenderId = (m) =>
+    m?.sender_id ??
+    m?.senderId ??
+    m?.from_user_id ??
+    m?.fromUserId ??
+    m?.from_user ??
+    m?.fromUser ??
+    m?.user_id ??
+    m?.userId ??
+    null;
+
+  const isMineMsg = (m) => String(getSenderId(m)) === String(currentUserId);
+
   const scrollToBottom = useCallback(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -170,8 +183,8 @@ export default function ChatBox({
       const list = Array.isArray(data)
         ? data
         : Array.isArray(data?.messages)
-        ? data.messages
-        : [];
+          ? data.messages
+          : [];
 
       list.sort(
         (a, b) =>
@@ -235,8 +248,7 @@ export default function ChatBox({
         lastMessageIdRef.current = lastMsg.id;
 
         // Só trata como "nova" se veio do OUTRO usuário
-        const senderId = lastMsg.from_user_id ?? lastMsg.from_user;
-        const fromOther = String(senderId) !== String(currentUserId);
+        const fromOther = !isMineMsg(lastMsg);
         if (!fromOther) return;
 
         // ✅ sempre notifica
@@ -305,6 +317,7 @@ export default function ChatBox({
       id: tempId,
       reservation_id: reservationId,
       from_user_id: currentUserId,
+      sender_id: currentUserId,
       to_user_id: null,
       message: text,
       status: "sending",
@@ -350,8 +363,8 @@ export default function ChatBox({
   }
 
   const renderStatus = (msg) => {
-    const fromMe =
-      String(msg?.from_user_id ?? msg?.from_user) === String(currentUserId);
+    const fromMe = isMineMsg(msg);
+
     if (!fromMe) return null;
 
     const status = msg.status || (msg.read_at ? "read" : undefined);
@@ -407,12 +420,12 @@ export default function ChatBox({
         )}
 
         {messages.map((msg, index) => {
-          const senderId = msg.from_user_id ?? msg.from_user;
-          const isMine = String(senderId) === String(currentUserId);
+          const senderId = getSenderId(msg);
+          const isMine = isMineMsg(msg);
 
           const previous = messages[index - 1];
-          const previousSender =
-            previous && (previous.from_user_id ?? previous.from_user);
+          const previousSender = previous && getSenderId(previous);
+          previous && (previous.from_user_id ?? previous.from_user);
           const isGrouped =
             previous && String(previousSender) === String(senderId);
 
@@ -422,20 +435,19 @@ export default function ChatBox({
               className={`flex ${isMine ? "justify-end" : "justify-start"}`}
             >
               <div
-                className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm ${
-                  isMine
-                    ? "bg-[#5A3A22] text-white rounded-br-sm"
-                    : "bg-[#FFE7B8] text-[#5A3A22] rounded-bl-sm"
-                } ${isGrouped ? "mt-1" : "mt-2"}`}
+                className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm ${isMine
+                  ? "bg-[#5A3A22] text-white rounded-br-sm"
+                  : "bg-[#FFE7B8] text-[#5A3A22] rounded-bl-sm"
+                  } ${isGrouped ? "mt-1" : "mt-2"}`}
               >
                 <p className="whitespace-pre-wrap break-words">{msg.message}</p>
                 <div className="mt-1 flex items-center justify-end gap-2">
                   <span className="text-[10px] opacity-80">
                     {msg.created_at
                       ? new Date(msg.created_at).toLocaleString("pt-BR", {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })
                       : ""}
                   </span>
                   {renderStatus(msg)}
