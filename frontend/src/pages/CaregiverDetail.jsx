@@ -822,23 +822,90 @@ export default function CaregiverDetail() {
     }
   };
 
-  // pets do tutor logado
+  // pets do tutor logado (server-first: GET /pets + fallback local)
   useEffect(() => {
-    if (!user || user.role !== "tutor") {
+    let cancelled = false;
+
+    const clearPets = () => {
+      if (cancelled) return;
       setPets([]);
       setSelectedPetIds([]);
       setAllPetsSelected(false);
-      return;
-    }
+    };
 
-    const storageKey = `pets_${user.id}`;
-    const saved =
-      safeJsonParse(localStorage.getItem(storageKey) || "[]", []) || [];
+    const normalizePet = (p) => {
+      if (!p) return null;
+      return {
+        ...p,
+        id: p.id != null ? String(p.id) : p.id,
+        name: p.name ?? p.nome ?? "",
+        image: p.image ?? p.photo ?? p.img ?? null,
+        photo: p.photo ?? p.image ?? null,
+      };
+    };
 
-    setPets(Array.isArray(saved) ? saved : []);
-    setSelectedPetIds([]);
-    setAllPetsSelected(false);
-  }, [user?.id, user?.role]);
+    const loadPets = async () => {
+      if (!user || user.role !== "tutor") {
+        clearPets();
+        return;
+      }
+
+      const storageKey = `pets_${user.id}`;
+
+      // 1) fonte de verdade: backend
+      if (token) {
+        try {
+          const data = await authRequest("/pets", token);
+          const listRaw = Array.isArray(data?.pets)
+            ? data.pets
+            : Array.isArray(data)
+              ? data
+              : [];
+
+          const normalized = listRaw.map(normalizePet).filter(Boolean);
+
+          if (!cancelled) {
+            setPets(normalized);
+            setSelectedPetIds([]);
+            setAllPetsSelected(false);
+          }
+
+          // cache local (compat / offline)
+          try {
+            localStorage.setItem(storageKey, JSON.stringify(normalized));
+          } catch {
+            // ignore
+          }
+
+          return;
+        } catch {
+          // cai no fallback local
+        }
+      }
+
+      // 2) fallback localStorage
+      try {
+        const saved = safeJsonParse(localStorage.getItem(storageKey) || "[]", []) || [];
+        const normalized = (Array.isArray(saved) ? saved : [])
+          .map(normalizePet)
+          .filter(Boolean);
+
+        if (!cancelled) {
+          setPets(normalized);
+          setSelectedPetIds([]);
+          setAllPetsSelected(false);
+        }
+      } catch {
+        clearPets();
+      }
+    };
+
+    loadPets();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, user?.role, token]);
 
   // mapa de preços por serviço
   const svcPriceMap = useMemo(() => getSvcPriceMap(caregiver), [caregiver]);
@@ -1126,6 +1193,7 @@ export default function CaregiverDetail() {
         pets_names: petsSummary,
 
         petsSnapshot,
+        pets_snapshot: petsSnapshot,
       };
 
       const data = await authRequest("/reservations", token, {
