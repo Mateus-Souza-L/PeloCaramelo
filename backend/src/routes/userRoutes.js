@@ -4,8 +4,6 @@ const authMiddleware = require("../middleware/authMiddleware");
 const {
   getMeController,
   updateMeController,
-  getMyAvailabilityController,
-  updateMyAvailabilityController,
   adminListUsersController,
   adminBlockUserController,
 
@@ -22,10 +20,6 @@ router.use(authMiddleware);
 // Perfil do usuário logado
 router.get("/me", getMeController);
 router.patch("/me", updateMeController);
-
-// Disponibilidade (painel do cuidador)
-router.get("/me/availability", getMyAvailabilityController);
-router.patch("/me/availability", updateMyAvailabilityController);
 
 // ✅ Capacidade diária do cuidador
 router.get("/me/capacity", getMyDailyCapacityController);

@@ -6,6 +6,25 @@ const toJsonOrNull = (value) =>
   value === null || value === undefined ? null : JSON.stringify(value);
 
 /* ============================================================
+   Helpers DB
+   ============================================================ */
+
+async function columnExists(tableName, columnName) {
+  const { rows } = await pool.query(
+    `
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = $1
+      AND column_name = $2
+    LIMIT 1;
+    `,
+    [String(tableName), String(columnName)]
+  );
+  return !!rows?.[0];
+}
+
+/* ============================================================
    Criar usuário
    ============================================================ */
 async function createUser({
@@ -112,23 +131,15 @@ async function updateUserProfile(userId, updates) {
   for (const [field, rawValue] of entries) {
     let value = rawValue;
 
-    // ----- tratamentos específicos de jsonb -----
     if (field === "services" || field === "prices") {
-      // Sempre objeto JSON
-      if (!value || typeof value !== "object" || Array.isArray(value)) {
-        value = {};
-      }
+      if (!value || typeof value !== "object" || Array.isArray(value)) value = {};
       setClauses.push(`${field} = $${paramIdx}::jsonb`);
       values.push(JSON.stringify(value));
     } else if (field === "courses") {
-      // Sempre array JSON
-      if (!Array.isArray(value)) {
-        value = value == null ? [] : [value];
-      }
+      if (!Array.isArray(value)) value = value == null ? [] : [value];
       setClauses.push(`${field} = $${paramIdx}::jsonb`);
       values.push(JSON.stringify(value));
     } else {
-      // Campos "normais"
       setClauses.push(`${field} = $${paramIdx}`);
       values.push(value);
     }
@@ -158,7 +169,6 @@ async function updateUserProfile(userId, updates) {
       prices,
       courses,
       blocked,
-      available_dates,
       daily_capacity,
       created_at,
       updated_at;
@@ -220,9 +230,12 @@ async function setUserBlockedStatus(id, blocked) {
 }
 
 /* ============================================================
-   Disponibilidade (available_dates: jsonb na tabela users)
+   Disponibilidade (LEGADO) — evita quebrar caso rota ainda exista
    ============================================================ */
 async function getUserAvailability(userId) {
+  const hasCol = await columnExists("users", "available_dates");
+  if (!hasCol) return [];
+
   const result = await pool.query(
     "SELECT available_dates FROM users WHERE id = $1",
     [userId]
@@ -232,6 +245,11 @@ async function getUserAvailability(userId) {
 }
 
 async function updateUserAvailability(userId, dates) {
+  const hasCol = await columnExists("users", "available_dates");
+  if (!hasCol) {
+    return { id: userId, available_dates: Array.isArray(dates) ? dates : [] };
+  }
+
   const json = JSON.stringify(dates || []);
   const result = await pool.query(
     `
@@ -247,7 +265,7 @@ async function updateUserAvailability(userId, dates) {
 }
 
 /* ============================================================
-   ✅ Capacidade diária do cuidador (users.daily_capacity)
+   Capacidade diária do cuidador (users.daily_capacity)
    ============================================================ */
 
 function defaultCapacity() {
@@ -301,10 +319,11 @@ module.exports = {
   updateUserProfile,
   listAllUsers,
   setUserBlockedStatus,
+
+  // legado (não quebra caso ainda use)
   getUserAvailability,
   updateUserAvailability,
 
-  // ✅ NOVO (capacidade)
   getDailyCapacityByUserId,
   updateDailyCapacityByUserId,
 };

@@ -4,10 +4,8 @@ const {
   updateUserProfile,
   listAllUsers,
   setUserBlockedStatus,
-  getUserAvailability,
-  updateUserAvailability,
 
-  // ✅ NOVO (capacidade do cuidador)
+  // ✅ capacidade do cuidador
   getDailyCapacityByUserId,
   updateDailyCapacityByUserId,
 } = require("../models/userModel");
@@ -16,7 +14,6 @@ const {
 // Helpers
 // -----------------------------------------------------------------------------
 
-// pega id do usuário autenticado
 function getAuthenticatedUserId(req, res) {
   const userId = req.user?.id;
   if (!userId) {
@@ -26,7 +23,6 @@ function getAuthenticatedUserId(req, res) {
   return userId;
 }
 
-// garante que um jsonb venha como objeto/array mesmo se vier string
 function ensureParsedJson(value, fallback) {
   if (value == null) return fallback;
   if (typeof value === "string") {
@@ -84,7 +80,6 @@ async function updateMeController(req, res) {
     const body = req.body || {};
     const updates = {};
 
-    // campos simples que podem ser alterados
     const basicFields = [
       "city",
       "neighborhood",
@@ -110,12 +105,14 @@ async function updateMeController(req, res) {
     if (req.user?.role === "caregiver") {
       if (Object.prototype.hasOwnProperty.call(body, "services")) {
         const v = body.services;
-        updates.services = v && typeof v === "object" && !Array.isArray(v) ? v : {};
+        updates.services =
+          v && typeof v === "object" && !ArrayArray.isArray(v) ? v : {};
       }
 
       if (Object.prototype.hasOwnProperty.call(body, "prices")) {
         const v = body.prices;
-        updates.prices = v && typeof v === "object" && !Array.isArray(v) ? v : {};
+        updates.prices =
+          v && typeof v === "object" && !Array.isArray(v) ? v : {};
       }
 
       if (Object.prototype.hasOwnProperty.call(body, "courses")) {
@@ -138,7 +135,8 @@ async function updateMeController(req, res) {
       return res.status(404).json({ error: "Usuário não encontrado." });
     }
 
-    const { password_hash, password, services, prices, courses, ...rest } = updated;
+    const { password_hash, password, services, prices, courses, ...rest } =
+      updated;
 
     const safeUser = {
       ...rest,
@@ -151,61 +149,6 @@ async function updateMeController(req, res) {
   } catch (err) {
     console.error("Erro em PATCH /users/me:", err);
     return res.status(500).json({ error: "Erro ao atualizar perfil." });
-  }
-}
-
-// -----------------------------------------------------------------------------
-// Disponibilidade do próprio usuário
-// -----------------------------------------------------------------------------
-
-// GET /users/me/availability
-async function getMyAvailabilityController(req, res) {
-  try {
-    const userId = getAuthenticatedUserId(req, res);
-    if (!userId) return;
-
-    const dates = await getUserAvailability(userId);
-    return res.json({
-      availableDates: Array.isArray(dates) ? dates : [],
-    });
-  } catch (err) {
-    console.error("Erro em GET /users/me/availability:", err);
-    return res.status(500).json({
-      error: "Erro ao buscar disponibilidade do usuário.",
-    });
-  }
-}
-
-// PATCH /users/me/availability
-async function updateMyAvailabilityController(req, res) {
-  try {
-    const userId = getAuthenticatedUserId(req, res);
-    if (!userId) return;
-
-    const { availableDates } = req.body;
-
-    if (!Array.isArray(availableDates)) {
-      return res.status(400).json({
-        error: "Campo 'availableDates' deve ser um array de strings (datas).",
-      });
-    }
-
-    const cleaned = availableDates
-      .filter((d) => typeof d === "string")
-      .map((d) => d.trim())
-      .filter(Boolean);
-
-    const updated = await updateUserAvailability(userId, cleaned);
-    if (!updated) {
-      return res.status(404).json({ error: "Usuário não encontrado." });
-    }
-
-    return res.json({ availableDates: cleaned });
-  } catch (err) {
-    console.error("Erro em PATCH /users/me/availability:", err);
-    return res.status(500).json({
-      error: "Erro ao atualizar disponibilidade do usuário.",
-    });
   }
 }
 
@@ -228,13 +171,6 @@ async function getMyDailyCapacityController(req, res) {
     if (!userId) return;
     if (!ensureCaregiver(req, res)) return;
 
-    if (typeof getDailyCapacityByUserId !== "function") {
-      return res.status(500).json({
-        error:
-          "Model não possui getDailyCapacityByUserId. Adicione essa função em userModel.js",
-      });
-    }
-
     const daily_capacity = await getDailyCapacityByUserId(String(userId));
     return res.json({ daily_capacity });
   } catch (err) {
@@ -252,17 +188,9 @@ async function updateMyDailyCapacityController(req, res) {
 
     const cap = toNum(req.body?.daily_capacity);
 
-    // ✅ limites de segurança (ajuste se quiser)
     if (cap == null || !Number.isInteger(cap) || cap < 1 || cap > 100) {
       return res.status(400).json({
         error: "daily_capacity inválido. Use um inteiro entre 1 e 100.",
-      });
-    }
-
-    if (typeof updateDailyCapacityByUserId !== "function") {
-      return res.status(500).json({
-        error:
-          "Model não possui updateDailyCapacityByUserId. Adicione essa função em userModel.js",
       });
     }
 
@@ -330,13 +258,12 @@ async function adminBlockUserController(req, res) {
 module.exports = {
   getMeController,
   updateMeController,
-  getMyAvailabilityController,
-  updateMyAvailabilityController,
 
-  // ✅ NOVO (capacidade)
+  // ✅ capacidade
   getMyDailyCapacityController,
   updateMyDailyCapacityController,
 
+  // admin
   adminListUsersController,
   adminBlockUserController,
 };
