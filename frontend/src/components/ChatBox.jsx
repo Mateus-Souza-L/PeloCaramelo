@@ -419,6 +419,12 @@ export default function ChatBox({
           </p>
         )}
 
+        console.log("currentUserId:", currentUserId);
+console.log("messages:", messages.map(m => ({
+          id: m.id,
+        sender: getSenderId(m)
+})));
+
         {messages.map((msg, index) => {
           const senderId = getSenderId(msg);
           const isMine = isMineMsg(msg);
