@@ -1,5 +1,5 @@
 // frontend/src/components/ChatBox.jsx
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import {
   getChatMessages,
   sendChatMessage,
@@ -40,24 +40,32 @@ export default function ChatBox({
   // chat visível na tela?
   const isInViewportRef = useRef(true);
 
-  const getSenderId = (m) =>
-    m?.sender_id ??
-    m?.senderId ??
-    m?.from_user_id ??
-    m?.fromUserId ??
-    m?.from_user ??
-    m?.fromUser ??
-    m?.user_id ??
-    m?.userId ??
-    null;
+  // ---------------------------
+  // Helpers de autor da mensagem
+  // ---------------------------
+  const getSenderId = useCallback(
+    (m) =>
+      m?.sender_id ??
+      m?.senderId ??
+      m?.from_user_id ??
+      m?.fromUserId ??
+      m?.from_user ??
+      m?.fromUser ??
+      m?.user_id ??
+      m?.userId ??
+      null,
+    []
+  );
 
-  const isMineMsg = (m) => String(getSenderId(m)) === String(currentUserId);
+  const isMineMsg = useCallback(
+    (m) => String(getSenderId(m)) === String(currentUserId),
+    [getSenderId, currentUserId]
+  );
 
   const scrollToBottom = useCallback(() => {
     const el = containerRef.current;
     if (!el) return;
 
-    // mais confiável após render
     requestAnimationFrame(() => {
       el.scrollTop = el.scrollHeight;
       requestAnimationFrame(() => {
@@ -118,7 +126,7 @@ export default function ChatBox({
         if (!entry) return;
         isInViewportRef.current = !!entry.isIntersecting;
       },
-      { threshold: 0.25 } // 25% visível já considera "na tela"
+      { threshold: 0.25 }
     );
 
     obs.observe(el);
@@ -165,6 +173,23 @@ export default function ChatBox({
     return () => document.removeEventListener("visibilitychange", onVisibility);
   }, [markReadServer]);
 
+  // Normaliza lista (backend pode retornar {messages: []})
+  const normalizeList = useCallback((data) => {
+    const list = Array.isArray(data)
+      ? data
+      : Array.isArray(data?.messages)
+      ? data.messages
+      : [];
+
+    list.sort(
+      (a, b) =>
+        new Date(a.created_at || a.createdAt || 0).getTime() -
+        new Date(b.created_at || b.createdAt || 0).getTime()
+    );
+
+    return list;
+  }, []);
+
   // Carregar mensagens + polling
   useEffect(() => {
     if (!canChat || !reservationId || !token || !currentUserId) return;
@@ -179,24 +204,13 @@ export default function ChatBox({
     // abriu o chat → marca como lido no servidor
     markReadServer();
 
-    const normalizeList = (data) => {
-      const list = Array.isArray(data)
-        ? data
-        : Array.isArray(data?.messages)
-          ? data.messages
-          : [];
-
-      list.sort(
-        (a, b) =>
-          new Date(a.created_at || 0).getTime() -
-          new Date(b.created_at || 0).getTime()
-      );
-      return list;
-    };
-
     const notifyNewMessage = (msgId) => {
-      // evita disparar repetido no polling
-      if (msgId != null && String(lastNewEventIdRef.current) === String(msgId)) return;
+      if (
+        msgId != null &&
+        String(lastNewEventIdRef.current) === String(msgId)
+      )
+        return;
+
       lastNewEventIdRef.current = msgId ?? lastNewEventIdRef.current;
 
       try {
@@ -205,7 +219,6 @@ export default function ChatBox({
         // ignore
       }
 
-      // evento global (Navbar/Dashboard/ReservationDetail)
       window.dispatchEvent(
         new CustomEvent("chat-new-message", {
           detail: { reservationId },
@@ -251,14 +264,12 @@ export default function ChatBox({
         const fromOther = !isMineMsg(lastMsg);
         if (!fromOther) return;
 
-        // ✅ sempre notifica
         notifyNewMessage(lastMsg.id);
 
         const isVisibleTab = document.visibilityState === "visible";
         const chatOnScreen = isInViewportRef.current;
         const shouldAutoRead = isVisibleTab && isAtBottomRef.current;
 
-        // ✅ se o chat NÃO está na tela, pede pro ReservationDetail rolar até o chat
         if (isVisibleTab && !chatOnScreen) {
           window.dispatchEvent(
             new CustomEvent("chat-scroll-to-chat", {
@@ -268,7 +279,6 @@ export default function ChatBox({
         }
 
         if (shouldAutoRead) {
-          // se já está no fim, mantém suave e marca como lido
           scrollToBottom();
           markReadServer();
         } else {
@@ -305,6 +315,8 @@ export default function ChatBox({
     showToast,
     onNewMessage,
     scrollToBottom,
+    normalizeList,
+    isMineMsg,
   ]);
 
   async function handleSend(e) {
@@ -316,9 +328,8 @@ export default function ChatBox({
     const optimisticMessage = {
       id: tempId,
       reservation_id: reservationId,
-      from_user_id: currentUserId,
-      sender_id: currentUserId,
-      to_user_id: null,
+      sender_id: currentUserId, // importante p/ isMineMsg bater com o backend
+      receiver_id: null,
       message: text,
       status: "sending",
       created_at: new Date().toISOString(),
@@ -364,7 +375,6 @@ export default function ChatBox({
 
   const renderStatus = (msg) => {
     const fromMe = isMineMsg(msg);
-
     if (!fromMe) return null;
 
     const status = msg.status || (msg.read_at ? "read" : undefined);
@@ -382,6 +392,17 @@ export default function ChatBox({
     }
     return <span className="text-[10px] opacity-70">✓ enviada</span>;
   };
+
+  // (opcional) Debug seguro: só loga fora do JSX, e só quando quiser habilitar
+  const DEBUG_CHAT = false;
+  useEffect(() => {
+    if (!DEBUG_CHAT) return;
+    console.log("currentUserId:", currentUserId);
+    console.log(
+      "messages:",
+      messages.map((m) => ({ id: m.id, sender: getSenderId(m) }))
+    );
+  }, [DEBUG_CHAT, currentUserId, messages, getSenderId]);
 
   return (
     <div
@@ -419,19 +440,12 @@ export default function ChatBox({
           </p>
         )}
 
-        console.log("currentUserId:", currentUserId);
-console.log("messages:", messages.map(m => ({
-          id: m.id,
-        sender: getSenderId(m)
-})));
-
         {messages.map((msg, index) => {
           const senderId = getSenderId(msg);
           const isMine = isMineMsg(msg);
 
           const previous = messages[index - 1];
-          const previousSender = previous && getSenderId(previous);
-          previous && (previous.from_user_id ?? previous.from_user);
+          const previousSender = previous ? getSenderId(previous) : null;
           const isGrouped =
             previous && String(previousSender) === String(senderId);
 
@@ -441,19 +455,23 @@ console.log("messages:", messages.map(m => ({
               className={`flex ${isMine ? "justify-end" : "justify-start"}`}
             >
               <div
-                className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm ${isMine
-                  ? "bg-[#5A3A22] text-white rounded-br-sm"
-                  : "bg-[#FFE7B8] text-[#5A3A22] rounded-bl-sm"
-                  } ${isGrouped ? "mt-1" : "mt-2"}`}
+                className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm ${
+                  isMine
+                    ? "bg-[#5A3A22] text-white rounded-br-sm"
+                    : "bg-[#FFE7B8] text-[#5A3A22] rounded-bl-sm"
+                } ${isGrouped ? "mt-1" : "mt-2"}`}
               >
                 <p className="whitespace-pre-wrap break-words">{msg.message}</p>
                 <div className="mt-1 flex items-center justify-end gap-2">
                   <span className="text-[10px] opacity-80">
-                    {msg.created_at
-                      ? new Date(msg.created_at).toLocaleString("pt-BR", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })
+                    {msg.created_at || msg.createdAt
+                      ? new Date(msg.created_at || msg.createdAt).toLocaleString(
+                          "pt-BR",
+                          {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          }
+                        )
                       : ""}
                   </span>
                   {renderStatus(msg)}
