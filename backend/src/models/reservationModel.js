@@ -6,10 +6,6 @@ const AVAIL_COL_CAREGIVER = process.env.AVAIL_COL_CAREGIVER || "caregiver_id";
 const AVAIL_COL_DATEKEY = process.env.AVAIL_COL_DATEKEY || "date_key";
 const AVAIL_COL_AVAILABLE = process.env.AVAIL_COL_AVAILABLE || "is_available";
 
-/**
- * Status que contam como "bloqueiam" a agenda para capacidade.
- * (Pendente normalmente NÃO deveria bloquear capacidade; aqui você já fez certo.)
- */
 const BLOCKING_STATUSES = [
   "Aceita",
   "Finalizada",
@@ -64,19 +60,14 @@ function mapReservationRow(row) {
     total: row.total,
     status: row.status,
 
-    // ⭐ avaliações (podem vir do legado OU do JOIN com reviews)
     tutor_rating: row.tutor_rating,
     tutor_review: row.tutor_review,
-
-    // 🔒 moderação da avaliação do TUTOR → CUIDADOR (vem do JOIN)
     tutor_review_is_hidden: row.tutor_review_is_hidden,
     tutor_review_hidden_reason: row.tutor_review_hidden_reason,
     tutor_review_hidden_at: row.tutor_review_hidden_at,
 
     caregiver_rating: row.caregiver_rating,
     caregiver_review: row.caregiver_review,
-
-    // 🔒 moderação da avaliação do CUIDADOR → TUTOR (vem do JOIN)
     caregiver_review_is_hidden: row.caregiver_review_is_hidden,
     caregiver_review_hidden_reason: row.caregiver_review_hidden_reason,
     caregiver_review_hidden_at: row.caregiver_review_hidden_at,
@@ -90,7 +81,6 @@ function mapReservationRow(row) {
     reject_reason: row.reject_reason,
   };
 
-  // aliases (compat)
   obj.tutorId = row.tutor_id != null ? String(row.tutor_id) : null;
   obj.caregiverId = row.caregiver_id != null ? String(row.caregiver_id) : null;
   obj.startDate = row.start_date;
@@ -103,6 +93,36 @@ function toJsonbArray(value) {
   if (value == null) return JSON.stringify([]);
   if (Array.isArray(value)) return JSON.stringify(value);
   return JSON.stringify([value]);
+}
+
+function toInt(v) {
+  const n = Number(v);
+  return Number.isFinite(n) && Number.isInteger(n) ? n : null;
+}
+
+// Aceita: [1,2], ["1","2"], "1,2", "[1,2]" (string JSON), null
+function normalizePetsIds(input) {
+  if (input == null) return [];
+
+  let arr = input;
+
+  if (typeof arr === "string") {
+    const s = arr.trim();
+    if (!s) return [];
+    try {
+      arr = JSON.parse(s);
+    } catch {
+      arr = s.split(",").map((x) => x.trim());
+    }
+  }
+
+  if (!Array.isArray(arr)) return [];
+
+  const ids = arr
+    .map((x) => toInt(x))
+    .filter((n) => n != null);
+
+  return Array.from(new Set(ids));
 }
 
 function getDefaultCap() {
@@ -149,7 +169,7 @@ async function createReservation({
   petsNames,
   petsSnapshot,
 }) {
-  const petsIdsJson = toJsonbArray(petsIds);
+  const petsIdsIntArray = normalizePetsIds(petsIds); // ✅ int[]
   const petsSnapshotJson = toJsonbArray(petsSnapshot);
 
   const sql = `
@@ -171,7 +191,7 @@ async function createReservation({
       $7, $8,
       $9, $10,
       $11, $12,
-      $13::jsonb, $14,
+      $13::int[], $14,
       $15::jsonb,
       $16
     )
@@ -191,7 +211,7 @@ async function createReservation({
     endDate,
     total,
     status || "Pendente",
-    petsIdsJson,
+    petsIdsIntArray, // ✅ agora é array de int
     petsNames || null,
     petsSnapshotJson,
     null,
@@ -201,11 +221,6 @@ async function createReservation({
   return mapReservationRow(result.rows[0]);
 }
 
-/**
- * ✅ Query base com JOIN das duas reviews:
- * - rv_tc: tutor -> caregiver
- * - rv_ct: caregiver -> tutor
- */
 function selectReservationWithReviewJoins(whereSql) {
   return `
     SELECT
@@ -224,14 +239,12 @@ function selectReservationWithReviewJoins(whereSql) {
       r.total,
       r.status,
 
-      -- ⭐ avaliação do TUTOR para o CUIDADOR
       rv_tc.rating        AS tutor_rating,
       rv_tc.comment       AS tutor_review,
       rv_tc.is_hidden     AS tutor_review_is_hidden,
       rv_tc.hidden_reason AS tutor_review_hidden_reason,
       rv_tc.hidden_at     AS tutor_review_hidden_at,
 
-      -- ⭐ avaliação do CUIDADOR para o TUTOR
       rv_ct.rating        AS caregiver_rating,
       rv_ct.comment       AS caregiver_review,
       rv_ct.is_hidden     AS caregiver_review_is_hidden,
@@ -240,20 +253,19 @@ function selectReservationWithReviewJoins(whereSql) {
 
       r.pets_ids,
       r.pets_names,
-      
+      r.pets_snapshot,
+
       r.created_at,
       r.updated_at,
       r.reject_reason
 
     FROM reservations r
 
-    -- tutor avaliou caregiver
     LEFT JOIN reviews rv_tc
       ON rv_tc.reservation_id = r.id
      AND rv_tc.reviewer_id::text = r.tutor_id::text
      AND rv_tc.reviewed_id::text = r.caregiver_id::text
 
-    -- caregiver avaliou tutor
     LEFT JOIN reviews rv_ct
       ON rv_ct.reservation_id = r.id
      AND rv_ct.reviewer_id::text = r.caregiver_id::text
@@ -283,11 +295,6 @@ async function listCaregiverReservations(caregiverId) {
   return result.rows.map(mapReservationRow);
 }
 
-/**
- * ✅ Para admin (seu controller já suporta):
- * - retorna últimas 500 por padrão
- * - você pode reduzir/aumentar no futuro
- */
 async function listAllReservations(limit = 500) {
   const lim = Number.isFinite(Number(limit)) ? Math.trunc(Number(limit)) : 500;
   const safeLimit = Math.max(1, Math.min(lim, 2000));
@@ -301,9 +308,6 @@ async function listAllReservations(limit = 500) {
   return result.rows.map(mapReservationRow);
 }
 
-/**
- * ✅ Detalhe com as duas avaliações (melhora consistência do ReservationDetail)
- */
 async function getReservationById(id) {
   const sql = selectReservationWithReviewJoins(`
     WHERE r.id = $1
@@ -336,10 +340,6 @@ async function updateReservationStatus(id, status, rejectReason = null) {
   return mapReservationRow(result.rows[0]);
 }
 
-/**
- * ⚠️ LEGADO: rating gravado na própria reserva (você já usa /reviews como entidade)
- * Mantido por compatibilidade enquanto existirem chamadas antigas.
- */
 async function updateReservationRating(id, role, rating, comment) {
   const cleanedComment =
     typeof comment === "string" && comment.trim() ? comment.trim() : null;
@@ -369,10 +369,6 @@ async function updateReservationRating(id, role, rating, comment) {
   throw new Error("Role inválida para avaliação.");
 }
 
-/**
- * Disponibilidade: exige TODOS os dias do range marcados como disponíveis.
- * Observação: mantém suas envs de tabela/coluna com whitelist de identificadores.
- */
 async function isCaregiverAvailableForRange(caregiverId, startDate, endDate) {
   const sql = `
     WITH days AS (
@@ -435,10 +431,6 @@ async function getMaxOverlappingByDay(
   return Number(rows?.[0]?.max_overlapping || 0);
 }
 
-/**
- * Retorna compat com o controller:
- * - { available: boolean, capacity: number, maxOverlapping: number, ... }
- */
 async function assertCaregiverCanBeBooked(
   caregiverId,
   startDate,
@@ -455,8 +447,6 @@ async function assertCaregiverCanBeBooked(
     available,
     capacity,
     maxOverlapping,
-
-    // aliases (compat)
     max_overlapping: maxOverlapping,
     maxOverlappingByDay: maxOverlapping,
   };
