@@ -5,11 +5,19 @@ import { useAuth } from "../context/AuthContext";
 import { useToast } from "../components/ToastProvider";
 import { loginRequest } from "../services/api";
 
-// ✅ debug: garante que ESTE arquivo é o que está rodando
-console.log(">>> LOGIN.jsx CARREGOU (arquivo certo) <<<");
+function pickBlockedPayload(err) {
+  const data = err?.data || err?.response?.data || null;
+  const code = data?.code || data?.errorCode || null;
+  if (code !== "USER_BLOCKED") return null;
+
+  return {
+    reason: data?.reason ?? data?.blockedReason ?? null,
+    blockedUntil: data?.blockedUntil ?? null,
+  };
+}
 
 export default function Login() {
-  const { login } = useAuth();
+  const { login, showBlockedModal } = useAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();
 
@@ -33,47 +41,45 @@ export default function Login() {
       return;
     }
 
-    // sempre envia e-mail normalizado (minúsculo)
     const normalizedEmail = eTrim.toLowerCase();
-
-    // ✅ debug: confirma o que vai ser enviado
-    console.log("[LOGIN PAGE] enviando:", {
-      email: normalizedEmail,
-      passwordLen: pTrim.length,
-    });
 
     try {
       setLoading(true);
 
-      // chama o backend: POST /auth/login
       const { user, token } = await loginRequest({
         email: normalizedEmail,
         password: pTrim,
       });
 
-      if (user.blocked) {
-        showToast("Usuário bloqueado. Fale com o suporte.", "error");
+      // ✅ bloqueio vindo no body (compat)
+      if (user?.blocked) {
+        showBlockedModal?.({
+          reason: user?.blockedReason ?? null,
+          blockedUntil: user?.blockedUntil ?? null,
+        });
         return;
       }
 
-      // salva no AuthContext + localStorage
-      login(user, token);
+      // salva no AuthContext + localStorage (e já tenta /auth/me)
+      await login(user, token);
 
       showToast("Bem-vindo(a)! 🐾", "success");
 
-      if (user.role === "admin") {
-        navigate("/admin", { replace: true });
-      } else if (user.role === "caregiver") {
-        // cuidador usa o mesmo painel /dashboard
-        navigate("/dashboard", { replace: true });
-      } else {
-        // tutor (ou qualquer outro)
-        navigate("/dashboard", { replace: true });
-      }
+      if (user?.role === "admin") navigate("/admin", { replace: true });
+      else navigate("/dashboard", { replace: true });
     } catch (err) {
       console.error("Erro ao tentar logar:", err);
-      // se o backend respondeu 401, tratamos como credenciais inválidas
-      if (err?.status === 401 || err?.message === "Credenciais inválidas.") {
+
+      const status = err?.status ?? err?.response?.status ?? null;
+
+      // ✅ bloqueio vindo como 403 { code: USER_BLOCKED, reason, blockedUntil }
+      const bi = pickBlockedPayload(err);
+      if (status === 403 && bi) {
+        showBlockedModal?.(bi);
+        return;
+      }
+
+      if (status === 401 || err?.message === "Credenciais inválidas.") {
         showToast("E-mail ou senha inválidos.", "error");
       } else {
         showToast("Erro ao tentar logar.", "error");
@@ -85,7 +91,6 @@ export default function Login() {
 
   return (
     <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] flex items-center justify-center py-10">
-      {/* Card largo com barra amarela discreta */}
       <div className="max-w-[600px] w-full bg-white rounded-2xl shadow-lg p-8 border-l-4 border-[#FFD700]/80">
         <h1 className="text-3xl font-bold text-[#5A3A22] mb-6 text-center">
           Login

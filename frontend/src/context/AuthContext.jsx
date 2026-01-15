@@ -1,14 +1,190 @@
 // src/context/AuthContext.jsx
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { meRequest } from "../services/api";
 
 const AuthContext = createContext();
 const STORAGE_KEY = "pelocaramelo_auth";
 
+// ---------- helpers ----------
+function pickBlockedPayload(err) {
+  const data =
+    err?.data ||
+    err?.response?.data ||
+    err?.body ||
+    err?.payload ||
+    null;
+
+  const code = data?.code || data?.errorCode || null;
+  if (code !== "USER_BLOCKED") return null;
+
+  return {
+    reason: data?.reason ?? data?.blockedReason ?? null,
+    blockedUntil: data?.blockedUntil ?? null,
+  };
+}
+
+function formatBlockedUntil(blockedUntil) {
+  if (!blockedUntil) return "Indefinido";
+  const dt = new Date(blockedUntil);
+  if (Number.isNaN(dt.getTime())) return String(blockedUntil);
+
+  try {
+    return dt.toLocaleString("pt-BR", {
+      timeZone: "America/Sao_Paulo",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return dt.toISOString();
+  }
+}
+
+// ---------- modal ----------
+function BlockedModal({ open, info, onClose }) {
+  if (!open) return null;
+
+  const colors = {
+    brown: "#5A3A22",
+    yellow: "#FFD700",
+    beige: "#EBCBA9",
+    red: "#95301F",
+  };
+
+  const untilTxt = formatBlockedUntil(info?.blockedUntil);
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.55)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 999,
+        padding: 16,
+      }}
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose?.();
+      }}
+    >
+      <div
+        style={{
+          width: "min(620px, 100%)",
+          background: "#fff",
+          borderRadius: 18,
+          overflow: "hidden",
+          boxShadow: "0 12px 30px rgba(0,0,0,0.22)",
+          border: "1px solid #eee",
+        }}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div style={{ padding: 18, borderBottom: "1px solid #eee", background: "#fff" }}>
+          <div style={{ fontSize: 18, fontWeight: 1000, color: colors.red }}>
+            Acesso bloqueado
+          </div>
+          <div style={{ marginTop: 8, color: "#333", lineHeight: 1.4 }}>
+            Seu acesso à plataforma foi bloqueado pelo administrador.
+          </div>
+        </div>
+
+        <div style={{ padding: 18, background: "#fafafa" }}>
+          <div style={{ display: "grid", gap: 10 }}>
+            <div
+              style={{
+                padding: 12,
+                borderRadius: 14,
+                border: "1px solid #f0e5d7",
+                background: colors.beige,
+              }}
+            >
+              <div style={{ fontWeight: 1000, color: colors.brown, fontSize: 13 }}>
+                Motivo
+              </div>
+              <div style={{ marginTop: 6, color: "#222" }}>
+                {info?.reason ? String(info.reason) : "Não informado"}
+              </div>
+            </div>
+
+            <div
+              style={{
+                padding: 12,
+                borderRadius: 14,
+                border: "1px solid #f0e5d7",
+                background: "#fff",
+              }}
+            >
+              <div style={{ fontWeight: 1000, color: colors.brown, fontSize: 13 }}>
+                Até quando
+              </div>
+              <div style={{ marginTop: 6, color: "#222" }}>{untilTxt}</div>
+            </div>
+
+            <div style={{ fontSize: 13, color: "#555", lineHeight: 1.4 }}>
+              Se você acredita que isso foi um engano, entre em contato com o suporte/administrador.
+            </div>
+          </div>
+        </div>
+
+        <div
+          style={{
+            padding: 18,
+            display: "flex",
+            justifyContent: "flex-end",
+            background: "#fff",
+            borderTop: "1px solid #eee",
+          }}
+        >
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              padding: "10px 14px",
+              borderRadius: 12,
+              border: "1px solid transparent",
+              background: colors.yellow,
+              color: colors.brown,
+              fontWeight: 1000,
+              cursor: "pointer",
+            }}
+          >
+            Entendi
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  // modal de bloqueio
+  const [blockedModalOpen, setBlockedModalOpen] = useState(false);
+  const [blockedInfo, setBlockedInfo] = useState({ reason: null, blockedUntil: null });
+
+  const showBlockedModal = (info) => {
+    setBlockedInfo({
+      reason: info?.reason ?? null,
+      blockedUntil: info?.blockedUntil ?? null,
+    });
+    setBlockedModalOpen(true);
+  };
+
+  const hideBlockedModal = () => {
+    setBlockedModalOpen(false);
+  };
+
+  function handleLogout() {
+    setUser(null);
+    setToken(null);
+    localStorage.removeItem(STORAGE_KEY);
+  }
 
   // Carregar sessão salva no localStorage ao iniciar o app
   useEffect(() => {
@@ -28,7 +204,7 @@ export function AuthProvider({ children }) {
         return;
       }
 
-      // ✅ hidrata imediatamente (evita “piscar” e redirecionar indevidamente)
+      // hidrata imediatamente
       setToken(savedToken);
       if (savedUser) setUser(savedUser);
 
@@ -37,10 +213,7 @@ export function AuthProvider({ children }) {
         .then((res) => {
           if (res?.user) {
             setUser(res.user);
-            localStorage.setItem(
-              STORAGE_KEY,
-              JSON.stringify({ user: res.user, token: savedToken })
-            );
+            localStorage.setItem(STORAGE_KEY, JSON.stringify({ user: res.user, token: savedToken }));
             return;
           }
 
@@ -52,27 +225,31 @@ export function AuthProvider({ children }) {
         .catch((err) => {
           console.error("Erro ao carregar sessão /auth/me:", err);
 
-          // ✅ só “desloga” se for token inválido/sem permissão
-          const status = err?.status;
-          if (status === 401 || status === 403) {
-            setUser(null);
-            setToken(null);
-            localStorage.removeItem(STORAGE_KEY);
+          const status = err?.status ?? err?.response?.status ?? null;
+
+          // ✅ se backend informou bloqueio, mostra modal + limpa sessão
+          const bi = pickBlockedPayload(err);
+          if (status === 403 && bi) {
+            showBlockedModal(bi);
+            handleLogout();
             return;
           }
 
-          // ✅ erro temporário (500, rede, backend reiniciando):
-          // mantém sessão local e NÃO redireciona o usuário à força
-          // (o app continua usando savedUser/savedToken)
+          // ✅ só “desloga” se for token inválido/sem permissão (sem payload de bloqueio)
+          if (status === 401 || status === 403) {
+            handleLogout();
+            return;
+          }
+
+          // erro temporário (500, rede): mantém sessão local
         })
         .finally(() => setLoading(false));
     } catch (err) {
       console.error("Erro ao ler sessão do localStorage:", err);
-      setUser(null);
-      setToken(null);
-      localStorage.removeItem(STORAGE_KEY);
+      handleLogout();
       setLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Login: recebe user básico do /auth/login, mas já consulta /auth/me
@@ -85,41 +262,57 @@ export function AuthProvider({ children }) {
       const fullUser = res?.user || loginUser;
 
       setUser(fullUser);
-      localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify({ user: fullUser, token: newToken })
-      );
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ user: fullUser, token: newToken }));
     } catch (err) {
       console.error("Erro ao buscar /auth/me após login:", err);
 
-      // ✅ mantém sessão (útil em instabilidade momentânea)
+      // se o /auth/me responder bloqueado por algum motivo, mostra modal e limpa sessão
+      const status = err?.status ?? err?.response?.status ?? null;
+      const bi = pickBlockedPayload(err);
+      if (status === 403 && bi) {
+        showBlockedModal(bi);
+        handleLogout();
+        return;
+      }
+
+      // mantém sessão (útil em instabilidade momentânea)
       setUser(loginUser);
-      localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify({ user: loginUser, token: newToken })
-      );
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ user: loginUser, token: newToken }));
     } finally {
       setLoading(false);
     }
   }
 
-  function handleLogout() {
-    setUser(null);
-    setToken(null);
-    localStorage.removeItem(STORAGE_KEY);
-  }
+  const value = useMemo(
+    () => ({
+      user,
+      setUser,
+      token,
+      loading,
+      login: handleLogin,
+      logout: handleLogout,
+      isAuthenticated: !!user && !!token,
 
-  const value = {
-    user,
-    setUser,
-    token,
-    loading,
-    login: handleLogin,
-    logout: handleLogout,
-    isAuthenticated: !!user && !!token,
-  };
+      // bloqueio
+      showBlockedModal,
+      hideBlockedModal,
+      blockedModalOpen,
+      blockedInfo,
+    }),
+    [user, token, loading, blockedModalOpen, blockedInfo]
+  );
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+
+      <BlockedModal
+        open={blockedModalOpen}
+        info={blockedInfo}
+        onClose={hideBlockedModal}
+      />
+    </AuthContext.Provider>
+  );
 }
 
 export function useAuth() {

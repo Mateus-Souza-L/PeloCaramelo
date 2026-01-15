@@ -4,12 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import { useToast } from "../components/ToastProvider";
 import { authRequest } from "../services/api";
 
-// =====================================================
-// Admin — Passo 1 (MÉTRICAS) + Passo 6 (CSV + Bulk) + Moderação de Avaliações
-// + Layout padronizado com “cards” do site
-// =====================================================
-
-// ---------- helpers ----------
+/* ---------- helpers ---------- */
 const toStr = (v) => (v == null ? "" : String(v));
 
 function pick(obj, keys, fallback = "") {
@@ -68,8 +63,13 @@ function normUser(u) {
   const role = pick(u, ["role", "perfil", "user_role"], "");
   const isBlockedRaw = pick(u, ["isBlocked", "is_blocked", "blocked"], false);
   const isBlocked = Boolean(isBlockedRaw);
+
+  // opcional (vai ficar vazio se o backend não mandar ainda)
+  const blockedReason = pick(u, ["blockedReason", "blocked_reason", "block_reason"], "");
+  const blockedUntil = pick(u, ["blockedUntil", "blocked_until", "block_until"], "");
+
   const createdAt = pick(u, ["createdAt", "created_at", "created", "created_on"], "");
-  return { ...u, id, name, email, role, isBlocked, createdAt };
+  return { ...u, id, name, email, role, isBlocked, blockedReason, blockedUntil, createdAt };
 }
 
 function normReservation(r) {
@@ -134,7 +134,7 @@ function normReview(rv) {
   };
 }
 
-// ---------- modal ----------
+/* ---------- modal ---------- */
 function ConfirmModal({
   open,
   title,
@@ -272,9 +272,12 @@ export default function AdminDashboard() {
     danger: false,
     action: null, // (ctx) => Promise
     withReason: false,
+    withUntil: false,
   });
   const [busyConfirm, setBusyConfirm] = useState(false);
   const [reasonText, setReasonText] = useState("");
+  const [blockDays, setBlockDays] = useState(7);
+  const [blockUntil, setBlockUntil] = useState("");
 
   const isAdmin = (user?.role || "").toLowerCase() === "admin";
 
@@ -292,6 +295,7 @@ export default function AdminDashboard() {
 
       // reservas
       updateReservationStatus: (id) => `/reservations/${id}/status`,
+      deleteReservation: (id) => `/admin/reservations/${id}`,
 
       // avaliações
       hideReview: (id) => `/admin/reviews/${id}/hide`, // PATCH body: { reason }
@@ -336,11 +340,7 @@ export default function AdminDashboard() {
     setLoadingReviews(true);
     try {
       const data = await authRequest(ENDPOINTS.listReviews, token);
-
-      // ✅ compat: novo backend retorna { items, meta }
-      // mas aceitamos também legado { reviews } / array
       const arr = Array.isArray(data) ? data : data?.items || data?.reviews || [];
-
       setReviewsList(arr.map(normReview).filter(Boolean));
     } catch {
       showToast?.("Erro ao carregar avaliações (admin).", "error");
@@ -390,7 +390,7 @@ export default function AdminDashboard() {
     });
   }, [reviewsList, qReviews, showHidden]);
 
-  // ====== ✅ MÉTRICAS (Passo 1) ======
+  // ====== ✅ MÉTRICAS ======
   const metrics = useMemo(() => {
     const totalUsers = usersList.length;
     const blockedUsers = usersList.filter((u) => Boolean(u?.isBlocked)).length;
@@ -474,16 +474,27 @@ export default function AdminDashboard() {
   };
 
   // ====== modal helpers ======
-  const openConfirm = ({ title, description, confirmText, danger, action, withReason = false }) => {
+  const openConfirm = ({
+    title,
+    description,
+    confirmText,
+    danger,
+    action,
+    withReason = false,
+    withUntil = false,
+  }) => {
     setReasonText("");
+    setBlockDays(7);
+    setBlockUntil("");
     setConfirmState({
       open: true,
       title,
       description,
       confirmText: confirmText || "Confirmar",
       danger: !!danger,
-      action: typeof action === "function" ? action : null, // (ctx) => Promise
+      action: typeof action === "function" ? action : null,
       withReason,
+      withUntil,
     });
   };
 
@@ -496,8 +507,7 @@ export default function AdminDashboard() {
     if (!confirmState.action) return closeConfirm();
     setBusyConfirm(true);
     try {
-      // ✅ passa o reasonText atual (evita closure stale)
-      await confirmState.action({ reasonText });
+      await confirmState.action({ reasonText, blockDays, blockUntil });
       closeConfirm();
     } catch {
       showToast?.("Falha ao executar ação.", "error");
@@ -511,20 +521,37 @@ export default function AdminDashboard() {
 
   const bulkSetBlocked = (blocked) => {
     if (!selectedUserIds.length) return showToast?.("Selecione usuários.", "info");
+
     openConfirm({
       title: blocked ? "Bloquear usuários selecionados?" : "Desbloquear usuários selecionados?",
       description: `Isso ${blocked ? "bloqueará" : "desbloqueará"} ${selectedUserIds.length} usuário(s).`,
       confirmText: blocked ? "Bloquear" : "Desbloquear",
       danger: !!blocked,
-      action: async () => {
+      withReason: blocked,
+      withUntil: blocked,
+      action: async ({ reasonText, blockDays, blockUntil }) => {
+        const reason = (reasonText || "").trim() || (blocked ? "Bloqueio administrativo" : "");
+
+        let until = null;
+        if (blocked) {
+          if (blockUntil) {
+            until = `${blockUntil}T23:59:59.999Z`;
+          } else {
+            const days = Number(blockDays || 7);
+            const ms = Math.max(1, days) * 24 * 60 * 60 * 1000;
+            until = new Date(Date.now() + ms).toISOString();
+          }
+        }
+
         await Promise.all(
           selectedUserIds.map((id) =>
             authRequest(ENDPOINTS.setUserBlocked(id), token, {
               method: "PATCH",
-              body: { blocked },
+              body: { blocked, reason, until },
             })
           )
         );
+
         showToast?.(blocked ? "Usuários bloqueados." : "Usuários desbloqueados.", "success");
         await loadUsers();
         clearSelection();
@@ -552,6 +579,24 @@ export default function AdminDashboard() {
 
   // ====== bulk actions: RESERVATIONS ======
   const selectedResIds = useMemo(() => Array.from(selectedRes), [selectedRes]);
+
+  const bulkDeleteReservations = () => {
+    if (!selectedResIds.length) return showToast?.("Selecione reservas.", "info");
+    openConfirm({
+      title: "Excluir reservas selecionadas?",
+      description: `Você está prestes a excluir ${selectedResIds.length} reserva(s).\n⚠️ Irreversível.`,
+      confirmText: "Excluir",
+      danger: true,
+      action: async () => {
+        await Promise.all(
+          selectedResIds.map((id) => authRequest(ENDPOINTS.deleteReservation(id), token, { method: "DELETE" }))
+        );
+        showToast?.("Reservas excluídas.", "success");
+        await loadReservations();
+        clearSelection();
+      },
+    });
+  };
 
   const bulkSetReservationStatus = (status) => {
     if (!selectedResIds.length) return showToast?.("Selecione reservas.", "info");
@@ -631,6 +676,8 @@ export default function AdminDashboard() {
       { key: "email", label: "email" },
       { key: "role", label: "role" },
       { key: "isBlocked", label: "bloqueado", value: (u) => (u.isBlocked ? "sim" : "nao") },
+      { key: "blockedReason", label: "motivo_bloqueio", value: (u) => toStr(u.blockedReason || "") },
+      { key: "blockedUntil", label: "bloqueado_ate", value: (u) => fmtDate(u.blockedUntil) },
       { key: "createdAt", label: "criado_em", value: (u) => fmtDate(u.createdAt) },
     ];
     downloadTextFile(`usuarios_${new Date().toISOString().slice(0, 10)}.csv`, toCSV(users, cols));
@@ -714,9 +761,12 @@ export default function AdminDashboard() {
       background: "#fff",
       color: "#111",
     };
-    if (variant === "danger") return { ...base, border: "1px solid transparent", background: colors.red, color: "#fff" };
-    if (variant === "dark") return { ...base, border: "1px solid transparent", background: "#111", color: "#fff" };
-    if (variant === "brand") return { ...base, border: "1px solid transparent", background: colors.yellow, color: colors.brown };
+    if (variant === "danger")
+      return { ...base, border: "1px solid transparent", background: colors.red, color: "#fff" };
+    if (variant === "dark")
+      return { ...base, border: "1px solid transparent", background: "#111", color: "#fff" };
+    if (variant === "brand")
+      return { ...base, border: "1px solid transparent", background: colors.yellow, color: colors.brown };
     return base;
   };
 
@@ -752,8 +802,7 @@ export default function AdminDashboard() {
     );
   }
 
-  const selectedCount =
-    tab === "users" ? selectedUsers.size : tab === "reservations" ? selectedRes.size : selectedReviews.size;
+  const selectedCount = tab === "users" ? selectedUsers.size : tab === "reservations" ? selectedRes.size : selectedReviews.size;
 
   return (
     <div style={{ padding: 16, background: colors.beige, minHeight: "100vh" }}>
@@ -769,11 +818,13 @@ export default function AdminDashboard() {
       >
         {confirmState.withReason ? (
           <div>
-            <div style={{ fontWeight: 900, color: colors.brown, marginBottom: 8 }}>Motivo (recomendado)</div>
+            <div style={{ fontWeight: 900, color: colors.brown, marginBottom: 8 }}>
+              {confirmState.withUntil ? "Motivo do bloqueio" : "Motivo (recomendado)"}
+            </div>
             <textarea
               value={reasonText}
               onChange={(e) => setReasonText(e.target.value)}
-              placeholder="Ex.: Ofensas / linguagem inadequada / spam / conteúdo impróprio..."
+              placeholder="Ex.: Violação de diretrizes, spam, ofensas..."
               rows={4}
               style={{
                 width: "100%",
@@ -784,6 +835,47 @@ export default function AdminDashboard() {
                 resize: "vertical",
               }}
             />
+
+            {confirmState.withUntil ? (
+              <div style={{ marginTop: 12 }}>
+                <div style={{ fontWeight: 900, color: colors.brown, marginBottom: 8 }}>Tempo de bloqueio</div>
+
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                  <input
+                    type="number"
+                    min={1}
+                    value={blockDays}
+                    onChange={(e) => setBlockDays(Number(e.target.value || 1))}
+                    style={{
+                      width: 110,
+                      padding: "10px 12px",
+                      borderRadius: 12,
+                      border: "1px solid #ddd",
+                      outline: "none",
+                    }}
+                  />
+                  <div style={{ color: "#333", fontWeight: 800 }}>dias</div>
+
+                  <div style={{ color: "#666" }}>ou até</div>
+
+                  <input
+                    type="date"
+                    value={blockUntil}
+                    onChange={(e) => setBlockUntil(e.target.value)}
+                    style={{
+                      padding: "10px 12px",
+                      borderRadius: 12,
+                      border: "1px solid #ddd",
+                      outline: "none",
+                    }}
+                  />
+
+                  <div style={{ color: "#666", fontSize: 12, width: "100%" }}>
+                    Se você preencher a data, ela tem prioridade. Se deixar vazio, usa “dias”.
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : null}
       </ConfirmModal>
@@ -826,7 +918,7 @@ export default function AdminDashboard() {
             </button>
           </div>
 
-          {/* ✅ Métricas */}
+          {/* Métricas */}
           <div style={{ marginTop: 14 }}>
             <div style={{ fontWeight: 1100, color: colors.brown, marginBottom: 10 }}>Métricas</div>
 
@@ -915,6 +1007,9 @@ export default function AdminDashboard() {
                 <button type="button" onClick={() => bulkSetReservationStatus("canceled")} style={btn("danger")}>
                   Cancelar
                 </button>
+                <button type="button" onClick={bulkDeleteReservations} style={btn("dark")}>
+                  Excluir
+                </button>
                 <span style={{ flex: 1 }} />
                 <button type="button" onClick={exportReservationsCSV} style={btn("light")}>
                   Exportar CSV
@@ -955,7 +1050,9 @@ export default function AdminDashboard() {
                     outline: "none",
                   }}
                 />
-                <div style={{ color: "#555", fontWeight: 900 }}>{loadingUsers ? "Carregando..." : `Exibindo ${users.length}`}</div>
+                <div style={{ color: "#555", fontWeight: 900 }}>
+                  {loadingUsers ? "Carregando..." : `Exibindo ${users.length}`}
+                </div>
               </div>
 
               <div style={{ marginTop: 12, overflowX: "auto" }}>
@@ -1001,6 +1098,11 @@ export default function AdminDashboard() {
                                 color: u.isBlocked ? colors.red : "#156b15",
                                 border: "1px solid #eee",
                               }}
+                              title={
+                                u.isBlocked
+                                  ? `Motivo: ${toStr(u.blockedReason || "-")}\nAté: ${fmtDate(u.blockedUntil) || "-"}`
+                                  : ""
+                              }
                             >
                               {u.isBlocked ? "Bloqueado" : "Ativo"}
                             </span>
@@ -1036,7 +1138,9 @@ export default function AdminDashboard() {
                     outline: "none",
                   }}
                 />
-                <div style={{ color: "#555", fontWeight: 900 }}>{loadingRes ? "Carregando..." : `Exibindo ${reservations.length}`}</div>
+                <div style={{ color: "#555", fontWeight: 900 }}>
+                  {loadingRes ? "Carregando..." : `Exibindo ${reservations.length}`}
+                </div>
               </div>
 
               <div style={{ marginTop: 12, overflowX: "auto" }}>
@@ -1073,7 +1177,9 @@ export default function AdminDashboard() {
                           <td style={{ padding: 10 }}>{r.status || "-"}</td>
                           <td style={{ padding: 10 }}>{fmtDate(r.startDate) || "-"}</td>
                           <td style={{ padding: 10 }}>{fmtDate(r.endDate) || "-"}</td>
-                          <td style={{ padding: 10 }}>{r.tutorName ? r.tutorName : r.tutorId ? `ID ${r.tutorId}` : "-"}</td>
+                          <td style={{ padding: 10 }}>
+                            {r.tutorName ? r.tutorName : r.tutorId ? `ID ${r.tutorId}` : "-"}
+                          </td>
                           <td style={{ padding: 10 }}>
                             {r.caregiverName ? r.caregiverName : r.caregiverId ? `ID ${r.caregiverId}` : "-"}
                           </td>
@@ -1114,7 +1220,9 @@ export default function AdminDashboard() {
                   Mostrar ocultas
                 </label>
 
-                <div style={{ color: "#555", fontWeight: 900 }}>{loadingReviews ? "Carregando..." : `Exibindo ${reviews.length}`}</div>
+                <div style={{ color: "#555", fontWeight: 900 }}>
+                  {loadingReviews ? "Carregando..." : `Exibindo ${reviews.length}`}
+                </div>
               </div>
 
               <div style={{ marginTop: 12, overflowX: "auto" }}>
@@ -1152,7 +1260,9 @@ export default function AdminDashboard() {
                           <td style={{ padding: 10 }}>{r.reservationId || "-"}</td>
                           <td style={{ padding: 10 }}>{toStr(r.rating) || "-"}</td>
                           <td style={{ padding: 10, color: "#333" }}>{r.comment ? r.comment : "-"}</td>
-                          <td style={{ padding: 10 }}>{r.tutorName ? r.tutorName : r.tutorId ? `ID ${r.tutorId}` : "-"}</td>
+                          <td style={{ padding: 10 }}>
+                            {r.tutorName ? r.tutorName : r.tutorId ? `ID ${r.tutorId}` : "-"}
+                          </td>
                           <td style={{ padding: 10 }}>
                             {r.caregiverName ? r.caregiverName : r.caregiverId ? `ID ${r.caregiverId}` : "-"}
                           </td>
@@ -1167,9 +1277,7 @@ export default function AdminDashboard() {
                                 border: "1px solid #eee",
                               }}
                               title={
-                                r.isHidden
-                                  ? `Motivo: ${r.hiddenReason || "-"}\nEm: ${fmtDate(r.hiddenAt) || "-"}`
-                                  : ""
+                                r.isHidden ? `Motivo: ${r.hiddenReason || "-"}\nEm: ${fmtDate(r.hiddenAt) || "-"}` : ""
                               }
                             >
                               {r.isHidden ? "Oculta" : "Visível"}
