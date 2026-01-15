@@ -15,13 +15,14 @@ const Login = lazy(() => import("./pages/Login"));
 const Register = lazy(() => import("./pages/Register"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
+const AdminUsers = lazy(() => import("./pages/AdminUsers"));
 const Search = lazy(() => import("./pages/Search"));
 const CaregiverDetail = lazy(() => import("./pages/CaregiverDetail"));
 const ReservationDetail = lazy(() => import("./pages/ReservationDetail"));
 const ComportamentoAnimal = lazy(() => import("./pages/ComportamentoAnimal"));
 const Sobre = lazy(() => import("./pages/Sobre"));
 const Profile = lazy(() => import("./pages/Profile"));
-const ReviewHistory = lazy(() => import("./pages/ReviewHistory")); // NOVO
+const ReviewHistory = lazy(() => import("./pages/ReviewHistory"));
 
 // Helper de título
 const withTitle = (t, children) => <Title title={t}>{children}</Title>;
@@ -49,13 +50,16 @@ function LoadingFallback() {
 export default function App() {
   const { user } = useAuth();
 
-  // ✅ fallback inteligente pra rotas inexistentes (opcional, mas melhora UX)
+  const role = String(user?.role || "").toLowerCase().trim();
+  const isAdminLike = role === "admin" || role === "admin_master";
+
+  // fallback inteligente pra rotas inexistentes
   const fallbackPath = useMemo(() => {
-    if (!user?.role) return "/";
-    if (user.role === "admin") return "/admin";
-    if (user.role === "tutor" || user.role === "caregiver") return "/dashboard";
+    if (!role) return "/";
+    if (isAdminLike) return "/admin";
+    if (role === "tutor" || role === "caregiver") return "/dashboard";
     return "/";
-  }, [user?.role]);
+  }, [role, isAdminLike]);
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -91,11 +95,11 @@ export default function App() {
 
               {/* Protegidas */}
 
-              {/* ✅ Admin não usa Dashboard; redireciona pro /admin */}
+              {/* Admin não usa Dashboard; redireciona pro /admin */}
               <Route
                 path="/dashboard"
                 element={
-                  user?.role === "admin" ? (
+                  isAdminLike ? (
                     <Navigate to="/admin" replace />
                   ) : (
                     <PrivateRoute roles={["tutor", "caregiver"]}>
@@ -105,11 +109,21 @@ export default function App() {
                 }
               />
 
+              {/* Área Admin */}
               <Route
                 path="/admin"
                 element={
-                  <PrivateRoute roles={["admin"]}>
+                  <PrivateRoute roles={["admin", "admin_master"]}>
                     {withTitle("PeloCaramelo | Admin", <AdminDashboard />)}
+                  </PrivateRoute>
+                }
+              />
+
+              <Route
+                path="/admin/users"
+                element={
+                  <PrivateRoute roles={["admin", "admin_master"]}>
+                    {withTitle("PeloCaramelo | Admin — Usuários", <AdminUsers />)}
                   </PrivateRoute>
                 }
               />
@@ -117,7 +131,7 @@ export default function App() {
               <Route
                 path="/perfil"
                 element={
-                  <PrivateRoute roles={["tutor", "caregiver", "admin"]}>
+                  <PrivateRoute roles={["tutor", "caregiver", "admin", "admin_master"]}>
                     {withTitle("PeloCaramelo | Meu Perfil", <Profile />)}
                   </PrivateRoute>
                 }
@@ -126,7 +140,7 @@ export default function App() {
               <Route
                 path="/reserva/:id"
                 element={
-                  <PrivateRoute roles={["tutor", "caregiver", "admin"]}>
+                  <PrivateRoute roles={["tutor", "caregiver", "admin", "admin_master"]}>
                     {withTitle("PeloCaramelo | Reserva", <ReservationDetail />)}
                   </PrivateRoute>
                 }
