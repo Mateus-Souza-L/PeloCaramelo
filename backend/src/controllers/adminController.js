@@ -89,7 +89,7 @@ async function safeExec(client, label, sql, params = []) {
   } finally {
     try {
       await client.query(`RELEASE SAVEPOINT ${sp};`);
-    } catch {}
+    } catch { }
   }
 }
 
@@ -101,8 +101,17 @@ async function safeExec(client, label, sql, params = []) {
  */
 function parseBlockExtras(body) {
   const reason = toStr(body?.reason || "").trim();
-  const blockedDaysRaw = body?.blockedDays;
-  const blockedUntilRaw = body?.blockedUntil;
+  const blockedDaysRaw =
+    body?.blockedDays ??
+    body?.blocked_days ??
+    body?.days ??
+    null;
+
+  const blockedUntilRaw =
+    body?.blockedUntil ??
+    body?.blocked_until ??
+    body?.until ??
+    null;
 
   let blockedUntil = null;
 
@@ -372,7 +381,7 @@ async function deleteUserController(req, res) {
   } catch (err) {
     try {
       await client.query("ROLLBACK");
-    } catch {}
+    } catch { }
 
     if (err?.code === "23503") {
       console.error("Erro em DELETE /admin/users/:id (FK):", pickPgErr(err));
@@ -451,7 +460,7 @@ async function deleteReservationController(req, res) {
     } catch (err) {
       try {
         await client.query("ROLLBACK");
-      } catch {}
+      } catch { }
 
       if (err?.code === "23503") {
         console.error("Erro em DELETE /admin/reservations/:id (FK):", pickPgErr(err));
