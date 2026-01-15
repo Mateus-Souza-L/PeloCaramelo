@@ -5,6 +5,25 @@ import { meRequest } from "../services/api";
 const AuthContext = createContext();
 const STORAGE_KEY = "pelocaramelo_auth";
 
+function normalizeUser(u) {
+  if (!u) return u;
+
+  const blocked = Boolean(u.blocked ?? u.is_blocked ?? u.isBlocked ?? false);
+
+  const blockedReason =
+    u.blockedReason ?? u.blocked_reason ?? u.block_reason ?? u.blockReason ?? null;
+
+  const blockedUntil =
+    u.blockedUntil ?? u.blocked_until ?? u.block_until ?? u.blockedUntil ?? null;
+
+  return {
+    ...u,
+    blocked,
+    blockedReason: blockedReason ? String(blockedReason) : null,
+    blockedUntil: blockedUntil ? String(blockedUntil) : null,
+  };
+}
+
 // ---------- helpers ----------
 function pickBlockedPayload(err) {
   const data =
@@ -212,8 +231,9 @@ export function AuthProvider({ children }) {
       meRequest(savedToken)
         .then((res) => {
           if (res?.user) {
-            setUser(res.user);
-            localStorage.setItem(STORAGE_KEY, JSON.stringify({ user: res.user, token: savedToken }));
+            const full = normalizeUser(res.user);
+            setUser(full);
+            localStorage.setItem(STORAGE_KEY, JSON.stringify({ user: full, token: savedToken }));
             return;
           }
 
@@ -259,10 +279,14 @@ export function AuthProvider({ children }) {
       setLoading(true);
 
       const res = await meRequest(newToken);
-      const fullUser = res?.user || loginUser;
+      const fullUser = normalizeUser(res?.user || loginUser);
 
       setUser(fullUser);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ user: fullUser, token: newToken }));
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ user: fullUser, token: newToken })
+      );
+
     } catch (err) {
       console.error("Erro ao buscar /auth/me após login:", err);
 
