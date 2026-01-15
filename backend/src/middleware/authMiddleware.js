@@ -11,7 +11,6 @@ if (!JWT_SECRET) {
 function pickBlockedPayload(row) {
   if (!row) return null;
 
-  // compatível com variações de nomes
   const blocked =
     row.blocked ??
     row.is_blocked ??
@@ -38,13 +37,12 @@ function pickBlockedPayload(row) {
 }
 
 function isUntilActive(blockedUntil) {
-  if (!blockedUntil) return true; // sem data => bloqueio indefinido
+  if (!blockedUntil) return true;
   const dt = new Date(blockedUntil);
-  if (Number.isNaN(dt.getTime())) return true; // data inválida => trata como indefinido
-  return dt.getTime() > Date.now(); // ativo se ainda não passou
+  if (Number.isNaN(dt.getTime())) return true;
+  return dt.getTime() > Date.now();
 }
 
-// tenta ler colunas novas; se não existirem, cai no fallback
 async function fetchBlockInfo(userId) {
   try {
     const { rows } = await pool.query(
@@ -61,7 +59,6 @@ async function fetchBlockInfo(userId) {
     );
     return pickBlockedPayload(rows?.[0] || null);
   } catch (err) {
-    // coluna não existe
     if (err?.code === "42703") {
       const { rows } = await pool.query(
         `
@@ -78,7 +75,6 @@ async function fetchBlockInfo(userId) {
   }
 }
 
-// se existir blocked_until e ele já passou, desbloqueia automaticamente (best-effort)
 async function tryAutoUnblockIfExpired(userId) {
   try {
     await pool.query(
@@ -96,10 +92,20 @@ async function tryAutoUnblockIfExpired(userId) {
     );
     return true;
   } catch (err) {
-    // se colunas não existirem, só ignora
     if (err?.code === "42703") return false;
     return false;
   }
+}
+
+function normalizeRole(role) {
+  return String(role || "").toLowerCase().trim();
+}
+
+// admin_master => 1 (master), admin => 0 (normal admin)
+function computeAdminLevel(role) {
+  const r = normalizeRole(role);
+  if (r === "admin_master") return 1;
+  return 0;
 }
 
 /**
@@ -135,16 +141,18 @@ async function authMiddleware(req, res, next) {
       });
     }
 
+    const role = normalizeRole(decoded.role);
+
     // ✅ Usuário autenticado (do token)
     req.user = {
       id: String(decoded.id),
-      role: String(decoded.role),
+      role, // sempre minúsculo: "admin", "admin_master", "tutor", "caregiver"
+      admin_level: computeAdminLevel(role), // 1 para admin_master, 0 para demais
     };
 
     // ✅ Checagem de bloqueio no banco (para token antigo também)
     const info = await fetchBlockInfo(req.user.id);
 
-    // usuário não existe mais
     if (!info) {
       return res.status(401).json({
         error: "Usuário não encontrado. Faça login novamente.",
@@ -153,11 +161,9 @@ async function authMiddleware(req, res, next) {
     }
 
     if (info.blocked) {
-      // se tiver blocked_until e já expirou, tenta desbloquear e seguir
       if (info.blockedUntil && !isUntilActive(info.blockedUntil)) {
         await tryAutoUnblockIfExpired(req.user.id);
 
-        // reconsulta (best-effort)
         const refreshed = await fetchBlockInfo(req.user.id);
         if (refreshed && refreshed.blocked) {
           return res.status(403).json({
@@ -171,7 +177,6 @@ async function authMiddleware(req, res, next) {
         return next();
       }
 
-      // bloqueio ativo (indefinido ou ainda dentro do prazo)
       return res.status(403).json({
         error: "Seu acesso está bloqueado.",
         code: "USER_BLOCKED",

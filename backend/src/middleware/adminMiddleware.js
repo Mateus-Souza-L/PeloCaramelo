@@ -9,7 +9,8 @@ module.exports = function adminMiddleware(req, res, next) {
     });
   }
 
-  if (role !== "admin") {
+  // aceita admin e admin_master
+  if (role !== "admin" && role !== "admin_master") {
     return res.status(403).json({
       error: "Acesso restrito ao administrador.",
       code: "FORBIDDEN_ADMIN_ONLY",

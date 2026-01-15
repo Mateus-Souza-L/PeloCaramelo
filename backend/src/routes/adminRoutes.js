@@ -4,6 +4,7 @@ const router = express.Router();
 
 const authMiddleware = require("../middleware/authMiddleware");
 const adminMiddleware = require("../middleware/adminMiddleware");
+const adminMasterMiddleware = require("../middleware/adminMasterMiddleware");
 
 // controllers gerais de admin
 const {
@@ -12,6 +13,7 @@ const {
   deleteUserController,
   listReservationsController,
   deleteReservationController,
+  createAdminController, // ✅ IMPORT CORRETO
 } = require("../controllers/adminController");
 
 // controller separado de avaliações
@@ -24,35 +26,43 @@ const {
 // 🔒 Todas as rotas de admin exigem autenticação + role=admin
 router.use(authMiddleware, adminMiddleware);
 
+/* ===================== ADMIN ===================== */
+
+// 🔐 criar admin secundário (somente admin master)
+router.post(
+  "/create-admin",
+  adminMasterMiddleware,
+  createAdminController
+);
+
 /* ===================== Usuários ===================== */
 
-// GET /admin/users
 router.get("/users", listUsersController);
 
-// PATCH /admin/users/:id/block
-// body: { blocked: true/false, reason?: string, blockedUntil?: string, blockedDays?: number }
 router.patch("/users/:id/block", setUserBlockedController);
 
-// DELETE /admin/users/:id
-router.delete("/users/:id", deleteUserController);
+router.delete(
+  "/users/:id",
+  adminMasterMiddleware,
+  deleteUserController
+);
 
 /* ===================== Reservas ===================== */
 
-// GET /admin/reservations
 router.get("/reservations", listReservationsController);
 
-// DELETE /admin/reservations/:id
-router.delete("/reservations/:id", deleteReservationController);
+router.delete(
+  "/reservations/:id",
+  adminMasterMiddleware,
+  deleteReservationController
+);
 
 /* ===================== Avaliações ===================== */
 
-// GET /admin/reviews
 router.get("/reviews", listAllReviews);
 
-// PATCH /admin/reviews/:id/hide  { reason?: string }
 router.patch("/reviews/:id/hide", hideReview);
 
-// PATCH /admin/reviews/:id/unhide
 router.patch("/reviews/:id/unhide", unhideReview);
 
 module.exports = router;
