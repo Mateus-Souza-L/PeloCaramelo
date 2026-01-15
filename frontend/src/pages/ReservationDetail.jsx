@@ -11,7 +11,9 @@ import { markReservationNotifsRead } from "../utils/reservationNotifs";
 
 const DEFAULT_PET_IMG = "/paw.png";
 
-/* helpers simples/seguros */
+/* =========================
+   helpers simples/seguros
+   ========================= */
 const toStr = (v) => (v == null ? "" : String(v));
 
 const safeJsonParse = (val) => {
@@ -144,6 +146,9 @@ function isConcludedStatus(status) {
   );
 }
 
+/* ===========================================================
+   ReservationDetail
+   =========================================================== */
 export default function ReservationDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -184,14 +189,6 @@ export default function ReservationDetail() {
 
   const isTutor = user?.role === "tutor";
   const isCaregiver = user?.role === "caregiver";
-
-  const isOwner = useMemo(() => {
-    if (!user?.id || !reservation) return false;
-    const uid = String(user.id);
-    if (isTutor) return uid === String(reservation.tutorId);
-    if (isCaregiver) return uid === String(reservation.caregiverId);
-    return false;
-  }, [user?.id, reservation, isTutor, isCaregiver]);
 
   const reservationsStorageKey = useMemo(() => {
     if (!user?.id || !user?.role) return "reservations";
@@ -240,6 +237,7 @@ export default function ReservationDetail() {
     [reservationsStorageKey, emitReservationUpdated]
   );
 
+  // ✅ merge defensivo: se backend não devolver rating ainda, mantém o local (principalmente p/ cuidador)
   const applyServerReservation = useCallback(
     (serverReservation, fallbackLocal) => {
       const normalized = normalizeReservationFromApi(serverReservation);
@@ -247,6 +245,7 @@ export default function ReservationDetail() {
 
       const merged = { ...normalized };
 
+      // snapshot
       if (
         !isNonEmptyArray(merged.petsSnapshot) &&
         isNonEmptyArray(fallbackLocal?.petsSnapshot)
@@ -257,6 +256,7 @@ export default function ReservationDetail() {
         );
       }
 
+      // ids/nomes
       if (
         (!merged.petsIds || merged.petsIds.length === 0) &&
         Array.isArray(fallbackLocal?.petsIds)
@@ -268,6 +268,17 @@ export default function ReservationDetail() {
         fallbackLocal?.petsNames
       ) {
         merged.petsNames = fallbackLocal.petsNames;
+      }
+
+      // ✅ ratings: mantém o que já estava localmente se vier vazio do servidor
+      if (merged.tutorRating == null && fallbackLocal?.tutorRating != null) {
+        merged.tutorRating = fallbackLocal.tutorRating;
+        merged.tutorReview = fallbackLocal?.tutorReview ?? merged.tutorReview;
+      }
+      if (merged.caregiverRating == null && fallbackLocal?.caregiverRating != null) {
+        merged.caregiverRating = fallbackLocal.caregiverRating;
+        merged.caregiverReview =
+          fallbackLocal?.caregiverReview ?? merged.caregiverReview;
       }
 
       persistLocalReservation(merged);
@@ -421,19 +432,25 @@ export default function ReservationDetail() {
     markBackendNotificationsReadForReservation();
   }, [user?.id, reservation?.id, markBackendNotificationsReadForReservation]);
 
-  const myUserId = useMemo(() => {
-    const fromAuth = user?.id != null ? String(user.id) : "";
-    if (fromAuth) return fromAuth;
+  const myUserId = String(
+    user?.id ??
+    (isTutor ? reservation?.tutorId : isCaregiver ? reservation?.caregiverId : "") ??
+    ""
+  );
 
-    if (isTutor) return reservation?.tutorId ? String(reservation.tutorId) : "";
-    if (isCaregiver) return reservation?.caregiverId ? String(reservation.caregiverId) : "";
-    return "";
-  }, [user?.id, isTutor, isCaregiver, reservation?.tutorId, reservation?.caregiverId]);
+  const isOwner = useMemo(() => {
+    if (!reservation || !user?.id) return false;
+    const uid = String(user.id);
+    return (
+      uid === String(reservation.tutorId) ||
+      uid === String(reservation.caregiverId) ||
+      user?.role === "admin"
+    );
+  }, [reservation, user?.id, user?.role]);
 
   const clearChatUnreadForThisReservation = useCallback(async () => {
     if (!reservation?.id) return;
     if (!token) return;
-
     if (String(reservation.status) !== "Aceita") return;
 
     try {
@@ -469,8 +486,7 @@ export default function ReservationDetail() {
     if (didAutoScrollChatRef.current) return;
 
     const cameFromState = !!location?.state?.scrollToChat;
-    const cameFromHash =
-      String(window.location.hash || "").toLowerCase() === "#chat";
+    const cameFromHash = String(window.location.hash || "").toLowerCase() === "#chat";
     if (!cameFromState && !cameFromHash) return;
 
     didAutoScrollChatRef.current = true;
@@ -486,14 +502,13 @@ export default function ReservationDetail() {
         );
       }, 240);
     }, 120);
-  }, [user?.id, reservation?.id, location?.state]);
+  }, [user?.id, reservation?.id, location?.state, reservation?.id]);
 
   useEffect(() => {
     if (!user?.id || !reservation?.id) return;
     if (didClearChatUnreadRef.current) return;
 
-    const cameFromHash =
-      String(window.location.hash || "").toLowerCase() === "#chat";
+    const cameFromHash = String(window.location.hash || "").toLowerCase() === "#chat";
     const cameFromState = !!location?.state?.scrollToChat;
     if (!cameFromHash && !cameFromState) return;
 
@@ -506,7 +521,6 @@ export default function ReservationDetail() {
       const rid = e?.detail?.reservationId;
       if (!rid || !reservation?.id) return;
       if (String(rid) !== String(reservation.id)) return;
-
       if (String(reservation.status) !== "Aceita") return;
 
       const now = Date.now();
@@ -590,7 +604,7 @@ export default function ReservationDetail() {
     return end <= today;
   }, [reservation, isCaregiver, today]);
 
-  // ✅ CORREÇÃO: cuidador avalia usando caregiverRating/caregiverReview
+  // ✅ corretíssimo: tutor -> tutorRating / cuidador -> caregiverRating
   const alreadyRatedByUser = useMemo(() => {
     if (!reservation) return false;
     if (isTutor) return reservation.tutorRating != null;
@@ -647,9 +661,7 @@ export default function ReservationDetail() {
     if (!token || !reservation?.id) return false;
 
     try {
-      const body = extraBody
-        ? { status: newStatus, ...extraBody }
-        : { status: newStatus };
+      const body = extraBody ? { status: newStatus, ...extraBody } : { status: newStatus };
 
       const data = await authRequest(`/reservations/${reservation.id}/status`, token, {
         method: "PATCH",
@@ -710,12 +722,7 @@ export default function ReservationDetail() {
     if (!reservation || (!isTutor && !isCaregiver)) return;
     if (ratingBusy) return;
 
-    if (isTutor && reservation.tutorRating != null) {
-      showToast("Você já avaliou esta reserva.", "notify");
-      closeRatingModal();
-      return;
-    }
-    if (isCaregiver && reservation.caregiverRating != null) {
+    if (alreadyRatedByUser) {
       showToast("Você já avaliou esta reserva.", "notify");
       closeRatingModal();
       return;
@@ -729,6 +736,8 @@ export default function ReservationDetail() {
       const cleanComment = (comment || "").trim() || null;
       const cleanValue = Number(value);
 
+      // ✅ tutor avalia cuidador -> tutorRating
+      // ✅ cuidador avalia tutor -> caregiverRating
       if (isTutor) {
         next.tutorRating = cleanValue;
         next.tutorReview = cleanComment;
@@ -743,6 +752,7 @@ export default function ReservationDetail() {
 
       if (result.ok) {
         if (result.reservation) {
+          // ✅ mantém local caso backend venha incompleto
           applyServerReservation(result.reservation, next);
         } else {
           await refetchReservationFromServer();
@@ -765,9 +775,6 @@ export default function ReservationDetail() {
           "Avaliação salva localmente, mas falhou ao registrar no servidor. Tente novamente.",
         "error"
       );
-    } catch (err) {
-      console.error("Erro inesperado ao enviar avaliação:", err);
-      showToast("Ocorreu um erro ao enviar sua avaliação. Tente novamente.", "error");
     } finally {
       setRatingBusy(false);
     }
@@ -820,10 +827,7 @@ export default function ReservationDetail() {
     if (!reservation || !isCaregiver) return;
 
     if (!canMarkCompleted) {
-      showToast(
-        "Só é possível marcar como concluída após o término da reserva.",
-        "notify"
-      );
+      showToast("Só é possível marcar como concluída após o término da reserva.", "notify");
       return;
     }
 
@@ -832,10 +836,7 @@ export default function ReservationDetail() {
 
     const ok = await syncStatusWithBackend("Concluida");
     if (ok) {
-      showToast(
-        "Reserva marcada como concluída! Agora vocês podem se avaliar. 🐾",
-        "success"
-      );
+      showToast("Reserva marcada como concluída! Agora vocês podem se avaliar. 🐾", "success");
     }
   };
 
@@ -897,9 +898,7 @@ export default function ReservationDetail() {
   return (
     <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] py-8 px-6">
       <div className="max-w-[1400px] mx-auto bg-white rounded-2xl shadow p-6 border-l-4 border-[#FFD700]/80">
-        <h1 className="text-2xl md:text-3xl font-bold text-[#5A3A22] mb-4">
-          {headerTitle}
-        </h1>
+        <h1 className="text-2xl md:text-3xl font-bold text-[#5A3A22] mb-4">{headerTitle}</h1>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-[#5A3A22]">
           <div className="pc-card pc-card-accent">
@@ -934,8 +933,7 @@ export default function ReservationDetail() {
             <h2 className="font-semibold mb-2">Localização</h2>
             <p>
               <b>Bairro/Cidade:</b>{" "}
-              {[reservation.neighborhood, reservation.city].filter(Boolean).join(" — ") ||
-                "—"}
+              {[reservation.neighborhood, reservation.city].filter(Boolean).join(" — ") || "—"}
             </p>
 
             {isTutor ? (
@@ -967,10 +965,7 @@ export default function ReservationDetail() {
                   [reservation.neighborhood, reservation.city].filter(Boolean).join(", ")
                 );
                 if (!q) return;
-                window.open(
-                  `https://www.google.com/maps/search/?api=1&query=${q}`,
-                  "_blank"
-                );
+                window.open(`https://www.google.com/maps/search/?api=1&query=${q}`, "_blank");
               }}
               className="mt-3 bg-gray-200 hover:bg-gray-300 text-[#5A3A22] px-4 py-2 rounded-lg font-semibold shadow-md transition"
             >
@@ -1035,9 +1030,7 @@ export default function ReservationDetail() {
 
         <div className="mt-8 text-[#5A3A22]">
           <div className="flex items-center justify-between gap-2 mb-2">
-            <h2 className="text-lg font-semibold flex items-center gap-2">
-              Pets que serão cuidados 🐾
-            </h2>
+            <h2 className="text-lg font-semibold flex items-center gap-2">Pets que serão cuidados 🐾</h2>
 
             {isTutor && (
               <Link
@@ -1075,13 +1068,9 @@ export default function ReservationDetail() {
                         {specie} {breed}
                       </p>
                       {porte && <p className="opacity-80">Porte: {String(porte)}</p>}
-                      {pet.approxAge && (
-                        <p className="opacity-80">Idade aproximada: {pet.approxAge}</p>
-                      )}
+                      {pet.approxAge && <p className="opacity-80">Idade aproximada: {pet.approxAge}</p>}
                       {!!pet.adjectives?.length && (
-                        <p className="mt-1 text-[11px] opacity-90">
-                          {pet.adjectives.join(" • ")}
-                        </p>
+                        <p className="mt-1 text-[11px] opacity-90">{pet.adjectives.join(" • ")}</p>
                       )}
                     </div>
                   </div>
@@ -1103,13 +1092,9 @@ export default function ReservationDetail() {
               {alreadyRatedByUser ? (
                 <p className="text-sm opacity-80">
                   Você avaliou esta reserva com{" "}
-                  <b>
-                    ⭐ {isTutor ? reservation.tutorRating : reservation.caregiverRating}/5
-                  </b>
+                  <b>⭐ {isTutor ? reservation.tutorRating : reservation.caregiverRating}/5</b>
                   {isTutor && reservation.tutorReview ? ` — "${reservation.tutorReview}"` : ""}
-                  {isCaregiver && reservation.caregiverReview
-                    ? ` — "${reservation.caregiverReview}"`
-                    : ""}
+                  {isCaregiver && reservation.caregiverReview ? ` — "${reservation.caregiverReview}"` : ""}
                 </p>
               ) : (
                 <p className="text-sm opacity-70 mb-2">
@@ -1143,9 +1128,7 @@ export default function ReservationDetail() {
                   {counterpartRating.review ? ` — "${counterpartRating.review}"` : ""}
                 </p>
               ) : (
-                <p className="text-sm opacity-70">
-                  Ainda não há avaliação registrada pela outra parte.
-                </p>
+                <p className="text-sm opacity-70">Ainda não há avaliação registrada pela outra parte.</p>
               )}
             </div>
           </div>
