@@ -70,13 +70,22 @@ export default function App() {
           <Suspense fallback={<LoadingFallback />}>
             <Routes>
               {/* Públicas */}
-              <Route path="/" element={withTitle("PeloCaramelo | Início", <Home />)} />
-              <Route path="/login" element={withTitle("PeloCaramelo | Login", <Login />)} />
+              <Route
+                path="/"
+                element={withTitle("PeloCaramelo | Início", <Home />)}
+              />
+              <Route
+                path="/login"
+                element={withTitle("PeloCaramelo | Login", <Login />)}
+              />
               <Route
                 path="/register"
                 element={withTitle("PeloCaramelo | Cadastro", <Register />)}
               />
-              <Route path="/buscar" element={withTitle("PeloCaramelo | Buscar", <Search />)} />
+              <Route
+                path="/buscar"
+                element={withTitle("PeloCaramelo | Buscar", <Search />)}
+              />
               <Route
                 path="/caregiver/:id"
                 element={withTitle(
@@ -91,7 +100,10 @@ export default function App() {
                   <ComportamentoAnimal />
                 )}
               />
-              <Route path="/sobre" element={withTitle("PeloCaramelo | Sobre", <Sobre />)} />
+              <Route
+                path="/sobre"
+                element={withTitle("PeloCaramelo | Sobre", <Sobre />)}
+              />
 
               {/* Protegidas */}
 
@@ -111,16 +123,11 @@ export default function App() {
 
               {/* Área Admin */}
               <Route
-                path="/dashboard"
+                path="/admin"
                 element={
-                  -   user?.role === "admin" ? (
-                    +   (user?.role === "admin" || user?.role === "admin_master") ? (
-                      <Navigate to="/admin" replace />
-                    ) : (
-                      <PrivateRoute roles={["tutor", "caregiver"]}>
-                        {withTitle("PeloCaramelo | Painel", <Dashboard />)}
-                      </PrivateRoute>
-                    )
+                  <PrivateRoute roles={["admin", "admin_master"]}>
+                    {withTitle("PeloCaramelo | Admin", <AdminDashboard />)}
+                  </PrivateRoute>
                 }
               />
 
@@ -128,7 +135,10 @@ export default function App() {
                 path="/admin/users"
                 element={
                   <PrivateRoute roles={["admin", "admin_master"]}>
-                    {withTitle("PeloCaramelo | Admin — Usuários", <AdminUsers />)}
+                    {withTitle(
+                      "PeloCaramelo | Admin — Usuários",
+                      <AdminUsers />
+                    )}
                   </PrivateRoute>
                 }
               />
@@ -136,7 +146,9 @@ export default function App() {
               <Route
                 path="/perfil"
                 element={
-                  <PrivateRoute roles={["tutor", "caregiver", "admin", "admin_master"]}>
+                  <PrivateRoute
+                    roles={["tutor", "caregiver", "admin", "admin_master"]}
+                  >
                     {withTitle("PeloCaramelo | Meu Perfil", <Profile />)}
                   </PrivateRoute>
                 }
@@ -145,7 +157,9 @@ export default function App() {
               <Route
                 path="/reserva/:id"
                 element={
-                  <PrivateRoute roles={["tutor", "caregiver", "admin", "admin_master"]}>
+                  <PrivateRoute
+                    roles={["tutor", "caregiver", "admin", "admin_master"]}
+                  >
                     {withTitle("PeloCaramelo | Reserva", <ReservationDetail />)}
                   </PrivateRoute>
                 }
@@ -156,7 +170,10 @@ export default function App() {
                 path="/avaliacoes"
                 element={
                   <PrivateRoute roles={["tutor", "caregiver"]}>
-                    {withTitle("PeloCaramelo | Minhas Avaliações", <ReviewHistory />)}
+                    {withTitle(
+                      "PeloCaramelo | Minhas Avaliações",
+                      <ReviewHistory />
+                    )}
                   </PrivateRoute>
                 }
               />
