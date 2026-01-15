@@ -145,6 +145,30 @@ export default function CaregiverDetail() {
 
   const todayKey = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
+  const { nextDates, pastDates } = useMemo(() => {
+    const t = String(todayKey || "").slice(0, 10);
+    const keys = Array.isArray(availableKeys) ? availableKeys : [];
+
+    const next = [];
+    const past = [];
+
+    keys.forEach((k) => {
+      const kk = String(k || "").slice(0, 10);
+      if (!kk) return;
+      if (kk >= t) next.push(kk);
+      else past.push(kk);
+    });
+
+    next.sort();
+    past.sort().reverse();
+
+    return {
+      nextDates: next.slice(0, 3), // mostra até 3 próximas
+      pastDates: past.slice(0, 3), // mostra até 3 passadas (se quiser)
+    };
+  }, [availableKeys, todayKey]);
+
+
   // ---------------- helpers ----------------
   const normalizeKey = (value) => {
     if (!value) return null;
@@ -216,8 +240,8 @@ export default function CaregiverDetail() {
       rv.reviewer_role ||
       rv.role ||
       (rv.reviewer_id &&
-      rv.tutor_id &&
-      String(rv.reviewer_id) === String(rv.tutor_id)
+        rv.tutor_id &&
+        String(rv.reviewer_id) === String(rv.tutor_id)
         ? "tutor"
         : rv.reviewer_id &&
           rv.caregiver_id &&
@@ -254,9 +278,9 @@ export default function CaregiverDetail() {
     return {
       id: toStr(
         rv.id ||
-          rv.review_id ||
-          rv.reviewId ||
-          `${Date.now()}_${Math.random().toString(16).slice(2)}`
+        rv.review_id ||
+        rv.reviewId ||
+        `${Date.now()}_${Math.random().toString(16).slice(2)}`
       ),
       reservationId: reservationId != null ? String(reservationId) : null,
       authorRole: authorRole ? String(authorRole) : null,
@@ -1407,22 +1431,42 @@ export default function CaregiverDetail() {
             "";
 
           let coursesList = [];
-          const rawCourses = caregiver?.courses;
+          const rawCourses =
+            caregiver?.courses ??
+            caregiver?.cursos ??
+            caregiver?.course ??
+            caregiver?.training ??
+            caregiver?.trainings ??
+            caregiver?.certificates ??
+            caregiver?.certs ??
+            null;
 
           try {
             if (typeof rawCourses === "string") {
-              const parsed = JSON.parse(rawCourses);
-              if (Array.isArray(parsed)) coursesList = parsed;
-              else if (parsed && typeof parsed === "object")
-                coursesList = Object.values(parsed);
+              const txt = rawCourses.trim();
+
+              if (txt.startsWith("[") || txt.startsWith("{")) {
+                const parsed = JSON.parse(txt);
+                if (Array.isArray(parsed)) coursesList = parsed;
+                else if (parsed && typeof parsed === "object")
+                  coursesList = Object.values(parsed);
+              } else {
+                // string simples: "Curso A, Curso B"
+                coursesList = txt
+                  .split(",")
+                  .map((s) => s.trim())
+                  .filter(Boolean);
+              }
             } else if (Array.isArray(rawCourses)) {
               coursesList = rawCourses;
             } else if (rawCourses && typeof rawCourses === "object") {
               coursesList = Object.values(rawCourses);
             }
           } catch {
-            if (typeof rawCourses === "string") coursesList = [rawCourses];
+            if (typeof rawCourses === "string" && rawCourses.trim())
+              coursesList = [rawCourses.trim()];
           }
+
 
           coursesList = coursesList
             .map((c) => (c == null ? "" : String(c).trim()))
@@ -1459,6 +1503,20 @@ export default function CaregiverDetail() {
           <p className="text-xs text-[#5A3A22] opacity-70">
             Datas disponíveis cadastradas: <b>{availableKeys.length}</b>
           </p>
+
+          {nextDates.length > 0 && (
+            <div className="mt-2 text-sm text-[#5A3A22]">
+              <div className="font-semibold">Próximas datas</div>
+              <div>{nextDates.map((d) => formatDateBR(d)).join(", ")}</div>
+            </div>
+          )}
+
+          {pastDates.length > 0 && (
+            <div className="mt-2 text-sm text-[#5A3A22] opacity-80">
+              <div className="font-semibold">Datas passadas</div>
+              <div>{pastDates.map((d) => formatDateBR(d)).join(", ")}</div>
+            </div>
+          )}
         </div>
 
         {/* Pré-reserva */}
@@ -1536,11 +1594,10 @@ export default function CaregiverDetail() {
                   <button
                     type="button"
                     onClick={toggleAllPets}
-                    className={`mb-3 px-3 py-1 rounded-full text-xs font-semibold border transition ${
-                      allPetsSelected
-                        ? "bg-[#5A3A22] text-white border-[#5A3A22]"
-                        : "bg-white text-[#5A3A22] border-[#D2A679] hover:bg-[#FFF3D0]"
-                    }`}
+                    className={`mb-3 px-3 py-1 rounded-full text-xs font-semibold border transition ${allPetsSelected
+                      ? "bg-[#5A3A22] text-white border-[#5A3A22]"
+                      : "bg-white text-[#5A3A22] border-[#D2A679] hover:bg-[#FFF3D0]"
+                      }`}
                   >
                     {allPetsSelected
                       ? "Desmarcar todos"
@@ -1558,11 +1615,10 @@ export default function CaregiverDetail() {
                           key={pet.id}
                           type="button"
                           onClick={() => togglePet(pet.id)}
-                          className={`px-3 py-2 rounded-xl text-xs md:text-sm border flex items-center gap-2 transition ${
-                            active
-                              ? "bg-[#5A3A22] text-white border-[#5A3A22]"
-                              : "bg-white text-[#5A3A22] border-[#D2A679] hover:bg-[#FFF3D0]"
-                          }`}
+                          className={`px-3 py-2 rounded-xl text-xs md:text-sm border flex items-center gap-2 transition ${active
+                            ? "bg-[#5A3A22] text-white border-[#5A3A22]"
+                            : "bg-white text-[#5A3A22] border-[#D2A679] hover:bg-[#FFF3D0]"
+                            }`}
                         >
                           <img
                             src={pickPetImage(pet) || "/paw.png"}
@@ -1685,11 +1741,10 @@ export default function CaregiverDetail() {
                     return (
                       <div
                         key={rv.id}
-                        className={`pc-card pc-card-accent transition-all duration-300 ${
-                          revealed
-                            ? "opacity-100 translate-y-0"
-                            : "opacity-0 translate-y-1"
-                        }`}
+                        className={`pc-card pc-card-accent transition-all duration-300 ${revealed
+                          ? "opacity-100 translate-y-0"
+                          : "opacity-0 translate-y-1"
+                          }`}
                       >
                         <p className="text-sm text-[#5A3A22]/80">
                           <b>{rv.authorName || "Usuário"}</b> — {rv.rating} ★ —{" "}
