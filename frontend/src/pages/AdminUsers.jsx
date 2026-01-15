@@ -38,12 +38,17 @@ export default function AdminUsers() {
   const myRole = useMemo(() => normRole(user?.role), [user?.role]);
   const isAdmin = myRole === "admin" || myRole === "admin_master";
   const isMaster = myRole === "admin_master";
+  const myId = useMemo(() => toStr(user?.id), [user?.id]);
 
   const [loading, setLoading] = useState(false);
   const [users, setUsers] = useState([]);
   const [q, setQ] = useState("");
   const [roleFilter, setRoleFilter] = useState("all"); // all | tutor | caregiver | admin | admin_master
   const [onlyBlocked, setOnlyBlocked] = useState(false);
+
+  // criar admin secundário (somente master)
+  const [newAdminEmail, setNewAdminEmail] = useState("");
+  const [creatingAdmin, setCreatingAdmin] = useState(false);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -55,9 +60,7 @@ export default function AdminUsers() {
       setUsers(list);
     } catch (err) {
       const msg =
-        err?.message ||
-        safeJsonLike(err)?.error ||
-        "Erro ao carregar usuários.";
+        err?.message || safeJsonLike(err)?.error || "Erro ao carregar usuários.";
       showToast(msg, "error");
     } finally {
       setLoading(false);
@@ -103,6 +106,12 @@ export default function AdminUsers() {
       const id = toStr(u?.id);
       if (!id) return;
 
+      // UI não permite, mas segura também
+      if (id === myId) {
+        showToast("Você não pode bloquear seu próprio usuário.", "error");
+        return;
+      }
+
       const nextBlocked = !Boolean(u?.blocked);
 
       let reason = null;
@@ -119,7 +128,8 @@ export default function AdminUsers() {
           "Bloqueado até (opcional). Ex: 2026-02-01 ou 2026-02-01T12:00:00Z",
           toStr(u?.blocked_until || "")
         );
-        if (until != null && String(until).trim()) blockedUntil = String(until).trim();
+        if (until != null && String(until).trim())
+          blockedUntil = String(until).trim();
       }
 
       const body = {
@@ -142,8 +152,10 @@ export default function AdminUsers() {
             ...x,
             ...newUser,
             blocked: Boolean(newUser?.blocked ?? nextBlocked),
-            blocked_reason: newUser?.blocked_reason ?? (nextBlocked ? reason : null),
-            blocked_until: newUser?.blocked_until ?? (nextBlocked ? blockedUntil : null),
+            blocked_reason:
+              newUser?.blocked_reason ?? (nextBlocked ? reason : null),
+            blocked_until:
+              newUser?.blocked_until ?? (nextBlocked ? blockedUntil : null),
           };
         })
       );
@@ -155,9 +167,7 @@ export default function AdminUsers() {
     } catch (err) {
       const payload = safeJsonLike(err);
       const msg =
-        payload?.error ||
-        err?.message ||
-        "Erro ao atualizar bloqueio do usuário.";
+        payload?.error || err?.message || "Erro ao atualizar bloqueio do usuário.";
       showToast(msg, "error");
     }
   }
@@ -166,6 +176,16 @@ export default function AdminUsers() {
     try {
       const id = toStr(u?.id);
       if (!id) return;
+
+      if (!isMaster) {
+        showToast("Somente admin_master pode excluir usuários.", "error");
+        return;
+      }
+
+      if (id === myId) {
+        showToast("Você não pode excluir seu próprio usuário.", "error");
+        return;
+      }
 
       const label = `${toStr(u?.name) || "Usuário"} (${toStr(u?.email)})`;
       const ok = window.confirm(
@@ -179,11 +199,43 @@ export default function AdminUsers() {
       showToast("Usuário excluído.", "success");
     } catch (err) {
       const payload = safeJsonLike(err);
-      const msg =
-        payload?.error ||
-        err?.message ||
-        "Erro ao excluir usuário.";
+      const msg = payload?.error || err?.message || "Erro ao excluir usuário.";
       showToast(msg, "error");
+    }
+  }
+
+  async function createAdmin() {
+    try {
+      if (!isMaster) return;
+      const email = newAdminEmail.trim().toLowerCase();
+      if (!email) {
+        showToast("Informe o e-mail do usuário para promover a admin.", "error");
+        return;
+      }
+
+      setCreatingAdmin(true);
+
+      const resp = await authRequest("/admin/create-admin", token, {
+        method: "POST",
+        body: JSON.stringify({ email }),
+      });
+
+      const admin = resp?.admin || null;
+      if (!admin?.id) {
+        showToast("Admin criado, mas resposta inesperada do servidor.", "error");
+        return;
+      }
+
+      showToast("Admin secundário criado.", "success");
+      setNewAdminEmail("");
+      // recarrega lista para refletir role/admin_level
+      load();
+    } catch (err) {
+      const payload = safeJsonLike(err);
+      const msg = payload?.error || err?.message || "Erro ao criar admin.";
+      showToast(msg, "error");
+    } finally {
+      setCreatingAdmin(false);
     }
   }
 
@@ -235,7 +287,34 @@ export default function AdminUsers() {
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-3">
+        {/* Criar admin (somente master) */}
+        {isMaster ? (
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-3">
+            <div className="md:col-span-3">
+              <label className="text-xs text-[#5A3A22] opacity-70">
+                Criar admin secundário (promover usuário existente por e-mail)
+              </label>
+              <input
+                value={newAdminEmail}
+                onChange={(e) => setNewAdminEmail(e.target.value)}
+                placeholder="email do usuário já cadastrado"
+                className="w-full mt-1 px-3 py-2 rounded-lg border border-[#EBCBA9] focus:outline-none focus:ring-2 focus:ring-[#FFD700] bg-white"
+              />
+            </div>
+            <div className="flex items-end">
+              <button
+                onClick={createAdmin}
+                disabled={creatingAdmin}
+                className="w-full px-3 py-2 rounded-lg bg-[#FFD700] text-[#5A3A22] font-semibold hover:opacity-90 text-sm"
+                title="Promove o usuário para admin (admin_level 2)"
+              >
+                {creatingAdmin ? "Criando..." : "Criar admin"}
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        <div className={`mt-4 grid grid-cols-1 md:grid-cols-4 gap-3 ${isMaster ? "pt-4 border-t border-[#EBCBA9]/60" : ""}`}>
           <div className="md:col-span-2">
             <label className="text-xs text-[#5A3A22] opacity-70">Buscar</label>
             <input
@@ -301,7 +380,7 @@ export default function AdminUsers() {
                 const id = toStr(u?.id);
                 const role = normRole(u?.role);
                 const blocked = Boolean(u?.blocked);
-                const isMe = toStr(user?.id) === id;
+                const isMe = myId === id;
 
                 return (
                   <tr key={id} className="border-t border-[#EBCBA9]/60">
@@ -325,9 +404,7 @@ export default function AdminUsers() {
                     <td className="py-2 pr-3">
                       <span
                         className={`text-xs px-2 py-1 rounded-full ${
-                          blocked
-                            ? "bg-red-100 text-red-700"
-                            : "bg-green-100 text-green-700"
+                          blocked ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"
                         }`}
                       >
                         {blocked ? "Sim" : "Não"}
@@ -342,34 +419,42 @@ export default function AdminUsers() {
                     <td className="py-2 pr-3 text-[#5A3A22] opacity-80">
                       {u?.created_at ? formatDateTimeBR(u.created_at) : "-"}
                     </td>
-                    <td className="py-2 pr-0">
-                      <div className="flex justify-end gap-2">
-                        <button
-                          onClick={() => toggleBlocked(u)}
-                          className="px-3 py-2 rounded-lg border border-[#5A3A22] text-[#5A3A22] hover:bg-[#5A3A22] hover:text-white transition text-xs"
-                          disabled={isMe && blocked} // evita travar no próprio bloqueio se já bloqueado
-                          title={blocked ? "Desbloquear" : "Bloquear"}
-                        >
-                          {blocked ? "Desbloquear" : "Bloquear"}
-                        </button>
 
-                        <button
-                          onClick={() => deleteUser(u)}
-                          className={`px-3 py-2 rounded-lg text-xs ${
-                            isMaster
-                              ? "bg-red-600 text-white hover:opacity-90"
-                              : "bg-gray-200 text-gray-500 cursor-not-allowed"
-                          }`}
-                          disabled={!isMaster}
-                          title={
-                            isMaster
-                              ? "Excluir usuário"
-                              : "Somente admin_master pode excluir"
-                          }
-                        >
-                          Excluir
-                        </button>
-                      </div>
+                    {/* ✅ ações */}
+                    <td className="py-2 pr-0">
+                      {isMe ? (
+                        <div className="flex justify-end">
+                          <span className="text-xs opacity-60">—</span>
+                        </div>
+                      ) : (
+                        <div className="flex justify-end gap-2">
+                          <button
+                            onClick={() => toggleBlocked(u)}
+                            className="px-3 py-2 rounded-lg border border-[#5A3A22] text-[#5A3A22] hover:bg-[#5A3A22] hover:text-white transition text-xs"
+                            title={blocked ? "Desbloquear" : "Bloquear"}
+                          >
+                            {blocked ? "Desbloquear" : "Bloquear"}
+                          </button>
+
+                          {isMaster ? (
+                            <button
+                              onClick={() => deleteUser(u)}
+                              className="px-3 py-2 rounded-lg text-xs bg-red-600 text-white hover:opacity-90"
+                              title="Excluir usuário"
+                            >
+                              Excluir
+                            </button>
+                          ) : (
+                            <button
+                              className="px-3 py-2 rounded-lg text-xs bg-gray-200 text-gray-500 cursor-not-allowed"
+                              disabled
+                              title="Somente admin_master pode excluir"
+                            >
+                              Excluir
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </td>
                   </tr>
                 );
@@ -377,10 +462,7 @@ export default function AdminUsers() {
 
               {!loading && filtered.length === 0 ? (
                 <tr>
-                  <td
-                    colSpan={9}
-                    className="py-6 text-center text-[#5A3A22] opacity-70"
-                  >
+                  <td colSpan={9} className="py-6 text-center text-[#5A3A22] opacity-70">
                     Nenhum usuário encontrado.
                   </td>
                 </tr>
@@ -394,7 +476,7 @@ export default function AdminUsers() {
         </div>
 
         <div className="mt-4 text-xs text-[#5A3A22] opacity-60">
-          Dica: o backend já impede auto-bloqueio e exclusão do próprio admin. Mesmo assim, a UI tenta evitar ações perigosas.
+          Dica: o backend já impede auto-bloqueio e exclusão do próprio admin. Mesmo assim, a UI evita ações perigosas.
         </div>
       </div>
     </div>
