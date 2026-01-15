@@ -111,11 +111,16 @@ export default function App() {
 
               {/* Área Admin */}
               <Route
-                path="/admin"
+                path="/dashboard"
                 element={
-                  <PrivateRoute roles={["admin", "admin_master"]}>
-                    {withTitle("PeloCaramelo | Admin", <AdminDashboard />)}
-                  </PrivateRoute>
+                  -   user?.role === "admin" ? (
+                    +   (user?.role === "admin" || user?.role === "admin_master") ? (
+                      <Navigate to="/admin" replace />
+                    ) : (
+                      <PrivateRoute roles={["tutor", "caregiver"]}>
+                        {withTitle("PeloCaramelo | Painel", <Dashboard />)}
+                      </PrivateRoute>
+                    )
                 }
               />
 
