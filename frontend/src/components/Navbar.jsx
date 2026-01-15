@@ -32,7 +32,7 @@ export default function Navbar() {
       // limpa UI local
       setChatUnreadIds([]);
       setReservationUnreadCount(0);
-      navigate("/login", { replace: true });
+      navigate("/", { replace: true });
     }
   };
 

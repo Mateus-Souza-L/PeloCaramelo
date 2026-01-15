@@ -143,7 +143,7 @@ export default function CaregiverDetail() {
   const [revealedIds, setRevealedIds] = useState(() => new Set());
   const revealTimerRef = useRef(null);
 
-  const todayKey = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const todayKey = useMemo(() => toLocalKey(new Date()), []);
 
   const { nextDates, pastDates } = useMemo(() => {
     const t = String(todayKey || "").slice(0, 10);
@@ -1502,7 +1502,7 @@ export default function CaregiverDetail() {
         <div className="mb-4">
           <p className="text-xs text-[#5A3A22] opacity-70">
             Datas disponíveis cadastradas: <b>{availableKeys.length}</b>
-          </p>
+          </p>          
 
           {nextDates.length > 0 && (
             <div className="mt-2 text-sm text-[#5A3A22]">
