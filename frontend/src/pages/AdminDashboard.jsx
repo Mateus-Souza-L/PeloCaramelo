@@ -565,7 +565,7 @@ export default function AdminDashboard() {
         await Promise.all(
           selectedResIds.map((id) =>
             authRequest(ENDPOINTS.updateReservationStatus(id), token, {
-              method: "PUT",
+              method: "PATCH",
               body: { status },
             })
           )
