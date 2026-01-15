@@ -193,8 +193,8 @@ export default function ReservationDetail() {
   // ✅ id do usuário logado (fallback se Auth ainda não carregou)
   const myUserId = String(
     user?.id ??
-      (isTutor ? reservation?.tutorId : isCaregiver ? reservation?.caregiverId : "") ??
-      ""
+    (isTutor ? reservation?.tutorId : isCaregiver ? reservation?.caregiverId : "") ??
+    ""
   );
 
   const reservationsStorageKey = useMemo(() => {
@@ -591,8 +591,16 @@ export default function ReservationDetail() {
 
   const alreadyRatedByUser = useMemo(() => {
     if (!reservation) return false;
-    if (isTutor) return reservation.tutorRating != null;
-    if (isCaregiver) return reservation.caregiverRating != null;
+
+    if (isTutor) {
+      return reservation.tutorRating != null;
+    }
+
+    if (isCaregiver) {
+      // cuidador avalia o TUTOR
+      return reservation.tutorRating != null;
+    }
+
     return false;
   }, [reservation, isTutor, isCaregiver]);
 
@@ -667,7 +675,7 @@ export default function ReservationDetail() {
       console.error("Erro ao sincronizar status no servidor:", err);
       showToast(
         err?.message ||
-          "Não foi possível sincronizar o status com o servidor. Ele foi atualizado apenas localmente por enquanto.",
+        "Não foi possível sincronizar o status com o servidor. Ele foi atualizado apenas localmente por enquanto.",
         "error"
       );
       return false;
@@ -743,495 +751,499 @@ export default function ReservationDetail() {
       const result = await createReviewOnBackend(cleanValue, cleanComment);
 
       if (result.ok) {
-        if (result.reservation) {
-          applyServerReservation(result.reservation, next);
-        } else {
-          await refetchReservationFromServer();
-        }
+        // mantém o estado local como fonte de verdade
+        persistLocalReservation(next);
+
+        // tenta sincronizar com backend em segundo plano
+        await refetchReservationFromServer();
 
         closeRatingModal();
         showToast("Avaliação registrada com sucesso! 🐾", "success");
         return;
       }
 
+      closeRatingModal();
+      showToast("Avaliação registrada com sucesso! 🐾", "success");
+      return;
+    }
+
       if (result.code === 409) {
-        await refetchReservationFromServer();
-        closeRatingModal();
-        showToast("Você já avaliou esta reserva.", "notify");
-        return;
-      }
-
-      showToast(
-        result.message ||
-          "Avaliação salva localmente, mas falhou ao registrar no servidor. Tente novamente.",
-        "error"
-      );
-    } finally {
-      setRatingBusy(false);
+      await refetchReservationFromServer();
+      closeRatingModal();
+      showToast("Você já avaliou esta reserva.", "notify");
+      return;
     }
-  };
 
-  const caregiverAccept = async () => {
-    if (!isCaregiver || !reservation) return;
-
-    const next = { ...reservation, status: "Aceita" };
-    persistLocalReservation(next);
-
-    const ok = await syncStatusWithBackend("Aceita");
-    if (ok) showToast("Reserva aceita! 🐾", "success");
-  };
-
-  const caregiverReject = async () => {
-    if (!isCaregiver || !reservation) return;
-
-    const reason = window.prompt("Motivo da recusa (opcional):") || null;
-
-    const next = { ...reservation, status: "Recusada", rejectReason: reason };
-    persistLocalReservation(next);
-
-    const ok = await syncStatusWithBackend(
-      "Recusada",
-      reason ? { rejectReason: reason } : null
+    showToast(
+      result.message ||
+      "Avaliação salva localmente, mas falhou ao registrar no servidor. Tente novamente.",
+      "error"
     );
-    if (ok) showToast("Reserva recusada.", "error");
-  };
+  } finally {
+    setRatingBusy(false);
+  }
+};
 
-  const tutorCancel = async () => {
-    if (!isTutor || !reservation) return;
+const caregiverAccept = async () => {
+  if (!isCaregiver || !reservation) return;
 
-    if (!["Pendente", "Aceita"].includes(reservation.status)) {
-      showToast("Não é possível cancelar neste status.", "notify");
-      return;
-    }
+  const next = { ...reservation, status: "Aceita" };
+  persistLocalReservation(next);
 
-    const next = { ...reservation, status: "Cancelada" };
-    persistLocalReservation(next);
+  const ok = await syncStatusWithBackend("Aceita");
+  if (ok) showToast("Reserva aceita! 🐾", "success");
+};
 
-    const ok = await syncStatusWithBackend("Cancelada");
-    if (ok) {
-      showToast("Reserva cancelada.", "success");
-      navigate("/dashboard", { replace: true });
-    }
-  };
+const caregiverReject = async () => {
+  if (!isCaregiver || !reservation) return;
 
-  const caregiverMarkCompleted = async () => {
-    if (!reservation || !isCaregiver) return;
+  const reason = window.prompt("Motivo da recusa (opcional):") || null;
 
-    if (!canMarkCompleted) {
-      showToast("Só é possível marcar como concluída após o término da reserva.", "notify");
-      return;
-    }
+  const next = { ...reservation, status: "Recusada", rejectReason: reason };
+  persistLocalReservation(next);
 
-    const next = { ...reservation, status: "Concluida" };
-    persistLocalReservation(next);
+  const ok = await syncStatusWithBackend(
+    "Recusada",
+    reason ? { rejectReason: reason } : null
+  );
+  if (ok) showToast("Reserva recusada.", "error");
+};
 
-    const ok = await syncStatusWithBackend("Concluida");
-    if (ok) {
-      showToast("Reserva marcada como concluída! Agora vocês podem se avaliar. 🐾", "success");
-    }
-  };
+const tutorCancel = async () => {
+  if (!isTutor || !reservation) return;
 
-  const selectedPetIds = useMemo(() => {
-    const ids = reservation?.petsIds;
-    if (!ids) return [];
-    if (Array.isArray(ids)) return ids.map((x) => toStr(x)).filter(Boolean);
-    if (typeof ids === "string") {
-      const parsed = safeJsonParse(ids);
-      if (Array.isArray(parsed)) return parsed.map((x) => toStr(x)).filter(Boolean);
-      return [ids].map((x) => toStr(x)).filter(Boolean);
-    }
+  if (!["Pendente", "Aceita"].includes(reservation.status)) {
+    showToast("Não é possível cancelar neste status.", "notify");
+    return;
+  }
+
+  const next = { ...reservation, status: "Cancelada" };
+  persistLocalReservation(next);
+
+  const ok = await syncStatusWithBackend("Cancelada");
+  if (ok) {
+    showToast("Reserva cancelada.", "success");
+    navigate("/dashboard", { replace: true });
+  }
+};
+
+const caregiverMarkCompleted = async () => {
+  if (!reservation || !isCaregiver) return;
+
+  if (!canMarkCompleted) {
+    showToast("Só é possível marcar como concluída após o término da reserva.", "notify");
+    return;
+  }
+
+  const next = { ...reservation, status: "Concluida" };
+  persistLocalReservation(next);
+
+  const ok = await syncStatusWithBackend("Concluida");
+  if (ok) {
+    showToast("Reserva marcada como concluída! Agora vocês podem se avaliar. 🐾", "success");
+  }
+};
+
+const selectedPetIds = useMemo(() => {
+  const ids = reservation?.petsIds;
+  if (!ids) return [];
+  if (Array.isArray(ids)) return ids.map((x) => toStr(x)).filter(Boolean);
+  if (typeof ids === "string") {
+    const parsed = safeJsonParse(ids);
+    if (Array.isArray(parsed)) return parsed.map((x) => toStr(x)).filter(Boolean);
     return [ids].map((x) => toStr(x)).filter(Boolean);
-  }, [reservation?.petsIds]);
-
-  const selectedPetsFromLocal = useMemo(() => {
-    if (!tutorPets?.length) return [];
-    if (!selectedPetIds.length) return [];
-    const set = new Set(selectedPetIds.map(String));
-    return tutorPets.filter((p) => set.has(String(p.id)));
-  }, [tutorPets, selectedPetIds]);
-
-  const selectedPetsFromSnapshot = useMemo(() => {
-    const snap = reservation?.petsSnapshot;
-    const normalized = normalizeSnapshotArray(snap, selectedPetIds);
-    return Array.isArray(normalized) ? normalized : [];
-  }, [reservation?.petsSnapshot, selectedPetIds]);
-
-  const displayPets = useMemo(() => {
-    if (selectedPetsFromSnapshot.length) return selectedPetsFromSnapshot;
-    if (selectedPetsFromLocal.length) return selectedPetsFromLocal;
-    return [];
-  }, [selectedPetsFromLocal, selectedPetsFromSnapshot]);
-
-  const isOwner = useMemo(() => {
-    if (!reservation || !user?.id) return false;
-    const uid = String(user.id);
-    return (
-      (reservation.tutorId && String(reservation.tutorId) === uid) ||
-      (reservation.caregiverId && String(reservation.caregiverId) === uid)
-    );
-  }, [reservation, user?.id]);
-
-  /* ===========================
-     Render guards
-     =========================== */
-  if (!reservation) {
-    return (
-      <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] flex items-center justify-center">
-        <div className="pc-card pc-card-accent">Reserva não encontrada.</div>
-      </div>
-    );
   }
+  return [ids].map((x) => toStr(x)).filter(Boolean);
+}, [reservation?.petsIds]);
 
-  if (!isOwner) {
-    return (
-      <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] flex items-center justify-center">
-        <div className="pc-card pc-card-accent">
-          Você não tem acesso a esta reserva.
-        </div>
-      </div>
-    );
-  }
+const selectedPetsFromLocal = useMemo(() => {
+  if (!tutorPets?.length) return [];
+  if (!selectedPetIds.length) return [];
+  const set = new Set(selectedPetIds.map(String));
+  return tutorPets.filter((p) => set.has(String(p.id)));
+}, [tutorPets, selectedPetIds]);
 
-  const headerTitle = isTutor
-    ? "Detalhe da sua reserva"
-    : isCaregiver
-      ? "Reserva recebida"
-      : "Detalhe da reserva";
+const selectedPetsFromSnapshot = useMemo(() => {
+  const snap = reservation?.petsSnapshot;
+  const normalized = normalizeSnapshotArray(snap, selectedPetIds);
+  return Array.isArray(normalized) ? normalized : [];
+}, [reservation?.petsSnapshot, selectedPetIds]);
 
-  const effectiveToken = token || user?.token || null;
+const displayPets = useMemo(() => {
+  if (selectedPetsFromSnapshot.length) return selectedPetsFromSnapshot;
+  if (selectedPetsFromLocal.length) return selectedPetsFromLocal;
+  return [];
+}, [selectedPetsFromLocal, selectedPetsFromSnapshot]);
 
+const isOwner = useMemo(() => {
+  if (!reservation || !user?.id) return false;
+  const uid = String(user.id);
   return (
-    <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] py-8 px-6">
-      <div className="max-w-[1400px] mx-auto bg-white rounded-2xl shadow p-6 border-l-4 border-[#FFD700]/80">
-        <h1 className="text-2xl md:text-3xl font-bold text-[#5A3A22] mb-4">
-          {headerTitle}
-        </h1>
+    (reservation.tutorId && String(reservation.tutorId) === uid) ||
+    (reservation.caregiverId && String(reservation.caregiverId) === uid)
+  );
+}, [reservation, user?.id]);
 
-        {/* Dados principais */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-[#5A3A22]">
-          <div className="pc-card pc-card-accent">
-            <h2 className="font-semibold mb-2">Informações</h2>
-            <p>
-              <b>Status:</b> {reservation.status}
-            </p>
-            <p>
-              <b>Período:</b> {formatDateBR(reservation.startDate)} até{" "}
-              {formatDateBR(reservation.endDate)}
-            </p>
-            <p>
-              <b>Serviço:</b> {reservation.service}
-            </p>
-            <p>
-              <b>Preço/dia:</b> R$ {Number(reservation.pricePerDay || 0).toFixed(2)}
-            </p>
-            <p>
-              <b>Total:</b> R$ {Number(reservation.total || 0).toFixed(2)}
-            </p>
+/* ===========================
+   Render guards
+   =========================== */
+if (!reservation) {
+  return (
+    <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] flex items-center justify-center">
+      <div className="pc-card pc-card-accent">Reserva não encontrada.</div>
+    </div>
+  );
+}
 
-            {reservation.status === "Recusada" && reservation.rejectReason && (
-              <div className="mt-3 p-3 rounded-xl border bg-[#FFF8F0]">
-                <p className="text-sm">
-                  <b>Motivo da recusa:</b> {reservation.rejectReason}
-                </p>
-              </div>
-            )}
-          </div>
-
-          <div className="pc-card pc-card-accent">
-            <h2 className="font-semibold mb-2">Localização</h2>
-            <p>
-              <b>Bairro/Cidade:</b>{" "}
-              {[reservation.neighborhood, reservation.city].filter(Boolean).join(" — ") ||
-                "—"}
-            </p>
-
-            {isTutor ? (
-              canTutorSeeCaregiverAddress ? (
-                <p className="mt-1">
-                  <b>Endereço completo do cuidador:</b> {caregiver?.address}
-                </p>
-              ) : (
-                <p className="mt-1 text-sm opacity-80">
-                  Endereço completo do cuidador visível após <b>Aceita</b>.
-                </p>
-              )
-            ) : isCaregiver ? (
-              canCaregiverSeeTutorAddress ? (
-                <p className="mt-1">
-                  <b>Endereço completo do tutor:</b> {tutor?.address}
-                </p>
-              ) : (
-                <p className="mt-1 text-sm opacity-80">
-                  Endereço completo do tutor visível após <b>Aceita</b>.
-                </p>
-              )
-            ) : null}
-
-            <button
-              type="button"
-              onClick={() => {
-                const q = encodeURIComponent(
-                  [reservation.neighborhood, reservation.city].filter(Boolean).join(", ")
-                );
-                if (!q) return;
-                window.open(`https://www.google.com/maps/search/?api=1&query=${q}`, "_blank");
-              }}
-              className="mt-3 bg-gray-200 hover:bg-gray-300 text-[#5A3A22] px-4 py-2 rounded-lg font-semibold shadow-md transition"
-            >
-              Ver no mapa
-            </button>
-          </div>
-        </div>
-
-        {/* Pessoas */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6 text-[#5A3A22]">
-          <div className="pc-card pc-card-accent">
-            <h2 className="font-semibold mb-2">Tutor</h2>
-            <p>
-              <b>Nome:</b> {tutor?.name || "—"}
-            </p>
-            <p>
-              <b>Email:</b> {tutor?.email || "—"}
-            </p>
-            <p>
-              <b>Telefone:</b> {tutor?.phone || "—"}
-            </p>
-            {canCaregiverSeeTutorAddress && (
-              <>
-                <p>
-                  <b>Bairro:</b> {tutor?.neighborhood || "—"}
-                </p>
-                <p>
-                  <b>Cidade:</b> {tutor?.city || "—"}
-                </p>
-                <p>
-                  <b>Endereço completo:</b> {tutor?.address || "—"}
-                </p>
-              </>
-            )}
-          </div>
-
-          <div className="pc-card pc-card-accent">
-            <h2 className="font-semibold mb-2">Cuidador</h2>
-            <p>
-              <b>Nome:</b> {caregiver?.name || "—"}
-            </p>
-            <p>
-              <b>Email:</b> {caregiver?.email || "—"}
-            </p>
-            <p>
-              <b>Telefone:</b> {caregiver?.phone || "—"}
-            </p>
-            {canTutorSeeCaregiverAddress && (
-              <>
-                <p>
-                  <b>Bairro:</b> {caregiver?.neighborhood || "—"}
-                </p>
-                <p>
-                  <b>Cidade:</b> {caregiver?.city || "—"}
-                </p>
-                <p>
-                  <b>Endereço completo:</b> {caregiver?.address || "—"}
-                </p>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Pets do tutor */}
-        <div className="mt-8 text-[#5A3A22]">
-          <div className="flex items-center justify-between gap-2 mb-2">
-            <h2 className="text-lg font-semibold flex items-center gap-2">
-              Pets que serão cuidados 🐾
-            </h2>
-
-            {isTutor && (
-              <Link
-                to="/dashboard"
-                state={{ initialTab: "pets" }}
-                className="text-xs md:text-sm underline text-[#5A3A22] hover:text-[#95301F]"
-              >
-                Gerenciar Meus Pets
-              </Link>
-            )}
-          </div>
-
-          {displayPets.length ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {displayPets.map((pet) => {
-                const specie = pet.specie || pet.species || "Espécie não informada";
-                const breed = pet.breed ? `• ${pet.breed}` : "";
-                const porte = pet.porte || pet.port || pet.size || pet.portePet || null;
-
-                const petImg = pickPetImage(pet) || DEFAULT_PET_IMG;
-
-                return (
-                  <div
-                    key={pet.id || pet.name}
-                    className="flex gap-3 items-center border rounded-xl p-3 bg-[#FFF8F0] shadow-sm"
-                  >
-                    <img
-                      src={petImg}
-                      alt={pet.name}
-                      className="w-16 h-16 rounded-full object-cover border-2 border-[#FFD700]"
-                    />
-                    <div className="text-xs md:text-sm">
-                      <p className="font-semibold text-sm md:text-base">{pet.name}</p>
-                      <p className="opacity-80">
-                        {specie} {breed}
-                      </p>
-                      {porte && <p className="opacity-80">Porte: {String(porte)}</p>}
-                      {pet.approxAge && (
-                        <p className="opacity-80">Idade aproximada: {pet.approxAge}</p>
-                      )}
-                      {!!pet.adjectives?.length && (
-                        <p className="mt-1 text-[11px] opacity-90">
-                          {pet.adjectives.join(" • ")}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <p className="text-sm md:text-base opacity-80 bg-[#FFF8F0] rounded-xl p-3">
-              Pets desta reserva não informados.
-            </p>
-          )}
-        </div>
-
-        {/* Avaliações */}
-        {(isTutor || isCaregiver) && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8 text-[#5A3A22]">
-            <div className="pc-card pc-card-accent">
-              <h2 className="font-semibold mb-2">Sua avaliação</h2>
-
-              {alreadyRatedByUser ? (
-                <p className="text-sm opacity-80">
-                  Você avaliou esta reserva com{" "}
-                  <b>
-                    ⭐ {isTutor ? reservation.tutorRating : reservation.caregiverRating}/5
-                  </b>
-                  {isTutor && reservation.tutorReview ? ` — "${reservation.tutorReview}"` : ""}
-                  {isCaregiver && reservation.caregiverReview
-                    ? ` — "${reservation.caregiverReview}"`
-                    : ""}
-                </p>
-              ) : (
-                <p className="text-sm opacity-70 mb-2">
-                  Após a reserva ser <b>concluída</b>, você poderá avaliar a experiência.
-                </p>
-              )}
-
-              {canRate && (
-                <button
-                  type="button"
-                  onClick={openRatingModal}
-                  disabled={ratingBusy}
-                  className={`mt-3 px-4 py-2 rounded-lg font-semibold shadow-md text-sm ${
-                    ratingBusy
-                      ? "bg-[#FFD700]/60 cursor-not-allowed text-[#5A3A22]"
-                      : "bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22]"
-                  }`}
-                >
-                  {ratingBusy ? "Enviando..." : isTutor ? "Avaliar cuidador" : "Avaliar tutor"}
-                </button>
-              )}
-            </div>
-
-            <div className="pc-card pc-card-accent">
-              <h2 className="font-semibold mb-2">Avaliação da outra parte</h2>
-
-              {counterpartRating && counterpartRating.rating != null ? (
-                <p className="text-sm opacity-80">
-                  {counterpartRating.roleLabel} avaliou esta reserva com{" "}
-                  <b>⭐ {counterpartRating.rating}/5</b>
-                  {counterpartRating.review ? ` — "${counterpartRating.review}"` : ""}
-                </p>
-              ) : (
-                <p className="text-sm opacity-70">
-                  Ainda não há avaliação registrada pela outra parte.
-                </p>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* CHAT */}
-        {(isTutor || isCaregiver) && (
-          <div className="mt-8" ref={chatSectionRef} id="chat">
-            <ChatBox
-              reservationId={reservation.id}
-              token={effectiveToken}
-              currentUserId={myUserId}
-              otherUserName={isTutor ? caregiver?.name ?? "Cuidador" : tutor?.name ?? "Tutor"}
-              canChat={reservation.status === "Aceita"}
-            />
-          </div>
-        )}
-
-        {/* Ações */}
-        <div className="flex flex-wrap gap-3 mt-6">
-          {isCaregiver && reservation.status === "Pendente" && (
-            <div className="flex flex-col gap-2">
-              <div className="flex flex-wrap gap-3">
-                <button
-                  type="button"
-                  onClick={caregiverAccept}
-                  className="px-4 py-2 rounded-lg font-semibold text-white bg-green-600 hover:bg-green-700"
-                >
-                  Aceitar
-                </button>
-                <button
-                  type="button"
-                  onClick={caregiverReject}
-                  className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-semibold"
-                >
-                  Recusar
-                </button>
-              </div>
-            </div>
-          )}
-
-          {isTutor && ["Pendente", "Aceita"].includes(reservation.status) && (
-            <button
-              type="button"
-              onClick={tutorCancel}
-              className="bg-gray-400 hover:bg-gray-500 text-white px-4 py-2 rounded-lg font-semibold"
-            >
-              Cancelar
-            </button>
-          )}
-
-          {isCaregiver && canMarkCompleted && (
-            <button
-              type="button"
-              onClick={caregiverMarkCompleted}
-              className="bg-[#FFD700] hover:bg-[#f5c400] text-[#5A3A22] px-4 py-2 rounded-lg font-semibold"
-            >
-              Marcar reserva como concluída
-            </button>
-          )}
-
-          <button
-            type="button"
-            onClick={() => navigate(-1)}
-            className="bg-[#5A3A22] hover:bg-[#95301F] text-white px-4 py-2 rounded-lg font-semibold"
-          >
-            Voltar
-          </button>
-        </div>
-
-        {/* Modal de avaliação */}
-        <RatingModal
-          isOpen={ratingOpen}
-          title={ratingTitle || "Avaliar"}
-          onClose={closeRatingModal}
-          onSubmit={handleSubmitRating}
-          busy={ratingBusy}
-        />
+if (!isOwner) {
+  return (
+    <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] flex items-center justify-center">
+      <div className="pc-card pc-card-accent">
+        Você não tem acesso a esta reserva.
       </div>
     </div>
   );
+}
+
+const headerTitle = isTutor
+  ? "Detalhe da sua reserva"
+  : isCaregiver
+    ? "Reserva recebida"
+    : "Detalhe da reserva";
+
+const effectiveToken = token || user?.token || null;
+
+return (
+  <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] py-8 px-6">
+    <div className="max-w-[1400px] mx-auto bg-white rounded-2xl shadow p-6 border-l-4 border-[#FFD700]/80">
+      <h1 className="text-2xl md:text-3xl font-bold text-[#5A3A22] mb-4">
+        {headerTitle}
+      </h1>
+
+      {/* Dados principais */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-[#5A3A22]">
+        <div className="pc-card pc-card-accent">
+          <h2 className="font-semibold mb-2">Informações</h2>
+          <p>
+            <b>Status:</b> {reservation.status}
+          </p>
+          <p>
+            <b>Período:</b> {formatDateBR(reservation.startDate)} até{" "}
+            {formatDateBR(reservation.endDate)}
+          </p>
+          <p>
+            <b>Serviço:</b> {reservation.service}
+          </p>
+          <p>
+            <b>Preço/dia:</b> R$ {Number(reservation.pricePerDay || 0).toFixed(2)}
+          </p>
+          <p>
+            <b>Total:</b> R$ {Number(reservation.total || 0).toFixed(2)}
+          </p>
+
+          {reservation.status === "Recusada" && reservation.rejectReason && (
+            <div className="mt-3 p-3 rounded-xl border bg-[#FFF8F0]">
+              <p className="text-sm">
+                <b>Motivo da recusa:</b> {reservation.rejectReason}
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="pc-card pc-card-accent">
+          <h2 className="font-semibold mb-2">Localização</h2>
+          <p>
+            <b>Bairro/Cidade:</b>{" "}
+            {[reservation.neighborhood, reservation.city].filter(Boolean).join(" — ") ||
+              "—"}
+          </p>
+
+          {isTutor ? (
+            canTutorSeeCaregiverAddress ? (
+              <p className="mt-1">
+                <b>Endereço completo do cuidador:</b> {caregiver?.address}
+              </p>
+            ) : (
+              <p className="mt-1 text-sm opacity-80">
+                Endereço completo do cuidador visível após <b>Aceita</b>.
+              </p>
+            )
+          ) : isCaregiver ? (
+            canCaregiverSeeTutorAddress ? (
+              <p className="mt-1">
+                <b>Endereço completo do tutor:</b> {tutor?.address}
+              </p>
+            ) : (
+              <p className="mt-1 text-sm opacity-80">
+                Endereço completo do tutor visível após <b>Aceita</b>.
+              </p>
+            )
+          ) : null}
+
+          <button
+            type="button"
+            onClick={() => {
+              const q = encodeURIComponent(
+                [reservation.neighborhood, reservation.city].filter(Boolean).join(", ")
+              );
+              if (!q) return;
+              window.open(`https://www.google.com/maps/search/?api=1&query=${q}`, "_blank");
+            }}
+            className="mt-3 bg-gray-200 hover:bg-gray-300 text-[#5A3A22] px-4 py-2 rounded-lg font-semibold shadow-md transition"
+          >
+            Ver no mapa
+          </button>
+        </div>
+      </div>
+
+      {/* Pessoas */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6 text-[#5A3A22]">
+        <div className="pc-card pc-card-accent">
+          <h2 className="font-semibold mb-2">Tutor</h2>
+          <p>
+            <b>Nome:</b> {tutor?.name || "—"}
+          </p>
+          <p>
+            <b>Email:</b> {tutor?.email || "—"}
+          </p>
+          <p>
+            <b>Telefone:</b> {tutor?.phone || "—"}
+          </p>
+          {canCaregiverSeeTutorAddress && (
+            <>
+              <p>
+                <b>Bairro:</b> {tutor?.neighborhood || "—"}
+              </p>
+              <p>
+                <b>Cidade:</b> {tutor?.city || "—"}
+              </p>
+              <p>
+                <b>Endereço completo:</b> {tutor?.address || "—"}
+              </p>
+            </>
+          )}
+        </div>
+
+        <div className="pc-card pc-card-accent">
+          <h2 className="font-semibold mb-2">Cuidador</h2>
+          <p>
+            <b>Nome:</b> {caregiver?.name || "—"}
+          </p>
+          <p>
+            <b>Email:</b> {caregiver?.email || "—"}
+          </p>
+          <p>
+            <b>Telefone:</b> {caregiver?.phone || "—"}
+          </p>
+          {canTutorSeeCaregiverAddress && (
+            <>
+              <p>
+                <b>Bairro:</b> {caregiver?.neighborhood || "—"}
+              </p>
+              <p>
+                <b>Cidade:</b> {caregiver?.city || "—"}
+              </p>
+              <p>
+                <b>Endereço completo:</b> {caregiver?.address || "—"}
+              </p>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Pets do tutor */}
+      <div className="mt-8 text-[#5A3A22]">
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            Pets que serão cuidados 🐾
+          </h2>
+
+          {isTutor && (
+            <Link
+              to="/dashboard"
+              state={{ initialTab: "pets" }}
+              className="text-xs md:text-sm underline text-[#5A3A22] hover:text-[#95301F]"
+            >
+              Gerenciar Meus Pets
+            </Link>
+          )}
+        </div>
+
+        {displayPets.length ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {displayPets.map((pet) => {
+              const specie = pet.specie || pet.species || "Espécie não informada";
+              const breed = pet.breed ? `• ${pet.breed}` : "";
+              const porte = pet.porte || pet.port || pet.size || pet.portePet || null;
+
+              const petImg = pickPetImage(pet) || DEFAULT_PET_IMG;
+
+              return (
+                <div
+                  key={pet.id || pet.name}
+                  className="flex gap-3 items-center border rounded-xl p-3 bg-[#FFF8F0] shadow-sm"
+                >
+                  <img
+                    src={petImg}
+                    alt={pet.name}
+                    className="w-16 h-16 rounded-full object-cover border-2 border-[#FFD700]"
+                  />
+                  <div className="text-xs md:text-sm">
+                    <p className="font-semibold text-sm md:text-base">{pet.name}</p>
+                    <p className="opacity-80">
+                      {specie} {breed}
+                    </p>
+                    {porte && <p className="opacity-80">Porte: {String(porte)}</p>}
+                    {pet.approxAge && (
+                      <p className="opacity-80">Idade aproximada: {pet.approxAge}</p>
+                    )}
+                    {!!pet.adjectives?.length && (
+                      <p className="mt-1 text-[11px] opacity-90">
+                        {pet.adjectives.join(" • ")}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-sm md:text-base opacity-80 bg-[#FFF8F0] rounded-xl p-3">
+            Pets desta reserva não informados.
+          </p>
+        )}
+      </div>
+
+      {/* Avaliações */}
+      {(isTutor || isCaregiver) && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8 text-[#5A3A22]">
+          <div className="pc-card pc-card-accent">
+            <h2 className="font-semibold mb-2">Sua avaliação</h2>
+
+            {alreadyRatedByUser ? (
+              <p className="text-sm opacity-80">
+                Você avaliou esta reserva com{" "}
+                <b>
+                  ⭐ {isTutor ? reservation.tutorRating : reservation.caregiverRating}/5
+                </b>
+                {isTutor && reservation.tutorReview ? ` — "${reservation.tutorReview}"` : ""}
+                {isCaregiver && reservation.caregiverReview
+                  ? ` — "${reservation.caregiverReview}"`
+                  : ""}
+              </p>
+            ) : (
+              <p className="text-sm opacity-70 mb-2">
+                Após a reserva ser <b>concluída</b>, você poderá avaliar a experiência.
+              </p>
+            )}
+
+            {canRate && (
+              <button
+                type="button"
+                onClick={openRatingModal}
+                disabled={ratingBusy}
+                className={`mt-3 px-4 py-2 rounded-lg font-semibold shadow-md text-sm ${ratingBusy
+                  ? "bg-[#FFD700]/60 cursor-not-allowed text-[#5A3A22]"
+                  : "bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22]"
+                  }`}
+              >
+                {ratingBusy ? "Enviando..." : isTutor ? "Avaliar cuidador" : "Avaliar tutor"}
+              </button>
+            )}
+          </div>
+
+          <div className="pc-card pc-card-accent">
+            <h2 className="font-semibold mb-2">Avaliação da outra parte</h2>
+
+            {counterpartRating && counterpartRating.rating != null ? (
+              <p className="text-sm opacity-80">
+                {counterpartRating.roleLabel} avaliou esta reserva com{" "}
+                <b>⭐ {counterpartRating.rating}/5</b>
+                {counterpartRating.review ? ` — "${counterpartRating.review}"` : ""}
+              </p>
+            ) : (
+              <p className="text-sm opacity-70">
+                Ainda não há avaliação registrada pela outra parte.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* CHAT */}
+      {(isTutor || isCaregiver) && (
+        <div className="mt-8" ref={chatSectionRef} id="chat">
+          <ChatBox
+            reservationId={reservation.id}
+            token={effectiveToken}
+            currentUserId={myUserId}
+            otherUserName={isTutor ? caregiver?.name ?? "Cuidador" : tutor?.name ?? "Tutor"}
+            canChat={reservation.status === "Aceita"}
+          />
+        </div>
+      )}
+
+      {/* Ações */}
+      <div className="flex flex-wrap gap-3 mt-6">
+        {isCaregiver && reservation.status === "Pendente" && (
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={caregiverAccept}
+                className="px-4 py-2 rounded-lg font-semibold text-white bg-green-600 hover:bg-green-700"
+              >
+                Aceitar
+              </button>
+              <button
+                type="button"
+                onClick={caregiverReject}
+                className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-semibold"
+              >
+                Recusar
+              </button>
+            </div>
+          </div>
+        )}
+
+        {isTutor && ["Pendente", "Aceita"].includes(reservation.status) && (
+          <button
+            type="button"
+            onClick={tutorCancel}
+            className="bg-gray-400 hover:bg-gray-500 text-white px-4 py-2 rounded-lg font-semibold"
+          >
+            Cancelar
+          </button>
+        )}
+
+        {isCaregiver && canMarkCompleted && (
+          <button
+            type="button"
+            onClick={caregiverMarkCompleted}
+            className="bg-[#FFD700] hover:bg-[#f5c400] text-[#5A3A22] px-4 py-2 rounded-lg font-semibold"
+          >
+            Marcar reserva como concluída
+          </button>
+        )}
+
+        <button
+          type="button"
+          onClick={() => navigate(-1)}
+          className="bg-[#5A3A22] hover:bg-[#95301F] text-white px-4 py-2 rounded-lg font-semibold"
+        >
+          Voltar
+        </button>
+      </div>
+
+      {/* Modal de avaliação */}
+      <RatingModal
+        isOpen={ratingOpen}
+        title={ratingTitle || "Avaliar"}
+        onClose={closeRatingModal}
+        onSubmit={handleSubmitRating}
+        busy={ratingBusy}
+      />
+    </div>
+  </div>
+);
 }
