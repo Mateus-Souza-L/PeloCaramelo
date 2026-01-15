@@ -81,7 +81,6 @@ const normalizeSnapshotArray = (maybeSnap, fallbackIds = []) => {
   return normalized;
 };
 
-// Normaliza o formato vindo do PostgreSQL (snake_case) para o formato usado no frontend
 const normalizeReservationFromApi = (r) => {
   if (!r) return null;
 
@@ -111,17 +110,16 @@ const normalizeReservationFromApi = (r) => {
     startDate: r.start_date
       ? String(r.start_date).slice(0, 10)
       : r.startDate
-      ? String(r.startDate).slice(0, 10)
-      : "",
+        ? String(r.startDate).slice(0, 10)
+        : "",
     endDate: r.end_date
       ? String(r.end_date).slice(0, 10)
       : r.endDate
-      ? String(r.endDate).slice(0, 10)
-      : "",
+        ? String(r.endDate).slice(0, 10)
+        : "",
     total: Number(r.total || 0),
     status: r.status || "Pendente",
 
-    // campos legados (mantemos pra UI não quebrar)
     tutorRating: r.tutor_rating ?? r.tutorRating,
     tutorReview: r.tutor_review ?? r.tutorReview,
     caregiverRating: r.caregiver_rating ?? r.caregiverRating,
@@ -134,7 +132,6 @@ const normalizeReservationFromApi = (r) => {
   };
 };
 
-// remove campos pesados antes de salvar em localStorage (evita QuotaExceeded)
 const toLightReservationForStorage = (r) => {
   if (!r) return r;
   const { petsSnapshot, ...rest } = r;
@@ -153,7 +150,7 @@ function isConcludedStatus(status) {
    ReservationDetail
    =========================================================== */
 export default function ReservationDetail() {
-  const { id } = useParams(); // reservationId
+  const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
   const { user, token } = useAuth();
@@ -165,18 +162,15 @@ export default function ReservationDetail() {
   const [tutorPets, setTutorPets] = useState([]);
   const [reloadKey, setReloadKey] = useState(0);
 
-  // avaliação
   const [ratingOpen, setRatingOpen] = useState(false);
   const [ratingTitle, setRatingTitle] = useState("");
   const [ratingBusy, setRatingBusy] = useState(false);
 
-  // refs chat
   const chatSectionRef = useRef(null);
   const didAutoScrollChatRef = useRef(false);
   const didClearChatUnreadRef = useRef(false);
   const lastChatScrollAtRef = useRef(0);
 
-  // ✅ refs anti-loop (estabiliza callbacks que antes dependiam de reservation)
   const reservationIdRef = useRef(null);
   const tutorIdRef = useRef(null);
 
@@ -185,10 +179,8 @@ export default function ReservationDetail() {
     tutorIdRef.current = reservation?.tutorId ? String(reservation.tutorId) : null;
   }, [reservation?.id, reservation?.tutorId]);
 
-  // ✅ dedupe do fetch do detalhe (garante 1 GET por id/token/reload)
   const fetchRef = useRef({ key: "", inFlight: false });
 
-  // "hoje" (00:00)
   const today = useMemo(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -198,15 +190,18 @@ export default function ReservationDetail() {
   const isTutor = user?.role === "tutor";
   const isCaregiver = user?.role === "caregiver";
 
-  // ✅ mesma chave do Dashboard (evita mistura e bug de sumir)
+  // ✅ id do usuário logado (fallback se Auth ainda não carregou)
+  const myUserId = String(
+    user?.id ??
+      (isTutor ? reservation?.tutorId : isCaregiver ? reservation?.caregiverId : "") ??
+      ""
+  );
+
   const reservationsStorageKey = useMemo(() => {
     if (!user?.id || !user?.role) return "reservations";
     return `reservations_${String(user.role)}_${String(user.id)}`;
   }, [user?.id, user?.role]);
 
-  /* ===========================
-     ✅ Evento global padronizado (STABLE)
-     =========================== */
   const emitReservationUpdated = useCallback(
     (payload = {}) => {
       const rid = String(
@@ -223,9 +218,6 @@ export default function ReservationDetail() {
     [id]
   );
 
-  /* ===========================
-     Persistência local (na key correta) (STABLE)
-     =========================== */
   const persistLocalReservation = useCallback(
     (next) => {
       if (!next?.id) return;
@@ -252,7 +244,6 @@ export default function ReservationDetail() {
     [reservationsStorageKey, emitReservationUpdated]
   );
 
-  // ✅ aplica resposta do backend SEM precisar dar F5
   const applyServerReservation = useCallback(
     (serverReservation, fallbackLocal) => {
       const normalized = normalizeReservationFromApi(serverReservation);
@@ -260,7 +251,6 @@ export default function ReservationDetail() {
 
       const merged = { ...normalized };
 
-      // mantém snapshot local se o backend não mandou
       if (
         !isNonEmptyArray(merged.petsSnapshot) &&
         isNonEmptyArray(fallbackLocal?.petsSnapshot)
@@ -271,7 +261,6 @@ export default function ReservationDetail() {
         );
       }
 
-      // completa ids/nomes com local, se vier faltando
       if (
         (!merged.petsIds || merged.petsIds.length === 0) &&
         Array.isArray(fallbackLocal?.petsIds)
@@ -298,22 +287,17 @@ export default function ReservationDetail() {
     [persistLocalReservation, emitReservationUpdated]
   );
 
-  /* ===========================
-     Load (backend + fallback local)
-     =========================== */
   useEffect(() => {
     let cancelled = false;
 
     const loadAll = async () => {
       let current = null;
 
-      // 1) local
       const storedAllRaw = safeGetLocalStorage(reservationsStorageKey) || "[]";
       const storedAll = safeJsonParse(storedAllRaw);
       const list = Array.isArray(storedAll) ? storedAll : [];
       const storedLocal = list.find((r) => String(r?.id) === String(id)) || null;
 
-      // 2) server (dedupe)
       const numericId = Number(id);
       const shouldFetchFromServer =
         token &&
@@ -352,13 +336,13 @@ export default function ReservationDetail() {
 
       setReservation(current);
 
-      // (mantém seu comportamento atual: users e pets ainda vêm do local)
       const users = safeJsonParse(safeGetLocalStorage("users") || "[]");
       const usersList = Array.isArray(users) ? users : [];
 
       const currentCaregiver =
         current &&
-        (usersList.find((u) => String(u?.id) === String(current.caregiverId)) || null);
+        (usersList.find((u) => String(u?.id) === String(current.caregiverId)) ||
+          null);
 
       const currentTutor =
         current &&
@@ -402,16 +386,12 @@ export default function ReservationDetail() {
   }, [
     id,
     token,
-    user?.id,
-    user?.role,
+    user,
     reloadKey,
     reservationsStorageKey,
     applyServerReservation,
   ]);
 
-  /* ===========================
-     ✅ BACKEND NOTIFICATIONS: mark as read (por reserva)
-     =========================== */
   const markBackendNotificationsReadForReservation = useCallback(async () => {
     if (!token) return false;
     if (!reservation?.id) return false;
@@ -445,19 +425,6 @@ export default function ReservationDetail() {
     markBackendNotificationsReadForReservation();
   }, [user?.id, reservation?.id, markBackendNotificationsReadForReservation]);
 
-  // ---------- Guards / papéis ----------
-  const isOwner =
-    (isTutor &&
-      reservation &&
-      String(reservation.tutorId) === String(user?.id)) ||
-    (isCaregiver &&
-      reservation &&
-      String(reservation.caregiverId) === String(user?.id)) ||
-    user?.role === "admin";
-
-  /* ===========================
-     Chat helpers (backend-driven)
-     =========================== */
   const clearChatUnreadForThisReservation = useCallback(async () => {
     if (!reservation?.id) return;
     if (!token) return;
@@ -497,13 +464,17 @@ export default function ReservationDetail() {
     if (didAutoScrollChatRef.current) return;
 
     const cameFromState = !!location?.state?.scrollToChat;
-    const cameFromHash = String(window.location.hash || "").toLowerCase() === "#chat";
+    const cameFromHash =
+      String(window.location.hash || "").toLowerCase() === "#chat";
     if (!cameFromState && !cameFromHash) return;
 
     didAutoScrollChatRef.current = true;
 
     setTimeout(() => {
-      chatSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      chatSectionRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
 
       setTimeout(() => {
         window.dispatchEvent(
@@ -519,7 +490,8 @@ export default function ReservationDetail() {
     if (!user?.id || !reservation?.id) return;
     if (didClearChatUnreadRef.current) return;
 
-    const cameFromHash = String(window.location.hash || "").toLowerCase() === "#chat";
+    const cameFromHash =
+      String(window.location.hash || "").toLowerCase() === "#chat";
     const cameFromState = !!location?.state?.scrollToChat;
     if (!cameFromHash && !cameFromState) return;
 
@@ -545,7 +517,8 @@ export default function ReservationDetail() {
       const rect = el.getBoundingClientRect();
       const viewportH = window.innerHeight || document.documentElement.clientHeight;
 
-      const isChatVisible = rect.top < viewportH * 0.65 && rect.bottom > viewportH * 0.15;
+      const isChatVisible =
+        rect.top < viewportH * 0.65 && rect.bottom > viewportH * 0.15;
 
       if (!isChatVisible) {
         el.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -597,15 +570,14 @@ export default function ReservationDetail() {
 
   const canTutorSeeCaregiverAddress = useMemo(
     () => isTutor && reservation?.status === "Aceita" && !!caregiver?.address,
-    [isTutor, reservation, caregiver]
+    [isTutor, reservation?.status, caregiver?.address]
   );
 
   const canCaregiverSeeTutorAddress = useMemo(
     () => isCaregiver && reservation?.status === "Aceita" && !!tutor?.address,
-    [isCaregiver, reservation, tutor]
+    [isCaregiver, reservation?.status, tutor?.address]
   );
 
-  // ---------- Regras para marcar como CONCLUÍDA (cuidador) ----------
   const canMarkCompleted = useMemo(() => {
     if (!reservation || !isCaregiver) return false;
     if (reservation.status !== "Aceita") return false;
@@ -617,7 +589,6 @@ export default function ReservationDetail() {
     return end <= today;
   }, [reservation, isCaregiver, today]);
 
-  // ---------- Avaliação: regras ----------
   const alreadyRatedByUser = useMemo(() => {
     if (!reservation) return false;
     if (isTutor) return reservation.tutorRating != null;
@@ -634,9 +605,7 @@ export default function ReservationDetail() {
     if (Number.isNaN(end.getTime())) return false;
     if (end > today) return false;
 
-    // ✅ se já avaliou, não pode mais
     if (alreadyRatedByUser) return false;
-
     return true;
   }, [reservation, isTutor, isCaregiver, today, alreadyRatedByUser]);
 
@@ -672,19 +641,20 @@ export default function ReservationDetail() {
     setRatingTitle("");
   };
 
-  // ---------- Sincronização com backend (STATUS) ----------
   const syncStatusWithBackend = async (newStatus, extraBody = null) => {
     if (!token || !reservation?.id) return false;
 
     try {
-      const body = extraBody
-        ? { status: newStatus, ...extraBody }
-        : { status: newStatus };
+      const body = extraBody ? { status: newStatus, ...extraBody } : { status: newStatus };
 
-      const data = await authRequest(`/reservations/${reservation.id}/status`, token, {
-        method: "PATCH",
-        body,
-      });
+      const data = await authRequest(
+        `/reservations/${reservation.id}/status`,
+        token,
+        {
+          method: "PATCH",
+          body,
+        }
+      );
 
       if (data?.reservation) {
         applyServerReservation(data.reservation, reservation);
@@ -704,16 +674,16 @@ export default function ReservationDetail() {
     }
   };
 
-  // ✅ tenta re-carregar a reserva após uma ação relevante
   const refetchReservationFromServer = useCallback(async () => {
     if (!token || !reservation?.id) return false;
     setReloadKey((k) => k + 1);
     return true;
   }, [token, reservation?.id]);
 
-  // ✅ Rating definitivo: grava em /reviews (e pode devolver reservation atualizada)
   const createReviewOnBackend = async (value, comment) => {
-    if (!token || !reservation?.id) return { ok: false, code: null, reservation: null };
+    if (!token || !reservation?.id) {
+      return { ok: false, code: null, reservation: null };
+    }
 
     try {
       const body = {
@@ -738,12 +708,10 @@ export default function ReservationDetail() {
     }
   };
 
-  // ---------- Avaliação: submit ----------
   const handleSubmitRating = async (value, comment) => {
     if (!reservation || (!isTutor && !isCaregiver)) return;
     if (ratingBusy) return;
 
-    // ✅ trava duplicidade no frontend também
     if (isTutor && reservation.tutorRating != null) {
       showToast("Você já avaliou esta reserva.", "notify");
       closeRatingModal();
@@ -758,9 +726,7 @@ export default function ReservationDetail() {
     setRatingBusy(true);
 
     try {
-      // 1) Atualiza UI/local imediatamente
       const next = { ...reservation };
-
       const cleanComment = (comment || "").trim() || null;
       const cleanValue = Number(value);
 
@@ -774,11 +740,9 @@ export default function ReservationDetail() {
 
       persistLocalReservation(next);
 
-      // 2) Salva definitivo no backend (reviews)
       const result = await createReviewOnBackend(cleanValue, cleanComment);
 
       if (result.ok) {
-        // ✅ se backend devolveu a reserva atualizada, aplica na hora (zera botão)
         if (result.reservation) {
           applyServerReservation(result.reservation, next);
         } else {
@@ -807,9 +771,6 @@ export default function ReservationDetail() {
     }
   };
 
-  /* ===========================
-     Ações de status
-     =========================== */
   const caregiverAccept = async () => {
     if (!isCaregiver || !reservation) return;
 
@@ -857,10 +818,7 @@ export default function ReservationDetail() {
     if (!reservation || !isCaregiver) return;
 
     if (!canMarkCompleted) {
-      showToast(
-        "Só é possível marcar como concluída após o término da reserva.",
-        "notify"
-      );
+      showToast("Só é possível marcar como concluída após o término da reserva.", "notify");
       return;
     }
 
@@ -869,16 +827,10 @@ export default function ReservationDetail() {
 
     const ok = await syncStatusWithBackend("Concluida");
     if (ok) {
-      showToast(
-        "Reserva marcada como concluída! Agora vocês podem se avaliar. 🐾",
-        "success"
-      );
+      showToast("Reserva marcada como concluída! Agora vocês podem se avaliar. 🐾", "success");
     }
   };
 
-  /* ===========================
-     PETS
-     =========================== */
   const selectedPetIds = useMemo(() => {
     const ids = reservation?.petsIds;
     if (!ids) return [];
@@ -910,6 +862,15 @@ export default function ReservationDetail() {
     return [];
   }, [selectedPetsFromLocal, selectedPetsFromSnapshot]);
 
+  const isOwner = useMemo(() => {
+    if (!reservation || !user?.id) return false;
+    const uid = String(user.id);
+    return (
+      (reservation.tutorId && String(reservation.tutorId) === uid) ||
+      (reservation.caregiverId && String(reservation.caregiverId) === uid)
+    );
+  }, [reservation, user?.id]);
+
   /* ===========================
      Render guards
      =========================== */
@@ -924,7 +885,9 @@ export default function ReservationDetail() {
   if (!isOwner) {
     return (
       <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] flex items-center justify-center">
-        <div className="pc-card pc-card-accent">Você não tem acesso a esta reserva.</div>
+        <div className="pc-card pc-card-accent">
+          Você não tem acesso a esta reserva.
+        </div>
       </div>
     );
   }
@@ -932,8 +895,8 @@ export default function ReservationDetail() {
   const headerTitle = isTutor
     ? "Detalhe da sua reserva"
     : isCaregiver
-    ? "Reserva recebida"
-    : "Detalhe da reserva";
+      ? "Reserva recebida"
+      : "Detalhe da reserva";
 
   const effectiveToken = token || user?.token || null;
 
@@ -1011,10 +974,7 @@ export default function ReservationDetail() {
                   [reservation.neighborhood, reservation.city].filter(Boolean).join(", ")
                 );
                 if (!q) return;
-                window.open(
-                  `https://www.google.com/maps/search/?api=1&query=${q}`,
-                  "_blank"
-                );
+                window.open(`https://www.google.com/maps/search/?api=1&query=${q}`, "_blank");
               }}
               className="mt-3 bg-gray-200 hover:bg-gray-300 text-[#5A3A22] px-4 py-2 rounded-lg font-semibold shadow-md transition"
             >
@@ -1262,16 +1222,16 @@ export default function ReservationDetail() {
             Voltar
           </button>
         </div>
-      </div>
 
-      {/* Modal de avaliação */}
-      <RatingModal
-        isOpen={ratingOpen}
-        title={ratingTitle || "Avaliar"}
-        onClose={closeRatingModal}
-        onSubmit={handleSubmitRating}
-        busy={ratingBusy} /* prop extra (RatingModal atual ignora, não quebra) */
-      />
+        {/* Modal de avaliação */}
+        <RatingModal
+          isOpen={ratingOpen}
+          title={ratingTitle || "Avaliar"}
+          onClose={closeRatingModal}
+          onSubmit={handleSubmitRating}
+          busy={ratingBusy}
+        />
+      </div>
     </div>
   );
 }
