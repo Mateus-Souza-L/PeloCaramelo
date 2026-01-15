@@ -7,7 +7,9 @@ module.exports = function adminMasterMiddleware(req, res, next) {
     });
   }
 
-  if (req.user.role !== "admin_master") {
+  const role = String(req.user?.role || "").toLowerCase().trim();
+
+  if (role !== "admin_master") {
     return res.status(403).json({
       error: "Ação permitida apenas para o administrador principal.",
       code: "FORBIDDEN_ADMIN_MASTER_ONLY",
