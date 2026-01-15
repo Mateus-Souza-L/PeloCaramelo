@@ -1342,6 +1342,48 @@ export default function CaregiverDetail() {
             ))}
         </div>
 
+        {/* Sobre + Cursos */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
+          {/* Sobre */}
+          <div className="pc-card pc-card-accent">
+            <h2 className="font-semibold text-[#5A3A22] mb-2">Sobre</h2>
+            <p className="text-sm text-[#5A3A22]/90 whitespace-pre-line">
+              {caregiver.bio?.trim()
+                ? caregiver.bio
+                : caregiver.about?.trim()
+                  ? caregiver.about
+                  : "Não informado"}
+            </p>
+          </div>
+
+          {/* Cursos */}
+          <div className="pc-card pc-card-accent">
+            <h2 className="font-semibold text-[#5A3A22] mb-2">Cursos</h2>
+
+            {Array.isArray(caregiver.courses) && caregiver.courses.length > 0 ? (
+              <ul className="list-disc pl-5 space-y-1 text-sm text-[#5A3A22]/90">
+                {caregiver.courses
+                  .map((c) => (c == null ? "" : String(c).trim()))
+                  .filter(Boolean)
+                  .map((c, idx) => (
+                    <li key={`${c}-${idx}`}>{c}</li>
+                  ))}
+              </ul>
+            ) : caregiver.courses && typeof caregiver.courses === "object" ? (
+              <ul className="list-disc pl-5 space-y-1 text-sm text-[#5A3A22]/90">
+                {Object.values(caregiver.courses)
+                  .map((c) => (c == null ? "" : String(c).trim()))
+                  .filter(Boolean)
+                  .map((c, idx) => (
+                    <li key={`${c}-${idx}`}>{c}</li>
+                  ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-[#5A3A22]/70">Não informado</p>
+            )}
+          </div>
+        </div>
+
         {/* dica disponibilidade */}
         <div className="mb-4">
           <p className="text-xs text-[#5A3A22] opacity-70">
@@ -1367,31 +1409,6 @@ export default function CaregiverDetail() {
 
                   {availableKeys.filter((k) => k >= todayKey).length === 0 && (
                     <li className="opacity-60">Nenhuma data futura</li>
-                  )}
-                </ul>
-              </div>
-
-              {/* Datas passadas */}
-              <div>
-                <p className="font-semibold text-[#5A3A22] mb-1">
-                  Datas passadas
-                </p>
-                <ul className="space-y-0.5">
-                  {availableKeys
-                    .filter((k) => k < todayKey)
-                    .slice(-6)
-                    .map((k) => (
-                      <li
-                        key={k}
-                        className="text-[#5A3A22] opacity-50 line-through"
-                        title="Data já passou"
-                      >
-                        {formatDateBR(k)}
-                      </li>
-                    ))}
-
-                  {availableKeys.filter((k) => k < todayKey).length === 0 && (
-                    <li className="opacity-60">Nenhuma</li>
                   )}
                 </ul>
               </div>
