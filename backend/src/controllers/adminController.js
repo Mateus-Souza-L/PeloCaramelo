@@ -6,7 +6,11 @@ function toStr(v) {
 }
 
 function toBool(v) {
-  return typeof v === "boolean" ? v : null;
+  if (typeof v === "boolean") return v;
+  const s = String(v ?? "").trim().toLowerCase();
+  if (s === "true" || s === "1" || s === "yes") return true;
+  if (s === "false" || s === "0" || s === "no") return false;
+  return null;
 }
 
 function pickPgErr(err) {
@@ -45,24 +49,41 @@ async function tableExists(client, tableName) {
   return !!rows?.[0];
 }
 
+async function columnExists(client, tableName, columnName) {
+  const table = toStr(tableName).trim();
+  const col = toStr(columnName).trim();
+  if (!table || !col) return false;
+
+  const [schema, tbl] = table.includes(".") ? table.split(".") : ["public", table];
+
+  const { rows } = await client.query(
+    `
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = $1
+      AND table_name = $2
+      AND column_name = $3
+    LIMIT 1;
+    `,
+    [schema, tbl, col]
+  );
+
+  return !!rows?.[0];
+}
+
 async function safeExec(client, label, sql, params = []) {
-  // ✅ protege a transação: se UMA query falhar, não deixa a transação “morrer” com 25P02
   const sp = `sp_${label.replace(/[^a-zA-Z0-9_]/g, "_")}_${Date.now()}`;
   await client.query(`SAVEPOINT ${sp};`);
   try {
     return await client.query(sql, params);
   } catch (err) {
-    // tabelas/colunas ausentes (best-effort)
+    // tabela/coluna ausente (best-effort)
     if (err?.code === "42703" || err?.code === "42P01") {
       await client.query(`ROLLBACK TO SAVEPOINT ${sp};`);
       return null;
     }
 
-    // FK pode acontecer dependendo do seu schema.
-    // Não vamos engolir FK aqui, porque pode indicar ordem errada / dependência não tratada.
-    // Mas antes de estourar, fazemos rollback até o savepoint pra evitar 25P02.
     await client.query(`ROLLBACK TO SAVEPOINT ${sp};`);
-
     console.error(`[ADMIN delete deps] ${label} ERRO REAL:`, pickPgErr(err));
     throw err;
   } finally {
@@ -73,17 +94,42 @@ async function safeExec(client, label, sql, params = []) {
 }
 
 /**
- * Delete "best-effort" de dependências conhecidas.
- * A ordem aqui importa (filhos -> pais) pra evitar FK.
+ * body (bloqueio):
+ * - reason: string
+ * - blockedUntil: ISO/date (ex: "2026-02-01" ou "2026-02-01T12:00:00Z")
+ * - blockedDays: número de dias (ex: 7)
  */
+function parseBlockExtras(body) {
+  const reason = toStr(body?.reason || "").trim();
+  const blockedDaysRaw = body?.blockedDays;
+  const blockedUntilRaw = body?.blockedUntil;
+
+  let blockedUntil = null;
+
+  if (blockedUntilRaw) {
+    const dt = new Date(blockedUntilRaw);
+    if (!Number.isNaN(dt.getTime())) blockedUntil = dt.toISOString();
+  }
+
+  if (!blockedUntil && blockedDaysRaw != null) {
+    const n = Number(blockedDaysRaw);
+    if (Number.isFinite(n) && n > 0) {
+      const dt = new Date();
+      dt.setDate(dt.getDate() + Math.floor(n));
+      blockedUntil = dt.toISOString();
+    }
+  }
+
+  return {
+    reason: reason || null,
+    blockedUntil,
+  };
+}
+
 async function deleteUserDependencies(client, userId) {
   const uid = toStr(userId).trim();
 
-  // ---------------------------------------------------------
-  // 0) Reviews (normalmente referenciam users e/ou reservations)
-  // ---------------------------------------------------------
   if (await tableExists(client, "reviews")) {
-    // tenta colunas típicas do seu projeto
     const attempts = [
       `DELETE FROM reviews WHERE tutor_id::text = $1::text;`,
       `DELETE FROM reviews WHERE caregiver_id::text = $1::text;`,
@@ -91,15 +137,11 @@ async function deleteUserDependencies(client, userId) {
       `DELETE FROM reviews WHERE reviewed_id::text = $1::text;`,
       `DELETE FROM reviews WHERE user_id::text = $1::text;`,
     ];
-
     for (let i = 0; i < attempts.length; i++) {
       await safeExec(client, `reviews_${i}`, attempts[i], [uid]);
     }
   }
 
-  // ---------------------------------------------------------
-  // 1) Messages / Chats / Notifications (filhos antes de pais)
-  // ---------------------------------------------------------
   if (await tableExists(client, "messages")) {
     const attempts = [
       `DELETE FROM messages WHERE sender_id::text = $1::text OR receiver_id::text = $1::text;`,
@@ -133,32 +175,20 @@ async function deleteUserDependencies(client, userId) {
     }
   }
 
-  // ---------------------------------------------------------
-  // 2) Availability
-  // ---------------------------------------------------------
   if (await tableExists(client, "availability")) {
-    await safeExec(
-      client,
-      "availability",
-      `DELETE FROM availability WHERE caregiver_id::text = $1::text;`,
-      [uid]
-    );
+    await safeExec(client, "availability", `DELETE FROM availability WHERE caregiver_id::text = $1::text;`, [uid]);
   }
 
-  // ---------------------------------------------------------
-  // 3) Reservations (depois de reviews)
-  // ---------------------------------------------------------
   if (await tableExists(client, "reservations")) {
-    // Se reviews tiver reservation_id FK, isso ajuda:
     if (await tableExists(client, "reviews")) {
-      const attempts = [
+      await safeExec(
+        client,
+        "reviews_by_res",
         `DELETE FROM reviews WHERE reservation_id IN (
           SELECT id FROM reservations WHERE tutor_id::text = $1::text OR caregiver_id::text = $1::text
         );`,
-      ];
-      for (let i = 0; i < attempts.length; i++) {
-        await safeExec(client, `reviews_by_res_${i}`, attempts[i], [uid]);
-      }
+        [uid]
+      );
     }
 
     await safeExec(
@@ -173,9 +203,6 @@ async function deleteUserDependencies(client, userId) {
     );
   }
 
-  // ---------------------------------------------------------
-  // 4) Pets
-  // ---------------------------------------------------------
   if (await tableExists(client, "pets")) {
     const attempts = [
       `DELETE FROM pets WHERE owner_id::text = $1::text;`,
@@ -190,10 +217,18 @@ async function deleteUserDependencies(client, userId) {
 
 /* ===================== Usuários ===================== */
 
-// LISTAR TODOS OS USUÁRIOS (para painel admin)
 async function listUsersController(req, res) {
+  const client = await pool.connect();
   try {
-    const { rows } = await pool.query(`
+    const hasReason = await columnExists(client, "users", "blocked_reason");
+    const hasUntil = await columnExists(client, "users", "blocked_until");
+
+    const extraCols = [
+      hasReason ? "blocked_reason" : "NULL::text AS blocked_reason",
+      hasUntil ? "blocked_until" : "NULL::timestamptz AS blocked_until",
+    ].join(",\n        ");
+
+    const { rows } = await client.query(`
       SELECT
         id,
         name,
@@ -203,6 +238,7 @@ async function listUsersController(req, res) {
         neighborhood,
         blocked AS is_blocked,
         blocked,
+        ${extraCols},
         created_at
       FROM users
       ORDER BY created_at DESC;
@@ -212,12 +248,15 @@ async function listUsersController(req, res) {
   } catch (err) {
     console.error("Erro em GET /admin/users:", pickPgErr(err));
     return res.status(500).json({ error: "Erro ao listar usuários." });
+  } finally {
+    client.release();
   }
 }
 
-// BLOQUEAR / DESBLOQUEAR USUÁRIO
-// PATCH /admin/users/:id/block  { blocked: true/false }
+// PATCH /admin/users/:id/block
+// body: { blocked: true/false, reason?: string, blockedUntil?: string, blockedDays?: number }
 async function setUserBlockedController(req, res) {
+  const client = await pool.connect();
   try {
     const id = toStr(req.params?.id).trim();
     const blocked = toBool(req.body?.blocked);
@@ -234,48 +273,71 @@ async function setUserBlockedController(req, res) {
       });
     }
 
-    // tenta com updated_at; se a coluna não existir, cai no fallback
-    try {
-      const { rows } = await pool.query(
-        `
-        UPDATE users
-        SET blocked = $2,
-            updated_at = NOW()
-        WHERE id::text = $1::text
-        RETURNING id, name, email, role, blocked, blocked AS is_blocked;
-        `,
-        [id, blocked]
-      );
+    const { reason, blockedUntil } = parseBlockExtras(req.body);
 
-      const user = rows?.[0] || null;
-      if (!user) return res.status(404).json({ error: "Usuário não encontrado." });
+    const finalReason = blocked ? reason : null;
+    const finalUntil = blocked ? blockedUntil : null;
 
-      return res.json({ user });
-    } catch (err) {
-      if (err?.code !== "42703") throw err;
+    const hasReason = await columnExists(client, "users", "blocked_reason");
+    const hasUntil = await columnExists(client, "users", "blocked_until");
+    const hasUpdatedAt = await columnExists(client, "users", "updated_at");
 
-      const { rows } = await pool.query(
-        `
-        UPDATE users
-        SET blocked = $2
-        WHERE id::text = $1::text
-        RETURNING id, name, email, role, blocked, blocked AS is_blocked;
-        `,
-        [id, blocked]
-      );
+    const sets = [];
+    const params = [];
+    let idx = 1;
 
-      const user = rows?.[0] || null;
-      if (!user) return res.status(404).json({ error: "Usuário não encontrado." });
+    const idParam = idx++;
+    params.push(id);
 
-      return res.json({ user });
+    const blockedParam = idx++;
+    params.push(blocked);
+    sets.push(`blocked = $${blockedParam}`);
+
+    if (hasReason) {
+      const p = idx++;
+      params.push(finalReason);
+      sets.push(`blocked_reason = $${p}`);
     }
+
+    if (hasUntil) {
+      const p = idx++;
+      params.push(finalUntil);
+      sets.push(`blocked_until = $${p}`);
+    }
+
+    if (hasUpdatedAt) {
+      sets.push(`updated_at = NOW()`);
+    }
+
+    const { rows } = await client.query(
+      `
+      UPDATE users
+      SET ${sets.join(",\n          ")}
+      WHERE id::text = $${idParam}::text
+      RETURNING
+        id, name, email, role, blocked, blocked AS is_blocked
+        ${hasReason ? ", blocked_reason" : ""}
+        ${hasUntil ? ", blocked_until" : ""};
+      `,
+      params
+    );
+
+    const user = rows?.[0] || null;
+    if (!user) return res.status(404).json({ error: "Usuário não encontrado." });
+
+    // ✅ sempre devolve os campos, mesmo se coluna não existir (front fica estável)
+    if (!hasReason) user.blocked_reason = null;
+    if (!hasUntil) user.blocked_until = null;
+
+    return res.json({ user });
   } catch (err) {
     console.error("Erro em PATCH /admin/users/:id/block:", pickPgErr(err));
     return res.status(500).json({ error: "Erro ao atualizar usuário." });
+  } finally {
+    client.release();
   }
 }
 
-// DELETAR USUÁRIO (ex: contas de teste)
 async function deleteUserController(req, res) {
   const id = toStr(req.params?.id).trim();
 
@@ -289,10 +351,8 @@ async function deleteUserController(req, res) {
   try {
     await client.query("BEGIN");
 
-    // 1) limpa dependências (best-effort, mas com SAVEPOINT por etapa pra não dar 25P02)
     await deleteUserDependencies(client, id);
 
-    // 2) deleta o usuário
     const del = await client.query(
       `
       DELETE FROM users
@@ -310,12 +370,10 @@ async function deleteUserController(req, res) {
     await client.query("COMMIT");
     return res.json({ success: true });
   } catch (err) {
-    // ✅ sempre rollback pra não ficar “transação abortada”
     try {
       await client.query("ROLLBACK");
     } catch {}
 
-    // FK violation
     if (err?.code === "23503") {
       console.error("Erro em DELETE /admin/users/:id (FK):", pickPgErr(err));
       return res.status(409).json({
@@ -337,7 +395,6 @@ async function deleteUserController(req, res) {
 
 /* ===================== Reservas ===================== */
 
-// LISTAR RESERVAS (para painel admin)
 async function listReservationsController(req, res) {
   try {
     const { rows } = await pool.query(`
@@ -358,13 +415,11 @@ async function listReservationsController(req, res) {
   }
 }
 
-// DELETAR RESERVA (de testes)
 async function deleteReservationController(req, res) {
   try {
     const id = toStr(req.params?.id).trim();
     if (!id) return res.status(400).json({ error: "ID é obrigatório." });
 
-    // se existir reviews com FK pra reservations, tenta apagar primeiro
     const client = await pool.connect();
     try {
       await client.query("BEGIN");

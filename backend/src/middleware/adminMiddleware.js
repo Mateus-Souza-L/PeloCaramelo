@@ -1,6 +1,6 @@
 // backend/src/middleware/adminMiddleware.js
 module.exports = function adminMiddleware(req, res, next) {
-  const role = req.user?.role;
+  const role = String(req.user?.role || "").toLowerCase().trim();
 
   if (!role) {
     return res.status(401).json({

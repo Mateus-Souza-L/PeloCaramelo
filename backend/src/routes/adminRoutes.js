@@ -14,7 +14,7 @@ const {
   deleteReservationController,
 } = require("../controllers/adminController");
 
-// ✅ controller separado de avaliações (Opção A)
+// controller separado de avaliações
 const {
   listAllReviews,
   hideReview,
@@ -29,7 +29,8 @@ router.use(authMiddleware, adminMiddleware);
 // GET /admin/users
 router.get("/users", listUsersController);
 
-// PATCH /admin/users/:id/block  { blocked: true/false }
+// PATCH /admin/users/:id/block
+// body: { blocked: true/false, reason?: string, blockedUntil?: string, blockedDays?: number }
 router.patch("/users/:id/block", setUserBlockedController);
 
 // DELETE /admin/users/:id

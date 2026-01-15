@@ -1,11 +1,8 @@
 // backend/src/controllers/authController.js
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const {
-  createUser,
-  findUserByEmail,
-  findUserById,
-} = require("../models/userModel");
+const pool = require("../config/db");
+const { createUser, findUserByEmail, findUserById } = require("../models/userModel");
 
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-trocar-em-producao";
 
@@ -22,14 +19,10 @@ function safeJsonParse(raw) {
 }
 
 function readBody(req) {
-  // Se vier JSON normal, req.body já é objeto
   if (req.body && typeof req.body === "object") return req.body;
 
-  // Se vier text/plain, req.body vira string por causa do express.text()
   if (typeof req.body === "string") {
     const s = req.body.trim();
-
-    // casos clássicos de bug no front: body: {..} vira "[object Object]"
     if (!s || s === "[object Object]") return null;
 
     const parsed = safeJsonParse(s);
@@ -38,6 +31,62 @@ function readBody(req) {
   }
 
   return null;
+}
+
+function pickBlockInfo(user) {
+  if (!user) return null;
+
+  const blocked = Boolean(user.blocked ?? user.is_blocked ?? user.isBlocked ?? false);
+
+  const blockedReason =
+    user.blocked_reason ??
+    user.block_reason ??
+    user.blockReason ??
+    null;
+
+  const blockedUntil =
+    user.blocked_until ??
+    user.block_until ??
+    user.blockedUntil ??
+    null;
+
+  return {
+    blocked,
+    blockedReason: blockedReason ? String(blockedReason) : null,
+    blockedUntil: blockedUntil ? String(blockedUntil) : null,
+  };
+}
+
+function isUntilActive(blockedUntil) {
+  if (!blockedUntil) return true; // sem data => bloqueio indefinido (ativo)
+  const dt = new Date(blockedUntil);
+  if (Number.isNaN(dt.getTime())) return true; // data inválida => trata como indefinido
+  return dt.getTime() > Date.now();
+}
+
+// best-effort: se colunas existirem e prazo expirou, desbloqueia
+async function tryAutoUnblockIfExpired(userId) {
+  try {
+    await pool.query(
+      `
+      UPDATE users
+      SET blocked = false,
+          blocked_reason = NULL,
+          blocked_until = NULL,
+          updated_at = NOW()
+      WHERE id::text = $1::text
+        AND blocked = true
+        AND blocked_until IS NOT NULL
+        AND blocked_until <= NOW();
+      `,
+      [String(userId)]
+    );
+    return true;
+  } catch (err) {
+    // colunas não existem
+    if (err?.code === "42703") return false;
+    return false;
+  }
 }
 
 // POST /auth/register
@@ -62,9 +111,7 @@ async function register(req, res) {
     } = body;
 
     if (!name || !email || !password) {
-      return res.status(400).json({
-        error: "Nome, e-mail e senha são obrigatórios.",
-      });
+      return res.status(400).json({ error: "Nome, e-mail e senha são obrigatórios." });
     }
 
     const normalizedEmail = String(email).trim().toLowerCase();
@@ -103,10 +150,7 @@ async function register(req, res) {
 
     const token = generateToken(newUser);
 
-    return res.status(201).json({
-      user: newUser,
-      token,
-    });
+    return res.status(201).json({ user: newUser, token });
   } catch (err) {
     console.error("Erro em /auth/register:", err);
     return res.status(500).json({ error: "Erro ao registrar usuário." });
@@ -119,7 +163,6 @@ async function login(req, res) {
     const contentType = req.headers["content-type"];
     const body = readBody(req);
 
-    // ✅ log melhor pra debug (sem vazar senha)
     console.log("[AUTH LOGIN] body recebido:", {
       keys: body ? Object.keys(body) : [],
       email: body?.email ?? null,
@@ -129,17 +172,14 @@ async function login(req, res) {
 
     if (!body) {
       return res.status(400).json({
-        error:
-          "Body inválido. Envie JSON com { email, password } e Content-Type: application/json.",
+        error: "Body inválido. Envie JSON com { email, password } e Content-Type: application/json.",
       });
     }
 
     const { email, password } = body;
 
     if (!email || !password) {
-      return res.status(400).json({
-        error: "E-mail e senha são obrigatórios.",
-      });
+      return res.status(400).json({ error: "E-mail e senha são obrigatórios." });
     }
 
     const normalizedEmail = String(email).trim().toLowerCase();
@@ -149,13 +189,45 @@ async function login(req, res) {
       return res.status(401).json({ error: "Credenciais inválidas." });
     }
 
+    // ✅ Checa bloqueio antes de validar senha (melhor UX e menos custo)
+    const bi = pickBlockInfo(user);
+    if (bi?.blocked) {
+      // se tem prazo e já expirou, tenta desbloquear e segue
+      if (bi.blockedUntil && !isUntilActive(bi.blockedUntil)) {
+        await tryAutoUnblockIfExpired(user.id);
+
+        // reconsulta para garantir estado atual
+        const refreshed = await findUserById(user.id);
+        const bi2 = pickBlockInfo(refreshed);
+
+        if (bi2?.blocked) {
+          return res.status(403).json({
+            error: "Seu acesso está bloqueado.",
+            code: "USER_BLOCKED",
+            reason: bi2.blockedReason,
+            blockedUntil: bi2.blockedUntil,
+          });
+        }
+      } else {
+        // bloqueio ativo (indefinido ou dentro do prazo)
+        return res.status(403).json({
+          error: "Seu acesso está bloqueado.",
+          code: "USER_BLOCKED",
+          reason: bi.blockedReason,
+          blockedUntil: bi.blockedUntil,
+        });
+      }
+    }
+
     const passwordMatch = await bcrypt.compare(password, user.password_hash);
     if (!passwordMatch) {
       return res.status(401).json({ error: "Credenciais inválidas." });
     }
 
     const token = generateToken(user);
+
     const { id, name, role, city, image, blocked } = user;
+    const biFinal = pickBlockInfo(user);
 
     return res.json({
       user: {
@@ -165,7 +237,9 @@ async function login(req, res) {
         role,
         city,
         image,
-        blocked,
+        blocked: Boolean(blocked),
+        blockedReason: biFinal?.blockedReason ?? null,
+        blockedUntil: biFinal?.blockedUntil ?? null,
       },
       token,
     });
@@ -179,14 +253,10 @@ async function login(req, res) {
 async function me(req, res) {
   try {
     const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({ error: "Não autenticado." });
-    }
+    if (!userId) return res.status(401).json({ error: "Não autenticado." });
 
     const user = await findUserById(userId);
-    if (!user) {
-      return res.status(404).json({ error: "Usuário não encontrado." });
-    }
+    if (!user) return res.status(404).json({ error: "Usuário não encontrado." });
 
     return res.json({ user });
   } catch (err) {

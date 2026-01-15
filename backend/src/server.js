@@ -88,7 +88,103 @@ const notificationRoutes = require("./routes/notificationRoutes");
    Middlewares
    =========================================================== */
 const authMiddleware = require("./middleware/authMiddleware");
-const adminMiddleware = require("./middleware/adminMiddleware");
+
+/**
+ * Guard de bloqueio (motivo + tempo)
+ * - Compatível mesmo se o schema não tiver blocked_reason/blocked_until
+ * - Admin não é bloqueado por este guard (pra não perder acesso ao painel)
+ */
+let _blockColsChecked = false;
+let _hasBlockedReason = false;
+let _hasBlockedUntil = false;
+
+async function checkBlockColumnsOnce() {
+  if (_blockColsChecked) return;
+  _blockColsChecked = true;
+
+  try {
+    const q = `
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'users'
+        AND column_name IN ('blocked_reason', 'blocked_until')
+    `;
+    const { rows } = await pool.query(q);
+    const set = new Set((rows || []).map((r) => String(r.column_name)));
+    _hasBlockedReason = set.has("blocked_reason");
+    _hasBlockedUntil = set.has("blocked_until");
+  } catch (err) {
+    // fail-open: não derruba o servidor se information_schema falhar
+    _hasBlockedReason = false;
+    _hasBlockedUntil = false;
+  }
+}
+
+function normalizeISO(v) {
+  if (!v) return null;
+  const dt = new Date(v);
+  if (Number.isNaN(dt.getTime())) return null;
+  return dt.toISOString();
+}
+
+async function blockedGuard(req, res, next) {
+  try {
+    // precisa estar autenticado antes
+    const userId = req.user?.id ? String(req.user.id) : null;
+    const role = req.user?.role ? String(req.user.role).toLowerCase() : null;
+
+    if (!userId) return next();
+    if (role === "admin") return next(); // admin não é barrado aqui
+
+    await checkBlockColumnsOnce();
+
+    // monta SELECT compatível
+    const cols = [
+      "blocked",
+      _hasBlockedReason ? "blocked_reason" : "NULL::text AS blocked_reason",
+      _hasBlockedUntil ? "blocked_until" : "NULL::timestamptz AS blocked_until",
+    ].join(", ");
+
+    const { rows } = await pool.query(
+      `
+      SELECT ${cols}
+      FROM users
+      WHERE id::text = $1::text
+      LIMIT 1
+      `,
+      [userId]
+    );
+
+    const u = rows?.[0];
+    if (!u) return next(); // usuário não encontrado aqui não é responsabilidade do guard
+
+    const isBlocked = Boolean(u.blocked);
+    if (!isBlocked) return next();
+
+    const reason = u.blocked_reason ? String(u.blocked_reason) : null;
+    const blockedUntil = normalizeISO(u.blocked_until);
+
+    // se tiver blockedUntil e já passou, deixa passar (não “auto-desbloqueia” aqui)
+    if (blockedUntil) {
+      const now = Date.now();
+      const untilMs = new Date(blockedUntil).getTime();
+      if (!Number.isNaN(untilMs) && untilMs <= now) return next();
+    }
+
+    return res.status(403).json({
+      ok: false,
+      code: "USER_BLOCKED",
+      error: "Sua conta está bloqueada no momento.",
+      reason: reason || "Bloqueio administrativo",
+      blockedUntil, // pode ser null (bloqueio sem prazo)
+    });
+  } catch (err) {
+    // fail-closed suave: se o guard falhar, não derruba request — mas registra
+    console.error("[BLOCKED GUARD ERROR]", err);
+    return next();
+  }
+}
 
 /* ===========================================================
    Rotas públicas
@@ -103,17 +199,18 @@ app.use("/availability", availabilityRoutes);
 app.use("/notifications", notificationRoutes);
 
 /* ===========================================================
-   Rotas protegidas
+   Rotas protegidas (com guard de bloqueio)
    =========================================================== */
-app.use("/users", authMiddleware, userRoutes);
-app.use("/reservations", authMiddleware, reservationRoutes);
-app.use("/chat", authMiddleware, chatRoutes);
-app.use("/pets", authMiddleware, petRoutes);
+app.use("/users", authMiddleware, blockedGuard, userRoutes);
+app.use("/reservations", authMiddleware, blockedGuard, reservationRoutes);
+app.use("/chat", authMiddleware, blockedGuard, chatRoutes);
+app.use("/pets", authMiddleware, blockedGuard, petRoutes);
 
 /* ===========================================================
    Rotas admin
+   - IMPORTANTÍSSIMO: adminRoutes já aplica auth+admin internamente
    =========================================================== */
-app.use("/admin", authMiddleware, adminMiddleware, adminRoutes);
+app.use("/admin", adminRoutes);
 
 /* ===========================================================
    Reviews

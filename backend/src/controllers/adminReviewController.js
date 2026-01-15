@@ -103,11 +103,9 @@ async function listAllReviews(req, res) {
         r.start_date,
         r.end_date,
 
-        -- nomes úteis pro Admin
         ur.name AS reviewer_name,
         ud.name AS reviewed_name,
 
-        -- compat com telas antigas (tutor/caregiver)
         tu.id AS tutor_id,
         tu.name AS tutor_name,
         cu.id AS caregiver_id,
@@ -131,8 +129,8 @@ async function listAllReviews(req, res) {
     const { rows } = await pool.query(sql, params);
 
     return res.json({
-      items: rows,
-      meta: { source: "sql", limit, offset, returned: rows.length },
+      items: rows || [],
+      meta: { source: "sql", limit, offset, returned: rows?.length || 0 },
     });
   } catch (err) {
     console.error("[ADMIN][REVIEWS] listAllReviews error:", err);
@@ -148,8 +146,8 @@ async function listAllReviews(req, res) {
  */
 async function hideReview(req, res) {
   try {
-    const id = toInt(req.params?.id);
-    const adminId = toInt(req.user?.id);
+    const id = toStr(req.params?.id).trim();
+    const adminId = toStr(req.user?.id).trim();
     const reason =
       cleanReason(req.body?.reason) || "Conteúdo fora das diretrizes";
 
@@ -157,7 +155,7 @@ async function hideReview(req, res) {
     if (!adminId)
       return res.status(401).json({ message: "Admin não autenticado." });
 
-    // Preferencial: model.hide (grava hidden_by se existir no seu schema)
+    // Preferencial: model.hide (se ele lidar com hidden_by/hidden_at etc)
     if (reviewModel && typeof reviewModel.hide === "function") {
       const review = await reviewModel.hide(id, adminId, reason);
       if (!review)
@@ -166,14 +164,14 @@ async function hideReview(req, res) {
       return res.json({ message: "Avaliação ocultada.", review });
     }
 
-    // Fallback SQL
+    // Fallback SQL (compatível com id numérico ou string)
     const sql = `
       UPDATE reviews
       SET
         is_hidden = true,
         hidden_reason = $1,
         hidden_at = NOW()
-      WHERE id = $2
+      WHERE id::text = $2::text
       RETURNING id, is_hidden, hidden_reason, hidden_at
     `;
     const { rows } = await pool.query(sql, [reason, id]);
@@ -194,7 +192,7 @@ async function hideReview(req, res) {
  */
 async function unhideReview(req, res) {
   try {
-    const id = toInt(req.params?.id);
+    const id = toStr(req.params?.id).trim();
     if (!id) return res.status(400).json({ message: "ID inválido." });
 
     if (reviewModel && typeof reviewModel.unhide === "function") {
@@ -211,7 +209,7 @@ async function unhideReview(req, res) {
         is_hidden = false,
         hidden_reason = NULL,
         hidden_at = NULL
-      WHERE id = $1
+      WHERE id::text = $1::text
       RETURNING id, is_hidden, hidden_reason, hidden_at
     `;
     const { rows } = await pool.query(sql, [id]);
