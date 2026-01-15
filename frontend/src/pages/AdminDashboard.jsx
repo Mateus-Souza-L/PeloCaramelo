@@ -547,10 +547,8 @@ export default function AdminDashboard() {
           selectedUserIds.map((id) =>
             authRequest(ENDPOINTS.setUserBlocked(id), token, {
               method: "PATCH",
-              body: { blocked, reason, blockedUntil: until },
+              body: { blocked, reason, blockedUntil: until }
             })
-
-
           )
         );
 
