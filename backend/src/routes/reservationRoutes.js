@@ -133,7 +133,15 @@ router.get(
 
 // PATCH /reservations/:id/status
 // ✅ ownership obrigatório: só envolvidos (com regras de transição no controller) ou admin
+// PATCH/PUT /reservations/:id/status
+// ✅ ownership obrigatório: só envolvidos (com regras de transição no controller) ou admin
 router.patch(
+  "/:id/status",
+  mustBeReservationParticipant,
+  pickHandler("updateReservationStatusController")
+);
+
+router.put(
   "/:id/status",
   mustBeReservationParticipant,
   pickHandler("updateReservationStatusController")
