@@ -1204,7 +1204,7 @@ export default function ReservationDetail() {
             <ChatBox
               reservationId={reservation.id}
               token={effectiveToken}
-              currentUserId={user?.id}
+              currentUserId={myUserId}
               otherUserName={isTutor ? caregiver?.name ?? "Cuidador" : tutor?.name ?? "Tutor"}
               canChat={reservation.status === "Aceita"}
             />
