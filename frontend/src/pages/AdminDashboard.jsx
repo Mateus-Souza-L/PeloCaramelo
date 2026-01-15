@@ -532,22 +532,18 @@ export default function AdminDashboard() {
       action: async ({ reasonText, blockDays, blockUntil }) => {
         const reason = (reasonText || "").trim() || (blocked ? "Bloqueio administrativo" : "");
 
-        let until = null;
+        const payload = { blocked, reason };
+
         if (blocked) {
-          if (blockUntil) {
-            until = `${blockUntil}T23:59:59.999Z`;
-          } else {
-            const days = Number(blockDays || 7);
-            const ms = Math.max(1, days) * 24 * 60 * 60 * 1000;
-            until = new Date(Date.now() + ms).toISOString();
-          }
+          if (blockUntil) payload.blockedUntil = blockUntil; // "YYYY-MM-DD" já serve
+          else payload.blockedDays = Number(blockDays || 7);
         }
 
         await Promise.all(
           selectedUserIds.map((id) =>
             authRequest(ENDPOINTS.setUserBlocked(id), token, {
               method: "PATCH",
-              body: { blocked, reason, blockedUntil: until }
+              body: payload,
             })
           )
         );
