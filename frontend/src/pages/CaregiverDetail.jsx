@@ -4,15 +4,95 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../components/ToastProvider";
 import { toLocalKey, parseLocalKey, formatDateBR } from "../utils/date";
-import {
-  normalizeCaregiver,
-  getSvcPriceMap,
-  serviceLabel,
-  DEFAULT_IMG,
-} from "../utils/normalize";
 import { authRequest } from "../services/api";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:4000";
+
+/* ===========================
+   NORMALIZE (LOCAL TEMP)
+   - para não quebrar build/deploy
+   - depois movemos para ../utils/normalize
+   =========================== */
+const DEFAULT_IMG = "/paw.png";
+const toNum = (v) => (v === "" || v == null ? null : Number(v));
+const cap = (s = "") => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+
+const serviceLabel = (k) =>
+  k === "petSitter" ? "Pet Sitter" : k === "passeios" ? "Passeios" : cap(k);
+
+const getSvcPriceMap = (raw) => {
+  const p = raw?.prices || {};
+  return {
+    hospedagem:
+      toNum(p.hospedagemDia) ??
+      toNum(p.hospedagemDiaria) ??
+      toNum(p.hospedagem),
+    creche: toNum(p.crecheDiaria) ?? toNum(p.crecheDia) ?? toNum(p.creche),
+    petSitter:
+      toNum(p.petSitterDiaria) ??
+      toNum(p.petSitterVisita) ??
+      toNum(p.petsitterDiaria) ??
+      toNum(p.petsiterDiaria) ??
+      toNum(p.petSitter),
+    passeios:
+      toNum(p.passeiosHora) ??
+      toNum(p.passeioHora) ??
+      toNum(p.passeios30) ??
+      toNum(p.passeiosDiaria) ??
+      toNum(p.passeios),
+  };
+};
+
+const baseLocation = (raw) => {
+  const neighborhood = (raw?.neighborhood || "").trim();
+  const city = (raw?.city || "").trim();
+  const displayLocation = [neighborhood, city].filter(Boolean).join(" — ");
+  return { neighborhood, city, displayLocation };
+};
+
+function normalizeCaregiver(raw) {
+  if (!raw) return null;
+
+  const priceMap = getSvcPriceMap(raw);
+
+  const services = {
+    hospedagem:
+      (raw?.services?.hospedagem ?? false) || (priceMap.hospedagem > 0),
+    creche: (raw?.services?.creche ?? false) || (priceMap.creche > 0),
+    petSitter:
+      (raw?.services?.petSitter ?? false) || (priceMap.petSitter > 0),
+    passeios: (raw?.services?.passeios ?? false) || (priceMap.passeios > 0),
+  };
+
+  const legacy = toNum(raw?.price);
+  const candidates = [
+    priceMap.hospedagem,
+    priceMap.creche,
+    priceMap.petSitter,
+    priceMap.passeios,
+    legacy,
+  ].filter((v) => Number(v) > 0);
+
+  const minPrice = candidates.length ? Math.min(...candidates) : null;
+
+  const { neighborhood, city, displayLocation } = baseLocation(raw);
+
+  return {
+    ...raw,
+    image: raw?.image || DEFAULT_IMG,
+    prices: {
+      hospedagemDia: priceMap.hospedagem,
+      crecheDiaria: priceMap.creche,
+      petSitterDiaria: priceMap.petSitter,
+      passeiosHora: priceMap.passeios,
+    },
+    services,
+    minPrice,
+    neighborhood,
+    city,
+    displayLocation,
+  };
+}
 
 export default function CaregiverDetail() {
   const { id } = useParams();
@@ -22,39 +102,50 @@ export default function CaregiverDetail() {
 
   const [caregiver, setCaregiver] = useState(null);
 
+  // reservas (para avaliações / address access)
   const [reservations, setReservations] = useState([]);
 
+  // ✅ reviews do cuidador (fonte de verdade: backend /reviews)
   const [reviews, setReviews] = useState([]);
   const [reviewSummary, setReviewSummary] = useState({ avg: 0, count: 0 });
 
+  // ✅ UX states (Passo 6)
   const [reviewsLoading, setReviewsLoading] = useState(true);
   const [reviewsLoadingMore, setReviewsLoadingMore] = useState(false);
   const [reviewsError, setReviewsError] = useState(null);
 
+  // paginação
   const PAGE_SIZE = 5;
   const [reviewsPage, setReviewsPage] = useState(1);
   const [reviewsHasMore, setReviewsHasMore] = useState(false);
 
+  // ✅ filtro de avaliações por serviço
   const [reviewSvcFilter, setReviewSvcFilter] = useState("todos");
 
+  // pré-reserva
   const [svc, setSvc] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  const [startDate, setStartDate] = useState(""); // YYYY-MM-DD
+  const [endDate, setEndDate] = useState(""); // YYYY-MM-DD
   const [saving, setSaving] = useState(false);
 
+  // pets do tutor
   const [pets, setPets] = useState([]);
   const [selectedPetIds, setSelectedPetIds] = useState([]);
   const [allPetsSelected, setAllPetsSelected] = useState(false);
 
+  // ✅ disponibilidade do cuidador (fonte de verdade: /availability/caregiver/:caregiverId)
   const [availableKeys, setAvailableKeys] = useState([]);
 
+  // ✅ opcional: feedback de capacidade (quando 409 CAPACITY_FULL)
   const [capacityInfo, setCapacityInfo] = useState(null);
 
+  // ✅ animação suave para itens recém inseridos
   const [revealedIds, setRevealedIds] = useState(() => new Set());
   const revealTimerRef = useRef(null);
 
   const todayKey = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
+  // ---------------- helpers ----------------
   const normalizeKey = (value) => {
     if (!value) return null;
 
@@ -104,16 +195,20 @@ export default function CaregiverDetail() {
   };
 
   const toStr = (v) => (v == null ? "" : String(v));
-  const toNum = (v) => {
+  const toNumLocal = (v) => {
     if (v == null || v === "") return null;
     const n = Number(v);
     return Number.isFinite(n) ? n : null;
   };
 
+  // ✅ pega image OU photo (compat)
   const pickPetImage = (p) => p?.image || p?.photo || p?.img || null;
 
+  // ✅ normaliza item de review vindo do backend
   const normalizeReviewItem = (rv) => {
     if (!rv) return null;
+
+    // ignora hidden quando vier
     if (rv.is_hidden === true || rv.isHidden === true) return null;
 
     const authorRole =
@@ -125,8 +220,8 @@ export default function CaregiverDetail() {
       String(rv.reviewer_id) === String(rv.tutor_id)
         ? "tutor"
         : rv.reviewer_id &&
-            rv.caregiver_id &&
-            String(rv.reviewer_id) === String(rv.caregiver_id)
+          rv.caregiver_id &&
+          String(rv.reviewer_id) === String(rv.caregiver_id)
           ? "caregiver"
           : null);
 
@@ -137,14 +232,13 @@ export default function CaregiverDetail() {
       rv.caregiver_name ||
       "Usuário";
 
-    const createdAt =
-      rv.created_at
-        ? String(rv.created_at)
-        : rv.createdAt
-          ? String(rv.createdAt)
-          : rv.date
-            ? String(rv.date)
-            : null;
+    const createdAt = rv.created_at
+      ? String(rv.created_at)
+      : rv.createdAt
+        ? String(rv.createdAt)
+        : rv.date
+          ? String(rv.date)
+          : null;
 
     const rating = Number(rv.rating ?? rv.stars ?? rv.nota ?? 0);
 
@@ -174,28 +268,32 @@ export default function CaregiverDetail() {
     };
   };
 
+  // ✅ tenta extrair avg/count de qualquer formato que possa vir no cuidador
   const getCaregiverRatingSummary = (cg) => {
     if (!cg) return { avg: 0, count: 0 };
 
     const avg =
-      toNum(cg.avgRating) ??
-      toNum(cg.ratingAvg) ??
-      toNum(cg.avg_rating) ??
-      toNum(cg.rating_avg) ??
-      toNum(cg.average_rating) ??
+      toNumLocal(cg.avgRating) ??
+      toNumLocal(cg.ratingAvg) ??
+      toNumLocal(cg.avg_rating) ??
+      toNumLocal(cg.rating_avg) ??
+      toNumLocal(cg.average_rating) ??
       0;
 
     const count =
-      toNum(cg.ratingCount) ??
-      toNum(cg.reviewsCount) ??
-      toNum(cg.rating_count) ??
-      toNum(cg.reviews_count) ??
-      toNum(cg.count_reviews) ??
+      toNumLocal(cg.ratingCount) ??
+      toNumLocal(cg.reviewsCount) ??
+      toNumLocal(cg.rating_count) ??
+      toNumLocal(cg.reviews_count) ??
+      toNumLocal(cg.count_reviews) ??
       0;
 
     return { avg: avg || 0, count: count || 0 };
   };
 
+  /**
+   * ✅ Encolhe base64 (dataURL) para thumbnail leve
+   */
   const makeThumbnailDataUrl = (dataUrl, maxSize = 96, quality = 0.65) =>
     new Promise((resolve) => {
       try {
@@ -267,6 +365,9 @@ export default function CaregiverDetail() {
     return items;
   };
 
+  /**
+   * ✅ backend availability -> keys ["YYYY-MM-DD"]
+   */
   const availToKeys = (data) => {
     if (Array.isArray(data)) return uniqSort(data);
 
@@ -274,7 +375,9 @@ export default function CaregiverDetail() {
     const listB = Array.isArray(data?.availableDates) ? data.availableDates : [];
     const listC = Array.isArray(data?.dates) ? data.dates : [];
 
-    if (listA.length && typeof listA[0] === "string") return uniqSort(listA);
+    if (listA.length && typeof listA[0] === "string") {
+      return uniqSort(listA);
+    }
 
     if (listA.length) {
       const keys = listA
@@ -300,6 +403,7 @@ export default function CaregiverDetail() {
     return [];
   };
 
+  // ---------------- LOAD reservations + caregiver + availability ----------------
   useEffect(() => {
     let cancelled = false;
 
@@ -371,7 +475,9 @@ export default function CaregiverDetail() {
             cg = { ...raw, ...norm };
           }
         }
-      } catch {}
+      } catch {
+        // ignore
+      }
 
       if (!cg) {
         try {
@@ -426,7 +532,9 @@ export default function CaregiverDetail() {
           else users.push(merged);
 
           safeSetLocalStorage("users", JSON.stringify(users));
-        } catch {}
+        } catch {
+          // ignore
+        }
       }
     };
 
@@ -462,7 +570,9 @@ export default function CaregiverDetail() {
               users[idx] = { ...users[idx], availableDates: keys };
               safeSetLocalStorage("users", JSON.stringify(users));
             }
-          } catch {}
+          } catch {
+            // ignore
+          }
           return;
         }
       } catch (err) {
@@ -494,9 +604,11 @@ export default function CaregiverDetail() {
     };
   }, [id, token, user?.role]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ---------------- LOAD REVIEWS (summary + lista paginada) ----------------
   useEffect(() => {
     let cancelled = false;
 
+    // reset completo quando muda o cuidador
     setReviews([]);
     setReviewSummary({ avg: 0, count: 0 });
     setReviewsPage(1);
@@ -555,6 +667,7 @@ export default function CaregiverDetail() {
     };
 
     const loadSummary = async () => {
+      // público
       try {
         const r = await tryFetchJson(`${API_BASE_URL}/reviews/summary/${id}`);
         if (r.ok) {
@@ -566,8 +679,11 @@ export default function CaregiverDetail() {
           );
           return;
         }
-      } catch {}
+      } catch {
+        // ignore
+      }
 
+      // auth fallback (se um dia você proteger)
       if (token) {
         try {
           const data = await authRequest(`/reviews/summary/${id}`, token);
@@ -577,7 +693,9 @@ export default function CaregiverDetail() {
             `reviews_summary_${String(id)}`,
             JSON.stringify(payload)
           );
-        } catch {}
+        } catch {
+          // ignore
+        }
       }
     };
 
@@ -623,7 +741,10 @@ export default function CaregiverDetail() {
             const hasPrev = (prev?.count || 0) > 0;
             if (hasPrev) return prev;
             if (!merged.length) return prev;
-            const sum = merged.reduce((acc, rv) => acc + (Number(rv.rating) || 0), 0);
+            const sum = merged.reduce(
+              (acc, rv) => acc + (Number(rv.rating) || 0),
+              0
+            );
             const avg = merged.length ? sum / merged.length : 0;
             return { avg, count: merged.length };
           });
@@ -662,16 +783,23 @@ export default function CaregiverDetail() {
               }, 40);
             }
 
-            if (cachedSummary && (cachedSummary.avg != null || cachedSummary.count != null)) {
+            if (
+              cachedSummary &&
+              (cachedSummary.avg != null || cachedSummary.count != null)
+            ) {
               setReviewSummary({
                 avg: Number(cachedSummary.avg || 0) || 0,
                 count: Number(cachedSummary.count || 0) || 0,
               });
             }
           }
-        } catch {}
+        } catch {
+          // ignore
+        }
 
-        if (!cancelled) setReviewsError(err?.message || "Erro ao carregar avaliações.");
+        if (!cancelled) {
+          setReviewsError(err?.message || "Erro ao carregar avaliações.");
+        }
       } finally {
         if (!cancelled) setReviewsLoading(false);
       }
@@ -742,18 +870,15 @@ export default function CaregiverDetail() {
         const merged = Array.from(map.values());
 
         safeSetLocalStorage(`reviews_user_${String(id)}`, JSON.stringify(merged));
-        return merged;
-      });
 
-      // ✅ correção: evita stale state
-      setRevealedIds((prevSet) => {
-        const next = new Set(prevSet);
+        const next = new Set(revealedIds);
         normalized.forEach((rv) => next.add(rv.id));
         if (revealTimerRef.current) clearTimeout(revealTimerRef.current);
         revealTimerRef.current = setTimeout(() => {
           setRevealedIds(new Set(next));
         }, 40);
-        return next;
+
+        return merged;
       });
 
       setReviewsPage(nextPage);
@@ -765,6 +890,7 @@ export default function CaregiverDetail() {
     }
   };
 
+  // pets do tutor logado (fonte: backend /pets)
   useEffect(() => {
     let cancelled = false;
 
@@ -799,7 +925,9 @@ export default function CaregiverDetail() {
 
           try {
             localStorage.setItem(`pets_${user.id}`, JSON.stringify(normalized));
-          } catch {}
+          } catch {
+            // ignore
+          }
           return;
         } catch (e) {
           console.error("Erro ao carregar pets do backend:", e);
@@ -808,7 +936,8 @@ export default function CaregiverDetail() {
 
       try {
         const storageKey = `pets_${user.id}`;
-        const saved = safeJsonParse(localStorage.getItem(storageKey) || "[]", []) || [];
+        const saved =
+          safeJsonParse(localStorage.getItem(storageKey) || "[]", []) || [];
         if (!cancelled) {
           setPets(Array.isArray(saved) ? saved : []);
           setSelectedPetIds([]);
@@ -824,13 +953,16 @@ export default function CaregiverDetail() {
     };
 
     loadPets();
+
     return () => {
       cancelled = true;
     };
   }, [user?.id, user?.role, token]);
 
+  // mapa de preços por serviço
   const svcPriceMap = useMemo(() => getSvcPriceMap(caregiver), [caregiver]);
 
+  // serviço default
   useEffect(() => {
     if (!caregiver) return;
     if (svc) return;
@@ -842,6 +974,7 @@ export default function CaregiverDetail() {
     setSvc(valid[0] || "");
   }, [caregiver, svcPriceMap, svc]);
 
+  // ---------- MEMOS ----------
   const hasAddressAccess = useMemo(() => {
     if (!user || user.role !== "tutor") return false;
     return (reservations || []).some(
@@ -898,6 +1031,7 @@ export default function CaregiverDetail() {
     return dayDiff(startDate, endDate) * price;
   }, [svc, startDate, endDate, svcPriceMap]);
 
+  // ---------- REGRAS DE DISPONIBILIDADE ----------
   const isDateAvailable = (dateStr) => {
     const key = normalizeKey(dateStr);
     if (!key) return false;
@@ -911,7 +1045,8 @@ export default function CaregiverDetail() {
 
     const start = parseLocalKey(startKey);
     const end = parseLocalKey(endKey);
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return false;
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()))
+      return false;
     if (end < start) return false;
 
     const set = new Set(availableKeys);
@@ -925,6 +1060,7 @@ export default function CaregiverDetail() {
     return true;
   };
 
+  // ---------- SELEÇÃO DE PETS ----------
   const togglePet = (petId) => {
     const pid = String(petId);
 
@@ -952,6 +1088,7 @@ export default function CaregiverDetail() {
     }
   };
 
+  // ---------- HANDLERS DE DATA ----------
   const handleStartChange = (value) => {
     setCapacityInfo(null);
 
@@ -1013,6 +1150,7 @@ export default function CaregiverDetail() {
     setEndDate(value);
   };
 
+  // ---------- ACTIONS ----------
   const handlePreReserva = async () => {
     if (saving) return;
 
@@ -1195,6 +1333,7 @@ export default function CaregiverDetail() {
     window.open(`https://www.google.com/maps/search/?api=1&query=${q}`, "_blank");
   };
 
+  // ---------- RENDER ----------
   if (!caregiver) {
     return (
       <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] flex items-center justify-center">
@@ -1210,6 +1349,7 @@ export default function CaregiverDetail() {
   return (
     <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] py-8 px-6">
       <div className="max-w-[1400px] mx-auto bg-white rounded-2xl shadow p-6 border-l-4 border-[#FFD700]/80">
+        {/* Header */}
         <div className="flex items-start gap-4 mb-6">
           <img
             src={caregiver.image || DEFAULT_IMG}
@@ -1217,7 +1357,9 @@ export default function CaregiverDetail() {
             className="w-24 h-24 rounded-full object-cover border-4 border-[#FFD700]"
           />
           <div className="flex-1">
-            <h1 className="text-2xl font-bold text-[#5A3A22]">{caregiver.name}</h1>
+            <h1 className="text-2xl font-bold text-[#5A3A22]">
+              {caregiver.name}
+            </h1>
             <p className="text-[#5A3A22]/80">
               {caregiver.displayLocation || "Local não informado"}
             </p>
@@ -1232,7 +1374,8 @@ export default function CaregiverDetail() {
 
           <div className="text-right">
             <p className="text-sm text-[#5A3A22]">
-              ⭐ <b>{(ratingSummary.avg || 0).toFixed(1)}</b> ({ratingSummary.count})
+              ⭐ <b>{(ratingSummary.avg || 0).toFixed(1)}</b> (
+              {ratingSummary.count})
             </p>
             {caregiver.minPrice != null && (
               <p className="text-sm text-[#5A3A22]">
@@ -1242,6 +1385,7 @@ export default function CaregiverDetail() {
           </div>
         </div>
 
+        {/* Chips de serviços ativos */}
         <div className="flex flex-wrap gap-2 mb-6">
           {Object.entries(caregiver.services || {})
             .filter(([, v]) => v)
@@ -1255,9 +1399,198 @@ export default function CaregiverDetail() {
             ))}
         </div>
 
-        {/* ... o resto do seu JSX segue igual ao que você colou ... */}
-        {/* (mantive o arquivo focado na correção principal) */}
+        {/* Sobre + Cursos */}
+        {(() => {
+          const aboutText =
+            (caregiver?.bio && String(caregiver.bio).trim()) ||
+            (caregiver?.about && String(caregiver.about).trim()) ||
+            "";
 
+          let coursesList = [];
+          const rawCourses = caregiver?.courses;
+
+          try {
+            if (typeof rawCourses === "string") {
+              const parsed = JSON.parse(rawCourses);
+              if (Array.isArray(parsed)) coursesList = parsed;
+              else if (parsed && typeof parsed === "object")
+                coursesList = Object.values(parsed);
+            } else if (Array.isArray(rawCourses)) {
+              coursesList = rawCourses;
+            } else if (rawCourses && typeof rawCourses === "object") {
+              coursesList = Object.values(rawCourses);
+            }
+          } catch {
+            if (typeof rawCourses === "string") coursesList = [rawCourses];
+          }
+
+          coursesList = coursesList
+            .map((c) => (c == null ? "" : String(c).trim()))
+            .filter(Boolean);
+
+          return (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
+              <div className="pc-card pc-card-accent">
+                <h2 className="font-semibold text-[#5A3A22] mb-2">Sobre</h2>
+                <p className="text-sm text-[#5A3A22]/90 whitespace-pre-line">
+                  {aboutText || "Não informado"}
+                </p>
+              </div>
+
+              <div className="pc-card pc-card-accent">
+                <h2 className="font-semibold text-[#5A3A22] mb-2">Cursos</h2>
+
+                {coursesList.length > 0 ? (
+                  <ul className="list-disc pl-5 space-y-1 text-sm text-[#5A3A22]/90">
+                    {coursesList.map((c, idx) => (
+                      <li key={`${c}-${idx}`}>{c}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-[#5A3A22]/70">Não informado</p>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* dica disponibilidade */}
+        <div className="mb-4">
+          <p className="text-xs text-[#5A3A22] opacity-70">
+            Datas disponíveis cadastradas: <b>{availableKeys.length}</b>
+          </p>
+        </div>
+
+        {/* Pré-reserva */}
+        <section className="pc-card pc-card-accent mb-6">
+          <h2 className="font-semibold text-[#5A3A22] mb-3">Fazer pré-reserva</h2>
+
+          {pricedServices.length === 0 ? (
+            <p className="text-[#5A3A22]">
+              Este cuidador ainda não definiu preços para os serviços.
+            </p>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                <select
+                  value={svc}
+                  onChange={(e) => setSvc(e.target.value)}
+                  className="input"
+                >
+                  {pricedServices.map((k) => (
+                    <option key={k} value={k}>
+                      {serviceLabel(k)} — R$ {Number(svcPriceMap[k]).toFixed(2)}/
+                      {k === "passeios" ? "h" : "dia"}
+                    </option>
+                  ))}
+                </select>
+
+                <input
+                  type="date"
+                  value={startDate}
+                  min={todayKey}
+                  onChange={(e) => handleStartChange(e.target.value)}
+                  className="input"
+                />
+
+                <input
+                  type="date"
+                  value={endDate}
+                  min={startDate || todayKey}
+                  onChange={(e) => handleEndChange(e.target.value)}
+                  className="input"
+                />
+
+                <div className="flex items-center px-3 py-2 rounded-lg border text-[#5A3A22]">
+                  Total: <b className="ml-1">R$ {Number(total || 0).toFixed(2)}</b>
+                </div>
+
+                <button
+                  onClick={handlePreReserva}
+                  disabled={saving}
+                  className="bg-[#5A3A22] hover:bg-[#95301F] disabled:opacity-60 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg font-semibold"
+                >
+                  {saving ? "Enviando..." : "Enviar pré-reserva"}
+                </button>
+              </div>
+
+              {capacityInfo && (
+                <p className="mt-3 text-xs text-[#95301F]">
+                  Agenda cheia nesse período (
+                  <b>
+                    {capacityInfo.overlapping}/{capacityInfo.capacity}
+                  </b>
+                  ). Tente outras datas.
+                </p>
+              )}
+
+              {pets.length > 0 ? (
+                <div className="mt-4 border rounded-xl p-4 bg-[#FFF8F0]">
+                  <h3 className="font-semibold text-[#5A3A22] mb-2">
+                    Qual pet vai nessa reserva?
+                  </h3>
+                  <p className="text-xs text-[#5A3A22] opacity-80 mb-2">
+                    Você pode escolher um ou mais pets cadastrados no seu perfil.
+                  </p>
+
+                  <button
+                    type="button"
+                    onClick={toggleAllPets}
+                    className={`mb-3 px-3 py-1 rounded-full text-xs font-semibold border transition ${
+                      allPetsSelected
+                        ? "bg-[#5A3A22] text-white border-[#5A3A22]"
+                        : "bg-white text-[#5A3A22] border-[#D2A679] hover:bg-[#FFF3D0]"
+                    }`}
+                  >
+                    {allPetsSelected
+                      ? "Desmarcar todos"
+                      : "Selecionar todos os pets"}
+                  </button>
+
+                  <div className="flex flex-wrap gap-2">
+                    {pets.map((pet) => {
+                      const active = selectedPetIds
+                        .map(String)
+                        .includes(String(pet.id));
+
+                      return (
+                        <button
+                          key={pet.id}
+                          type="button"
+                          onClick={() => togglePet(pet.id)}
+                          className={`px-3 py-2 rounded-xl text-xs md:text-sm border flex items-center gap-2 transition ${
+                            active
+                              ? "bg-[#5A3A22] text-white border-[#5A3A22]"
+                              : "bg-white text-[#5A3A22] border-[#D2A679] hover:bg-[#FFF3D0]"
+                          }`}
+                        >
+                          <img
+                            src={pickPetImage(pet) || "/paw.png"}
+                            alt={pet.name}
+                            className="w-8 h-8 rounded-full object-cover border border-[#FFD700]"
+                          />
+                          <span className="font-semibold">{pet.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <p className="mt-3 text-xs text-[#5A3A22] opacity-80">
+                  Cadastre seus pets no painel <b>Meus Pets</b> para selecioná-los aqui
+                  na pré-reserva.
+                </p>
+              )}
+            </>
+          )}
+
+          <p className="text-xs text-[#5A3A22] mt-2">
+            * O endereço completo só é exibido após a reserva ser <b>Aceita</b>.
+            Antes disso, apenas <b>bairro</b> e <b>cidade</b> ficam visíveis.
+          </p>
+        </section>
+
+        {/* Ações secundárias */}
         <div className="flex flex-wrap gap-2 mb-2">
           <button
             type="button"
@@ -1268,8 +1601,149 @@ export default function CaregiverDetail() {
           </button>
         </div>
 
-        {/* Avaliações: seu bloco continua igual, só que agora com revealedIds corrigido */}
-        {/* ... */}
+        <p className="text-xs text-[#5A3A22] opacity-80 mb-8">
+          O chat interno fica disponível nos <b>detalhes da reserva</b> assim que ela
+          for <b>Aceita</b> e permanece liberado por até{" "}
+          <b>24 horas após o término</b>. Depois disso, para iniciar uma nova
+          conversa, é preciso fazer uma nova reserva com este cuidador.
+        </p>
+
+        {/* Avaliações */}
+        <section>
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-3">
+            <h2 className="text-xl font-semibold text-[#5A3A22]">Avaliações</h2>
+
+            {reviewServicesInData.length > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-[#5A3A22] opacity-80">Filtrar:</span>
+                <select
+                  value={reviewSvcFilter}
+                  onChange={(e) => setReviewSvcFilter(e.target.value)}
+                  className="border rounded-lg px-3 py-2 bg-white text-sm"
+                >
+                  <option value="todos">Todos</option>
+                  {reviewServicesInData.map((s) => (
+                    <option key={s} value={s}>
+                      {serviceLabel(s)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+
+          {reviewsLoading ? (
+            <div className="grid gap-3">
+              {[1, 2, 3].map((n) => (
+                <div key={n} className="pc-card pc-card-accent animate-pulse">
+                  <div className="h-4 w-52 bg-gray-200 rounded mb-2" />
+                  <div className="h-3 w-72 bg-gray-200 rounded mb-2" />
+                  <div className="h-3 w-56 bg-gray-200 rounded" />
+                </div>
+              ))}
+            </div>
+          ) : reviewsError ? (
+            <div className="pc-card pc-card-accent">
+              <p className="text-sm text-[#95301F] font-semibold">{reviewsError}</p>
+              <p className="text-xs text-[#5A3A22] opacity-80 mt-1">
+                Recarregue a página ou tente novamente.
+              </p>
+            </div>
+          ) : filteredReviews.length === 0 ? (
+            <p className="text-[#5A3A22]">
+              Ainda não há avaliações
+              {reviewSvcFilter !== "todos" ? " para esse serviço" : ""}.
+            </p>
+          ) : (
+            <>
+              <p className="text-xs text-[#5A3A22] opacity-70 mb-3">
+                Mostrando <b>{filteredReviews.length}</b> de{" "}
+                <b>{listReviews.length}</b> avaliações
+                {reviewSvcFilter !== "todos" ? (
+                  <>
+                    {" "}
+                    para <b>{serviceLabel(reviewSvcFilter)}</b>
+                  </>
+                ) : null}
+                .
+              </p>
+
+              <div className="grid gap-3">
+                {filteredReviews
+                  .slice()
+                  .sort((a, b) => {
+                    const da = a.createdAt
+                      ? parseLocalKey(String(a.createdAt).slice(0, 10))
+                      : new Date(0);
+                    const db = b.createdAt
+                      ? parseLocalKey(String(b.createdAt).slice(0, 10))
+                      : new Date(0);
+                    return db - da;
+                  })
+                  .map((rv) => {
+                    const revealed = revealedIds.has(rv.id);
+                    return (
+                      <div
+                        key={rv.id}
+                        className={`pc-card pc-card-accent transition-all duration-300 ${
+                          revealed
+                            ? "opacity-100 translate-y-0"
+                            : "opacity-0 translate-y-1"
+                        }`}
+                      >
+                        <p className="text-sm text-[#5A3A22]/80">
+                          <b>{rv.authorName || "Usuário"}</b> — {rv.rating} ★ —{" "}
+                          {rv.createdAt
+                            ? formatDateBR(String(rv.createdAt).slice(0, 10))
+                            : ""}
+                          {rv.service ? (
+                            <span className="opacity-70">
+                              {" "}
+                              • {serviceLabel(String(rv.service))}
+                            </span>
+                          ) : null}
+                        </p>
+                        {rv.comment && <p className="mt-1">{rv.comment}</p>}
+                      </div>
+                    );
+                  })}
+              </div>
+
+              <div className="mt-4 flex flex-col items-center gap-2">
+                {reviewsLoadingMore && (
+                  <p className="text-xs text-[#5A3A22] opacity-70">
+                    Carregando mais…
+                  </p>
+                )}
+
+                {reviewsHasMore && reviewSvcFilter === "todos" && (
+                  <button
+                    type="button"
+                    onClick={handleLoadMoreReviews}
+                    disabled={reviewsLoadingMore}
+                    className="bg-[#FFD700] hover:bg-[#FFEA70] disabled:opacity-60 disabled:cursor-not-allowed text-[#5A3A22] px-4 py-2 rounded-lg font-semibold shadow"
+                  >
+                    {reviewsLoadingMore ? "Carregando..." : "Ver mais avaliações"}
+                  </button>
+                )}
+
+                {!reviewsHasMore &&
+                  listReviews.length > 0 &&
+                  reviewSvcFilter === "todos" && (
+                    <p className="text-xs text-[#5A3A22] opacity-60">
+                      Você chegou ao fim das avaliações.
+                    </p>
+                  )}
+
+                {reviewSvcFilter !== "todos" && (
+                  <p className="text-xs text-[#5A3A22] opacity-60">
+                    Para paginar, selecione <b>“Todos”</b>.
+                  </p>
+                )}
+              </div>
+            </>
+          )}
+        </section>
       </div>
     </div>
   );
