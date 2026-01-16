@@ -253,7 +253,7 @@ export default function AdminDashboard() {
       <h1>ADMIN DASHBOARD CARREGOU</h1>
     </div>
   );
-}
+
 
 const [usersList, setUsersList] = useState([]);
 const [reservationsList, setReservationsList] = useState([]);
