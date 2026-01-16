@@ -86,18 +86,7 @@ function normReservation(r) {
   const tutorId = pick(r, ["tutorId", "tutor_id"], "");
   const caregiverId = pick(r, ["caregiverId", "caregiver_id"], "");
 
-  return {
-    ...r,
-    id,
-    status,
-    startDate,
-    endDate,
-    createdAt,
-    tutorName,
-    caregiverName,
-    tutorId,
-    caregiverId,
-  };
+  return { ...r, id, status, startDate, endDate, createdAt, tutorName, caregiverName, tutorId, caregiverId };
 }
 
 function normReview(rv) {
@@ -237,10 +226,14 @@ export default function AdminDashboard() {
   const { user, token } = useAuth();
   const { showToast } = useToast();
 
-  const role = String(user?.role || "").toLowerCase().trim();
-  const isAdmin = role === "admin" || role === "admin_master";
-
   const [tab, setTab] = useState("users");
+
+  useEffect(() => {
+    const p = (location.pathname || "").toLowerCase();
+    if (p.includes("/admin/reservations")) setTab("reservations");
+    else if (p.includes("/admin/reviews")) setTab("reviews");
+    else setTab("users");
+  }, [location.pathname]);
 
   const [usersList, setUsersList] = useState([]);
   const [reservationsList, setReservationsList] = useState([]);
@@ -278,6 +271,8 @@ export default function AdminDashboard() {
   const [blockDays, setBlockDays] = useState(7);
   const [blockUntil, setBlockUntil] = useState("");
 
+  const isAdmin = (user?.role || "").toLowerCase() === "admin";
+
   const ENDPOINTS = useMemo(
     () => ({
       listUsers: "/admin/users",
@@ -296,14 +291,6 @@ export default function AdminDashboard() {
     []
   );
 
-  // sincroniza aba com rota
-  useEffect(() => {
-    const p = (location.pathname || "").toLowerCase();
-    if (p.includes("/admin/reservations")) setTab("reservations");
-    else if (p.includes("/admin/reviews")) setTab("reviews");
-    else setTab("users");
-  }, [location.pathname]);
-
   const loadUsers = useCallback(async () => {
     if (!token || !isAdmin) return;
     setLoadingUsers(true);
@@ -317,7 +304,7 @@ export default function AdminDashboard() {
     } finally {
       setLoadingUsers(false);
     }
-  }, [token, isAdmin, ENDPOINTS.listUsers, showToast]);
+  }, [token, isAdmin, ENDPOINTS, showToast]);
 
   const loadReservations = useCallback(async () => {
     if (!token || !isAdmin) return;
@@ -332,7 +319,7 @@ export default function AdminDashboard() {
     } finally {
       setLoadingRes(false);
     }
-  }, [token, isAdmin, ENDPOINTS.listReservations, showToast]);
+  }, [token, isAdmin, ENDPOINTS, showToast]);
 
   const loadReviews = useCallback(async () => {
     if (!token || !isAdmin) return;
@@ -347,7 +334,7 @@ export default function AdminDashboard() {
     } finally {
       setLoadingReviews(false);
     }
-  }, [token, isAdmin, ENDPOINTS.listReviews, showToast]);
+  }, [token, isAdmin, ENDPOINTS, showToast]);
 
   useEffect(() => {
     if (!token || !isAdmin) return;
@@ -391,7 +378,7 @@ export default function AdminDashboard() {
   const metrics = useMemo(() => {
     const totalUsers = usersList.length;
     const blockedUsers = usersList.filter((u) => Boolean(u?.isBlocked)).length;
-    const admins = usersList.filter((u) => ["admin", "admin_master"].includes(String(u?.role || "").toLowerCase())).length;
+    const admins = usersList.filter((u) => String(u?.role || "").toLowerCase() === "admin").length;
     const tutors = usersList.filter((u) => String(u?.role || "").toLowerCase() === "tutor").length;
     const caregivers = usersList.filter((u) => String(u?.role || "").toLowerCase() === "caregiver").length;
 
@@ -576,8 +563,7 @@ export default function AdminDashboard() {
 
   const bulkSetReservationStatus = (status) => {
     if (!selectedResIds.length) return showToast?.("Selecione reservas.", "info");
-    const label =
-      status === "canceled" ? "Cancelar" : status === "completed" ? "Concluir" : `Alterar (${status})`;
+    const label = status === "canceled" ? "Cancelar" : status === "completed" ? "Concluir" : `Alterar (${status})`;
     openConfirm({
       title: `${label} reservas selecionadas?`,
       description: `Isso afetará ${selectedResIds.length} reserva(s).`,
@@ -728,7 +714,8 @@ export default function AdminDashboard() {
     };
     if (variant === "danger") return { ...base, border: "1px solid transparent", background: colors.red, color: "#fff" };
     if (variant === "dark") return { ...base, border: "1px solid transparent", background: "#111", color: "#fff" };
-    if (variant === "brand") return { ...base, border: "1px solid transparent", background: colors.yellow, color: colors.brown };
+    if (variant === "brand")
+      return { ...base, border: "1px solid transparent", background: colors.yellow, color: colors.brown };
     return base;
   };
 
@@ -891,11 +878,7 @@ export default function AdminDashboard() {
                 />
               </div>
               <div style={{ gridColumn: "span 4" }}>
-                <MetricCard
-                  title="Usuários bloqueados"
-                  value={metrics.users.blockedUsers}
-                  subtitle="Total marcados como bloqueados"
-                />
+                <MetricCard title="Usuários bloqueados" value={metrics.users.blockedUsers} subtitle="Total marcados como bloqueados" />
               </div>
               <div style={{ gridColumn: "span 4" }}>
                 <MetricCard title="Reservas" value={metrics.reservations.totalRes} subtitle="Total no sistema" />
@@ -918,11 +901,7 @@ export default function AdminDashboard() {
                 <MetricCard title="Avaliações" value={metrics.reviews.totalReviews} subtitle="Total registradas" />
               </div>
               <div style={{ gridColumn: "span 3" }}>
-                <MetricCard
-                  title="Avaliações ocultas"
-                  value={metrics.reviews.hiddenReviews}
-                  subtitle={`Visíveis: ${metrics.reviews.visibleReviews}`}
-                />
+                <MetricCard title="Avaliações ocultas" value={metrics.reviews.hiddenReviews} subtitle={`Visíveis: ${metrics.reviews.visibleReviews}`} />
               </div>
             </div>
           </div>
@@ -1135,7 +1114,9 @@ export default function AdminDashboard() {
                           <td style={{ padding: 10 }}>{r.status || "-"}</td>
                           <td style={{ padding: 10 }}>{fmtDate(r.startDate) || "-"}</td>
                           <td style={{ padding: 10 }}>{fmtDate(r.endDate) || "-"}</td>
-                          <td style={{ padding: 10 }}>{r.tutorName ? r.tutorName : r.tutorId ? `ID ${r.tutorId}` : "-"}</td>
+                          <td style={{ padding: 10 }}>
+                            {r.tutorName ? r.tutorName : r.tutorId ? `ID ${r.tutorId}` : "-"}
+                          </td>
                           <td style={{ padding: 10 }}>
                             {r.caregiverName ? r.caregiverName : r.caregiverId ? `ID ${r.caregiverId}` : "-"}
                           </td>
@@ -1216,7 +1197,9 @@ export default function AdminDashboard() {
                           <td style={{ padding: 10 }}>{r.reservationId || "-"}</td>
                           <td style={{ padding: 10 }}>{toStr(r.rating) || "-"}</td>
                           <td style={{ padding: 10, color: "#333" }}>{r.comment ? r.comment : "-"}</td>
-                          <td style={{ padding: 10 }}>{r.tutorName ? r.tutorName : r.tutorId ? `ID ${r.tutorId}` : "-"}</td>
+                          <td style={{ padding: 10 }}>
+                            {r.tutorName ? r.tutorName : r.tutorId ? `ID ${r.tutorId}` : "-"}
+                          </td>
                           <td style={{ padding: 10 }}>
                             {r.caregiverName ? r.caregiverName : r.caregiverId ? `ID ${r.caregiverId}` : "-"}
                           </td>
