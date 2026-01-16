@@ -1,5 +1,6 @@
 // src/pages/AdminDashboard.jsx
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../components/ToastProvider";
 import { authRequest } from "../services/api";
@@ -232,10 +233,18 @@ function ConfirmModal({
 }
 
 export default function AdminDashboard() {
+  const location = useLocation();
   const { user, token } = useAuth();
   const { showToast } = useToast();
 
   const [tab, setTab] = useState("users");
+
+  useEffect(() => {
+    const p = (location.pathname || "").toLowerCase();
+    if (p.includes("/admin/reservations")) setTab("reservations");
+    else if (p.includes("/admin/reviews")) setTab("reviews");
+    else setTab("users");
+  }, [location.pathname]);
 
   const [usersList, setUsersList] = useState([]);
   const [reservationsList, setReservationsList] = useState([]);

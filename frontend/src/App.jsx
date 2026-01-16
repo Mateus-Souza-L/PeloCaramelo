@@ -22,6 +22,7 @@ const ComportamentoAnimal = lazy(() => import("./pages/ComportamentoAnimal"));
 const Sobre = lazy(() => import("./pages/Sobre"));
 const Profile = lazy(() => import("./pages/Profile"));
 const ReviewHistory = lazy(() => import("./pages/ReviewHistory"));
+const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
 
 // Helper de título
 const withTitle = (t, children) => <Title title={t}>{children}</Title>;
@@ -113,10 +114,10 @@ export default function App() {
               />
 
               <Route
-                path="/admin/users"
+                path="/admin"
                 element={
                   <PrivateRoute roles={["admin", "admin_master"]}>
-                    {withTitle("PeloCaramelo | Admin — Usuários", <AdminUsers />)}
+                    {withTitle("PeloCaramelo | Admin", <AdminDashboard />)}
                   </PrivateRoute>
                 }
               />
