@@ -529,6 +529,112 @@ async function createAdminController(req, res) {
   }
 }
 
+/* PATCH /admin/users/:id/role
+   - Somente admin_master (rota já está protegida por adminMasterMiddleware)
+   - Permite voltar admin -> tutor (o que você quer)
+   - Não permite criar admin_master
+*/
+async function setUserRoleController(req, res) {
+  const client = await pool.connect();
+  try {
+    const requesterRole = String(req.user?.role || "").toLowerCase().trim();
+    if (requesterRole !== "admin_master") {
+      return res.status(403).json({
+        error: "Apenas o admin master pode alterar roles.",
+        code: "FORBIDDEN_ADMIN_MASTER_ONLY",
+      });
+    }
+
+    const id = toStr(req.params?.id).trim();
+    if (!id) return res.status(400).json({ error: "ID é obrigatório." });
+
+    // não mexe em si mesmo (evita se trancar)
+    if (toStr(req.user?.id) && toStr(req.user.id) === id) {
+      return res.status(400).json({ error: "Você não pode alterar sua própria role." });
+    }
+
+    const roleRaw = toStr(req.body?.role).toLowerCase().trim();
+    const allowed = new Set(["tutor", "caregiver", "admin"]);
+    if (!allowed.has(roleRaw)) {
+      return res.status(400).json({
+        error: "Role inválida. Use: tutor, caregiver ou admin.",
+      });
+    }
+
+    // bloqueia qualquer tentativa de elevar alguém acima do master
+    if (roleRaw === "admin_master") {
+      return res.status(400).json({ error: "Não é permitido definir role como admin_master." });
+    }
+
+    // não permite alterar o admin_master alvo (se existir alguém assim no banco)
+    const { rows: targetRows } = await client.query(
+      `SELECT id, role FROM users WHERE id::text = $1::text LIMIT 1;`,
+      [id]
+    );
+    const target = targetRows?.[0] || null;
+    if (!target) return res.status(404).json({ error: "Usuário não encontrado." });
+
+    const targetRole = String(target.role || "").toLowerCase().trim();
+    if (targetRole === "admin_master") {
+      return res.status(403).json({ error: "Não é permitido alterar o admin_master." });
+    }
+
+    const hasAdminLevel = await columnExists(client, "users", "admin_level");
+    const hasUpdatedAt = await columnExists(client, "users", "updated_at");
+
+    const sets = [];
+    const params = [];
+    let idx = 1;
+
+    params.push(roleRaw);
+    sets.push(`role = $${idx++}`);
+
+    // Se virar admin: admin_level = 2 (se tiver coluna)
+    // Se voltar pra tutor/caregiver: zera admin_level (se tiver coluna)
+    if (hasAdminLevel) {
+      if (roleRaw === "admin") sets.push(`admin_level = COALESCE(admin_level, 2)`);
+      else sets.push(`admin_level = NULL`);
+    }
+
+    if (hasUpdatedAt) sets.push(`updated_at = NOW()`);
+
+    params.push(id);
+    const idParam = idx++;
+
+    const returningCols = [
+      "id",
+      "name",
+      "email",
+      "role",
+      "blocked",
+      hasAdminLevel ? "admin_level" : "NULL::int AS admin_level",
+      (await columnExists(client, "users", "blocked_reason")) ? "blocked_reason" : "NULL::text AS blocked_reason",
+      (await columnExists(client, "users", "blocked_until")) ? "blocked_until" : "NULL::timestamptz AS blocked_until",
+      "created_at",
+    ].join(", ");
+
+    const { rows } = await client.query(
+      `
+      UPDATE users
+      SET ${sets.join(", ")}
+      WHERE id::text = $${idParam}::text
+      RETURNING ${returningCols};
+      `,
+      params
+    );
+
+    const user = rows?.[0] || null;
+    if (!user) return res.status(404).json({ error: "Usuário não encontrado." });
+
+    return res.json({ user });
+  } catch (err) {
+    console.error("Erro em PATCH /admin/users/:id/role:", pickPgErr(err));
+    return res.status(500).json({ error: "Erro ao alterar role do usuário." });
+  } finally {
+    client.release();
+  }
+}
+
 module.exports = {
   listUsersController,
   setUserBlockedController,
@@ -536,4 +642,6 @@ module.exports = {
   listReservationsController,
   deleteReservationController,
   createAdminController,
+  setUserRoleController, // ✅ NOVO
 };
+
