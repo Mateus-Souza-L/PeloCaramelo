@@ -277,7 +277,7 @@ export default function AdminDashboard() {
   const [blockUntil, setBlockUntil] = useState("");
 
   const roleLower = String(user?.role || "").toLowerCase();
-  const isAdmin = roleLower === "admin" || roleLower === "admin_master";
+  const isAdmin = roleLower === "admin" || roleLower === "admin_master" || roleLower.startsWith("admin");
 
   const ENDPOINTS = useMemo(
     () => ({
