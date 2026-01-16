@@ -239,6 +239,14 @@ export default function AdminDashboard() {
 
   const [tab, setTab] = useState("users");
 
+  // ✅ mantém o resto do arquivo funcionando
+  useEffect(() => {
+    const p = (location.pathname || "").toLowerCase();
+    if (p.includes("/admin/reservations")) setTab("reservations");
+    else if (p.includes("/admin/reviews")) setTab("reviews");
+    else setTab("users");
+  }, [location.pathname]);
+
   // 🔴 TESTE TEMPORÁRIO (APENAS PARA VER SE RENDERIZA)
   return (
     <div style={{ padding: 20, background: "#fff" }}>
