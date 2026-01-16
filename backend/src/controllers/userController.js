@@ -80,6 +80,16 @@ async function updateMeController(req, res) {
     if (!userId) return;
 
     const body = req.body || {};
+
+    // ✅ trava e-mail sempre
+    if (body.email != null) delete body.email;
+
+    // ✅ nome: só admin_master pode mudar
+    const role = String(req.user?.role || "").toLowerCase().trim();
+    if (body.name != null && role !== "admin_master") {
+      return res.status(403).json({ error: "Apenas o admin master pode alterar o nome." });
+    }
+
     const updates = {};
 
     // campos básicos
@@ -123,8 +133,8 @@ async function updateMeController(req, res) {
       if (Object.prototype.hasOwnProperty.call(body, "courses")) {
         updates.courses = Array.isArray(body.courses)
           ? body.courses.filter(
-              (c) => typeof c === "string" && c.trim() !== ""
-            )
+            (c) => typeof c === "string" && c.trim() !== ""
+          )
           : [];
       }
     }
