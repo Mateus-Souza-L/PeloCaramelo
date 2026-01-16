@@ -247,7 +247,6 @@ export default function AdminDashboard() {
   );
 
   // todo o resto do código fica abaixo, mas não roda enquanto esse return existir
-}
 
 useEffect(() => {
   const p = (location.pathname || "").toLowerCase();
