@@ -14,7 +14,6 @@ const Home = lazy(() => import("./pages/Home"));
 const Login = lazy(() => import("./pages/Login"));
 const Register = lazy(() => import("./pages/Register"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
-const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
 const AdminUsers = lazy(() => import("./pages/AdminUsers"));
 const Search = lazy(() => import("./pages/Search"));
 const CaregiverDetail = lazy(() => import("./pages/CaregiverDetail"));
@@ -56,7 +55,7 @@ export default function App() {
   // fallback inteligente pra rotas inexistentes
   const fallbackPath = useMemo(() => {
     if (!role) return "/";
-    if (isAdminLike) return "/admin";
+    if (isAdminLike) return "/admin/users";
     if (role === "tutor" || role === "caregiver") return "/dashboard";
     return "/";
   }, [role, isAdminLike]);
@@ -70,49 +69,31 @@ export default function App() {
           <Suspense fallback={<LoadingFallback />}>
             <Routes>
               {/* Públicas */}
-              <Route
-                path="/"
-                element={withTitle("PeloCaramelo | Início", <Home />)}
-              />
-              <Route
-                path="/login"
-                element={withTitle("PeloCaramelo | Login", <Login />)}
-              />
+              <Route path="/" element={withTitle("PeloCaramelo | Início", <Home />)} />
+              <Route path="/login" element={withTitle("PeloCaramelo | Login", <Login />)} />
               <Route
                 path="/register"
                 element={withTitle("PeloCaramelo | Cadastro", <Register />)}
               />
-              <Route
-                path="/buscar"
-                element={withTitle("PeloCaramelo | Buscar", <Search />)}
-              />
+              <Route path="/buscar" element={withTitle("PeloCaramelo | Buscar", <Search />)} />
               <Route
                 path="/caregiver/:id"
-                element={withTitle(
-                  "PeloCaramelo | Detalhes do Cuidador",
-                  <CaregiverDetail />
-                )}
+                element={withTitle("PeloCaramelo | Detalhes do Cuidador", <CaregiverDetail />)}
               />
               <Route
                 path="/comportamento"
-                element={withTitle(
-                  "PeloCaramelo | Comportamento Animal",
-                  <ComportamentoAnimal />
-                )}
+                element={withTitle("PeloCaramelo | Comportamento Animal", <ComportamentoAnimal />)}
               />
-              <Route
-                path="/sobre"
-                element={withTitle("PeloCaramelo | Sobre", <Sobre />)}
-              />
+              <Route path="/sobre" element={withTitle("PeloCaramelo | Sobre", <Sobre />)} />
 
               {/* Protegidas */}
 
-              {/* Admin não usa Dashboard; redireciona pro /admin */}
+              {/* Dashboard tutor/cuidador (admin/admin_master não usa) */}
               <Route
                 path="/dashboard"
                 element={
                   isAdminLike ? (
-                    <Navigate to="/admin" replace />
+                    <Navigate to="/admin/users" replace />
                   ) : (
                     <PrivateRoute roles={["tutor", "caregiver"]}>
                       {withTitle("PeloCaramelo | Painel", <Dashboard />)}
@@ -121,12 +102,12 @@ export default function App() {
                 }
               />
 
-              {/* Área Admin */}
+              {/* /admin vira atalho para a área que já está OK */}
               <Route
                 path="/admin"
                 element={
                   <PrivateRoute roles={["admin", "admin_master"]}>
-                    {withTitle("PeloCaramelo | Admin", <AdminDashboard />)}
+                    <Navigate to="/admin/users" replace />
                   </PrivateRoute>
                 }
               />
@@ -135,10 +116,7 @@ export default function App() {
                 path="/admin/users"
                 element={
                   <PrivateRoute roles={["admin", "admin_master"]}>
-                    {withTitle(
-                      "PeloCaramelo | Admin — Usuários",
-                      <AdminUsers />
-                    )}
+                    {withTitle("PeloCaramelo | Admin — Usuários", <AdminUsers />)}
                   </PrivateRoute>
                 }
               />
@@ -146,9 +124,7 @@ export default function App() {
               <Route
                 path="/perfil"
                 element={
-                  <PrivateRoute
-                    roles={["tutor", "caregiver", "admin", "admin_master"]}
-                  >
+                  <PrivateRoute roles={["tutor", "caregiver", "admin", "admin_master"]}>
                     {withTitle("PeloCaramelo | Meu Perfil", <Profile />)}
                   </PrivateRoute>
                 }
@@ -157,23 +133,17 @@ export default function App() {
               <Route
                 path="/reserva/:id"
                 element={
-                  <PrivateRoute
-                    roles={["tutor", "caregiver", "admin", "admin_master"]}
-                  >
+                  <PrivateRoute roles={["tutor", "caregiver", "admin", "admin_master"]}>
                     {withTitle("PeloCaramelo | Reserva", <ReservationDetail />)}
                   </PrivateRoute>
                 }
               />
 
-              {/* Histórico de avaliações do usuário logado */}
               <Route
                 path="/avaliacoes"
                 element={
                   <PrivateRoute roles={["tutor", "caregiver"]}>
-                    {withTitle(
-                      "PeloCaramelo | Minhas Avaliações",
-                      <ReviewHistory />
-                    )}
+                    {withTitle("PeloCaramelo | Minhas Avaliações", <ReviewHistory />)}
                   </PrivateRoute>
                 }
               />
