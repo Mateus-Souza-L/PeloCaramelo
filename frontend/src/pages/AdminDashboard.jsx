@@ -5,14 +5,16 @@ import { useAuth } from "../context/AuthContext";
 import { useToast } from "../components/ToastProvider";
 import { authRequest } from "../services/api";
 
+export default function AdminDashboard() {
+  return (
+    <div style={{ padding: 20, background: "#fff" }}>
+      <h1>ADMIN DASHBOARD CARREGOU</h1>
+    </div>
+  );
+}
+
 /* ---------- helpers ---------- */
 const toStr = (v) => (v == null ? "" : String(v));
-
-return (
-  <div style={{ padding: 20, background: "#fff" }}>
-    <h1>ADMIN DASHBOARD CARREGOU</h1>
-  </div>
-);
 
 function pick(obj, keys, fallback = "") {
   for (const k of keys) {
