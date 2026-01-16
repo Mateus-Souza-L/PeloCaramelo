@@ -238,7 +238,7 @@ export default function AdminDashboard() {
   const { showToast } = useToast();
 
   const role = String(user?.role || "").toLowerCase().trim();
-  const isAdminLike = role === "admin" || role === "admin_master";
+  const isAdmin = role === "admin" || role === "admin_master";
 
   const [tab, setTab] = useState("users");
 
@@ -296,7 +296,7 @@ export default function AdminDashboard() {
     []
   );
 
-  // sincroniza a aba com a rota
+  // sincroniza aba com rota
   useEffect(() => {
     const p = (location.pathname || "").toLowerCase();
     if (p.includes("/admin/reservations")) setTab("reservations");
@@ -305,11 +305,11 @@ export default function AdminDashboard() {
   }, [location.pathname]);
 
   const loadUsers = useCallback(async () => {
-    if (!token || !isAdminLike) return;
+    if (!token || !isAdmin) return;
     setLoadingUsers(true);
     try {
       const data = await authRequest(ENDPOINTS.listUsers, token);
-      const arr = Array.isArray(data) ? data : data?.users || data?.items || [];
+      const arr = Array.isArray(data) ? data : data?.users || [];
       setUsersList(arr.map(normUser).filter(Boolean));
     } catch {
       setUsersList([]);
@@ -317,14 +317,14 @@ export default function AdminDashboard() {
     } finally {
       setLoadingUsers(false);
     }
-  }, [token, isAdminLike, ENDPOINTS.listUsers, showToast]);
+  }, [token, isAdmin, ENDPOINTS.listUsers, showToast]);
 
   const loadReservations = useCallback(async () => {
-    if (!token || !isAdminLike) return;
+    if (!token || !isAdmin) return;
     setLoadingRes(true);
     try {
       const data = await authRequest(ENDPOINTS.listReservations, token);
-      const arr = Array.isArray(data) ? data : data?.reservations || data?.items || [];
+      const arr = Array.isArray(data) ? data : data?.reservations || [];
       setReservationsList(arr.map(normReservation).filter(Boolean));
     } catch {
       setReservationsList([]);
@@ -332,10 +332,10 @@ export default function AdminDashboard() {
     } finally {
       setLoadingRes(false);
     }
-  }, [token, isAdminLike, ENDPOINTS.listReservations, showToast]);
+  }, [token, isAdmin, ENDPOINTS.listReservations, showToast]);
 
   const loadReviews = useCallback(async () => {
-    if (!token || !isAdminLike) return;
+    if (!token || !isAdmin) return;
     setLoadingReviews(true);
     try {
       const data = await authRequest(ENDPOINTS.listReviews, token);
@@ -347,14 +347,14 @@ export default function AdminDashboard() {
     } finally {
       setLoadingReviews(false);
     }
-  }, [token, isAdminLike, ENDPOINTS.listReviews, showToast]);
+  }, [token, isAdmin, ENDPOINTS.listReviews, showToast]);
 
   useEffect(() => {
-    if (!token || !isAdminLike) return;
+    if (!token || !isAdmin) return;
     loadUsers();
     loadReservations();
     loadReviews();
-  }, [token, isAdminLike, loadUsers, loadReservations, loadReviews]);
+  }, [token, isAdmin, loadUsers, loadReservations, loadReviews]);
 
   const users = useMemo(() => {
     const q = qUsers.trim().toLowerCase();
@@ -391,10 +391,7 @@ export default function AdminDashboard() {
   const metrics = useMemo(() => {
     const totalUsers = usersList.length;
     const blockedUsers = usersList.filter((u) => Boolean(u?.isBlocked)).length;
-    const admins = usersList.filter((u) => {
-      const rr = String(u?.role || "").toLowerCase();
-      return rr === "admin" || rr === "admin_master";
-    }).length;
+    const admins = usersList.filter((u) => ["admin", "admin_master"].includes(String(u?.role || "").toLowerCase())).length;
     const tutors = usersList.filter((u) => String(u?.role || "").toLowerCase() === "tutor").length;
     const caregivers = usersList.filter((u) => String(u?.role || "").toLowerCase() === "caregiver").length;
 
@@ -471,15 +468,7 @@ export default function AdminDashboard() {
     setSelectedReviews(new Set());
   };
 
-  const openConfirm = ({
-    title,
-    description,
-    confirmText,
-    danger,
-    action,
-    withReason = false,
-    withUntil = false,
-  }) => {
+  const openConfirm = ({ title, description, confirmText, danger, action, withReason = false, withUntil = false }) => {
     setReasonText("");
     setBlockDays(7);
     setBlockUntil("");
@@ -587,7 +576,8 @@ export default function AdminDashboard() {
 
   const bulkSetReservationStatus = (status) => {
     if (!selectedResIds.length) return showToast?.("Selecione reservas.", "info");
-    const label = status === "canceled" ? "Cancelar" : status === "completed" ? "Concluir" : `Alterar (${status})`;
+    const label =
+      status === "canceled" ? "Cancelar" : status === "completed" ? "Concluir" : `Alterar (${status})`;
     openConfirm({
       title: `${label} reservas selecionadas?`,
       description: `Isso afetará ${selectedResIds.length} reserva(s).`,
@@ -736,12 +726,9 @@ export default function AdminDashboard() {
       background: "#fff",
       color: "#111",
     };
-    if (variant === "danger")
-      return { ...base, border: "1px solid transparent", background: colors.red, color: "#fff" };
-    if (variant === "dark")
-      return { ...base, border: "1px solid transparent", background: "#111", color: "#fff" };
-    if (variant === "brand")
-      return { ...base, border: "1px solid transparent", background: colors.yellow, color: colors.brown };
+    if (variant === "danger") return { ...base, border: "1px solid transparent", background: colors.red, color: "#fff" };
+    if (variant === "dark") return { ...base, border: "1px solid transparent", background: "#111", color: "#fff" };
+    if (variant === "brand") return { ...base, border: "1px solid transparent", background: colors.yellow, color: colors.brown };
     return base;
   };
 
@@ -762,7 +749,7 @@ export default function AdminDashboard() {
     </div>
   );
 
-  if (!isAdminLike) {
+  if (!isAdmin) {
     return (
       <div style={{ padding: 16, background: colors.beige, minHeight: "100vh" }}>
         <div style={{ ...containerStyle }}>
@@ -1148,9 +1135,7 @@ export default function AdminDashboard() {
                           <td style={{ padding: 10 }}>{r.status || "-"}</td>
                           <td style={{ padding: 10 }}>{fmtDate(r.startDate) || "-"}</td>
                           <td style={{ padding: 10 }}>{fmtDate(r.endDate) || "-"}</td>
-                          <td style={{ padding: 10 }}>
-                            {r.tutorName ? r.tutorName : r.tutorId ? `ID ${r.tutorId}` : "-"}
-                          </td>
+                          <td style={{ padding: 10 }}>{r.tutorName ? r.tutorName : r.tutorId ? `ID ${r.tutorId}` : "-"}</td>
                           <td style={{ padding: 10 }}>
                             {r.caregiverName ? r.caregiverName : r.caregiverId ? `ID ${r.caregiverId}` : "-"}
                           </td>
@@ -1231,9 +1216,7 @@ export default function AdminDashboard() {
                           <td style={{ padding: 10 }}>{r.reservationId || "-"}</td>
                           <td style={{ padding: 10 }}>{toStr(r.rating) || "-"}</td>
                           <td style={{ padding: 10, color: "#333" }}>{r.comment ? r.comment : "-"}</td>
-                          <td style={{ padding: 10 }}>
-                            {r.tutorName ? r.tutorName : r.tutorId ? `ID ${r.tutorId}` : "-"}
-                          </td>
+                          <td style={{ padding: 10 }}>{r.tutorName ? r.tutorName : r.tutorId ? `ID ${r.tutorId}` : "-"}</td>
                           <td style={{ padding: 10 }}>
                             {r.caregiverName ? r.caregiverName : r.caregiverId ? `ID ${r.caregiverId}` : "-"}
                           </td>
@@ -1247,11 +1230,7 @@ export default function AdminDashboard() {
                                 color: r.isHidden ? colors.red : "#156b15",
                                 border: "1px solid #eee",
                               }}
-                              title={
-                                r.isHidden
-                                  ? `Motivo: ${r.hiddenReason || "-"}\nEm: ${fmtDate(r.hiddenAt) || "-"}`
-                                  : ""
-                              }
+                              title={r.isHidden ? `Motivo: ${r.hiddenReason || "-"}\nEm: ${fmtDate(r.hiddenAt) || "-"}` : ""}
                             >
                               {r.isHidden ? "Oculta" : "Visível"}
                             </span>
