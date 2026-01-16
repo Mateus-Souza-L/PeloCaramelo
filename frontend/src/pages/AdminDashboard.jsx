@@ -1,11 +1,11 @@
 // src/pages/AdminDashboard.jsx
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../components/ToastProvider";
 import { authRequest } from "../services/api";
 
-/* ---------- helpers ---------- */
+/* helpers */
 const toStr = (v) => (v == null ? "" : String(v));
 
 function pick(obj, keys, fallback = "") {
@@ -65,8 +65,8 @@ function normUser(u) {
   const isBlockedRaw = pick(u, ["isBlocked", "is_blocked", "blocked"], false);
   const isBlocked = Boolean(isBlockedRaw);
 
-  const blockedReason = pick(u, ["blockedReason", "blocked_reason", "block_reason"], "");
-  const blockedUntil = pick(u, ["blockedUntil", "blocked_until", "block_until"], "");
+  const blockedReason = pick(u, ["blockedReason", "blocked_reason", "block_reason", "blocked_reason"], "");
+  const blockedUntil = pick(u, ["blockedUntil", "blocked_until", "block_until", "blocked_until"], "");
 
   const createdAt = pick(u, ["createdAt", "created_at", "created", "created_on"], "");
   return { ...u, id, name, email, role, isBlocked, blockedReason, blockedUntil, createdAt };
@@ -86,7 +86,18 @@ function normReservation(r) {
   const tutorId = pick(r, ["tutorId", "tutor_id"], "");
   const caregiverId = pick(r, ["caregiverId", "caregiver_id"], "");
 
-  return { ...r, id, status, startDate, endDate, createdAt, tutorName, caregiverName, tutorId, caregiverId };
+  return {
+    ...r,
+    id,
+    status,
+    startDate,
+    endDate,
+    createdAt,
+    tutorName,
+    caregiverName,
+    tutorId,
+    caregiverId,
+  };
 }
 
 function normReview(rv) {
@@ -123,7 +134,7 @@ function normReview(rv) {
   };
 }
 
-/* ---------- modal ---------- */
+/* modal */
 function ConfirmModal({
   open,
   title,
@@ -223,17 +234,11 @@ function ConfirmModal({
 
 export default function AdminDashboard() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { user, token } = useAuth();
   const { showToast } = useToast();
 
   const [tab, setTab] = useState("users");
-
-  useEffect(() => {
-    const p = (location.pathname || "").toLowerCase();
-    if (p.includes("/admin/reservations")) setTab("reservations");
-    else if (p.includes("/admin/reviews")) setTab("reviews");
-    else setTab("users");
-  }, [location.pathname]);
 
   const [usersList, setUsersList] = useState([]);
   const [reservationsList, setReservationsList] = useState([]);
@@ -271,7 +276,8 @@ export default function AdminDashboard() {
   const [blockDays, setBlockDays] = useState(7);
   const [blockUntil, setBlockUntil] = useState("");
 
-  const isAdmin = (user?.role || "").toLowerCase() === "admin";
+  const roleLower = String(user?.role || "").toLowerCase();
+  const isAdmin = roleLower === "admin" || roleLower === "admin_master";
 
   const ENDPOINTS = useMemo(
     () => ({
@@ -291,6 +297,19 @@ export default function AdminDashboard() {
     []
   );
 
+  useEffect(() => {
+    const p = (location.pathname || "").toLowerCase();
+    if (p.includes("/admin/reservations")) setTab("reservations");
+    else if (p.includes("/admin/reviews")) setTab("reviews");
+    else setTab("users");
+  }, [location.pathname]);
+
+  const clearSelection = useCallback(() => {
+    setSelectedUsers(new Set());
+    setSelectedRes(new Set());
+    setSelectedReviews(new Set());
+  }, []);
+
   const loadUsers = useCallback(async () => {
     if (!token || !isAdmin) return;
     setLoadingUsers(true);
@@ -304,7 +323,7 @@ export default function AdminDashboard() {
     } finally {
       setLoadingUsers(false);
     }
-  }, [token, isAdmin, ENDPOINTS, showToast]);
+  }, [token, isAdmin, ENDPOINTS.listUsers, showToast]);
 
   const loadReservations = useCallback(async () => {
     if (!token || !isAdmin) return;
@@ -319,7 +338,7 @@ export default function AdminDashboard() {
     } finally {
       setLoadingRes(false);
     }
-  }, [token, isAdmin, ENDPOINTS, showToast]);
+  }, [token, isAdmin, ENDPOINTS.listReservations, showToast]);
 
   const loadReviews = useCallback(async () => {
     if (!token || !isAdmin) return;
@@ -334,7 +353,7 @@ export default function AdminDashboard() {
     } finally {
       setLoadingReviews(false);
     }
-  }, [token, isAdmin, ENDPOINTS, showToast]);
+  }, [token, isAdmin, ENDPOINTS.listReviews, showToast]);
 
   useEffect(() => {
     if (!token || !isAdmin) return;
@@ -378,7 +397,12 @@ export default function AdminDashboard() {
   const metrics = useMemo(() => {
     const totalUsers = usersList.length;
     const blockedUsers = usersList.filter((u) => Boolean(u?.isBlocked)).length;
-    const admins = usersList.filter((u) => String(u?.role || "").toLowerCase() === "admin").length;
+
+    const admins = usersList.filter((u) => {
+      const r = String(u?.role || "").toLowerCase();
+      return r === "admin" || r === "admin_master";
+    }).length;
+
     const tutors = usersList.filter((u) => String(u?.role || "").toLowerCase() === "tutor").length;
     const caregivers = usersList.filter((u) => String(u?.role || "").toLowerCase() === "caregiver").length;
 
@@ -449,34 +473,31 @@ export default function AdminDashboard() {
   const selectAllRes = selectAll(reservations, setSelectedRes);
   const selectAllReviews = selectAll(reviews, setSelectedReviews);
 
-  const clearSelection = () => {
-    setSelectedUsers(new Set());
-    setSelectedRes(new Set());
-    setSelectedReviews(new Set());
-  };
+  const openConfirm = useCallback(
+    ({ title, description, confirmText, danger, action, withReason = false, withUntil = false }) => {
+      setReasonText("");
+      setBlockDays(7);
+      setBlockUntil("");
+      setConfirmState({
+        open: true,
+        title,
+        description,
+        confirmText: confirmText || "Confirmar",
+        danger: !!danger,
+        action: typeof action === "function" ? action : null,
+        withReason,
+        withUntil,
+      });
+    },
+    []
+  );
 
-  const openConfirm = ({ title, description, confirmText, danger, action, withReason = false, withUntil = false }) => {
-    setReasonText("");
-    setBlockDays(7);
-    setBlockUntil("");
-    setConfirmState({
-      open: true,
-      title,
-      description,
-      confirmText: confirmText || "Confirmar",
-      danger: !!danger,
-      action: typeof action === "function" ? action : null,
-      withReason,
-      withUntil,
-    });
-  };
-
-  const closeConfirm = () => {
+  const closeConfirm = useCallback(() => {
     if (busyConfirm) return;
     setConfirmState((s) => ({ ...s, open: false }));
-  };
+  }, [busyConfirm]);
 
-  const runConfirm = async () => {
+  const runConfirm = useCallback(async () => {
     if (!confirmState.action) return closeConfirm();
     setBusyConfirm(true);
     try {
@@ -487,9 +508,11 @@ export default function AdminDashboard() {
     } finally {
       setBusyConfirm(false);
     }
-  };
+  }, [confirmState.action, reasonText, blockDays, blockUntil, closeConfirm, showToast]);
 
   const selectedUserIds = useMemo(() => Array.from(selectedUsers), [selectedUsers]);
+  const selectedResIds = useMemo(() => Array.from(selectedRes), [selectedRes]);
+  const selectedReviewIds = useMemo(() => Array.from(selectedReviews), [selectedReviews]);
 
   const bulkSetBlocked = (blocked) => {
     if (!selectedUserIds.length) return showToast?.("Selecione usuários.", "info");
@@ -541,8 +564,6 @@ export default function AdminDashboard() {
     });
   };
 
-  const selectedResIds = useMemo(() => Array.from(selectedRes), [selectedRes]);
-
   const bulkDeleteReservations = () => {
     if (!selectedResIds.length) return showToast?.("Selecione reservas.", "info");
     openConfirm({
@@ -582,8 +603,6 @@ export default function AdminDashboard() {
     });
   };
 
-  const selectedReviewIds = useMemo(() => Array.from(selectedReviews), [selectedReviews]);
-
   const bulkHideReviews = () => {
     if (!selectedReviewIds.length) return showToast?.("Selecione avaliações.", "info");
     openConfirm({
@@ -595,9 +614,7 @@ export default function AdminDashboard() {
       action: async ({ reasonText }) => {
         const reason = (reasonText || "").trim() || "Violação de diretrizes / conteúdo inadequado";
         await Promise.all(
-          selectedReviewIds.map((id) =>
-            authRequest(ENDPOINTS.hideReview(id), token, { method: "PATCH", body: { reason } })
-          )
+          selectedReviewIds.map((id) => authRequest(ENDPOINTS.hideReview(id), token, { method: "PATCH", body: { reason } }))
         );
         showToast?.("Avaliações ocultadas.", "success");
         await loadReviews();
@@ -714,8 +731,7 @@ export default function AdminDashboard() {
     };
     if (variant === "danger") return { ...base, border: "1px solid transparent", background: colors.red, color: "#fff" };
     if (variant === "dark") return { ...base, border: "1px solid transparent", background: "#111", color: "#fff" };
-    if (variant === "brand")
-      return { ...base, border: "1px solid transparent", background: colors.yellow, color: colors.brown };
+    if (variant === "brand") return { ...base, border: "1px solid transparent", background: colors.yellow, color: colors.brown };
     return base;
   };
 
@@ -736,14 +752,30 @@ export default function AdminDashboard() {
     </div>
   );
 
+  if (!token) {
+    return (
+      <div style={{ padding: 16, background: colors.beige, minHeight: "100vh" }}>
+        <div style={containerStyle}>
+          <div style={{ ...cardStyle, padding: 18 }}>
+            <div style={{ fontSize: 18, fontWeight: 900, color: colors.brown }}>Você não está logado</div>
+            <div style={{ marginTop: 8, color: "#333" }}>Faça login para acessar o painel.</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!isAdmin) {
     return (
       <div style={{ padding: 16, background: colors.beige, minHeight: "100vh" }}>
-        <div style={{ ...containerStyle }}>
+        <div style={containerStyle}>
           <div style={{ ...cardStyle, padding: 18 }}>
             <div style={{ fontSize: 18, fontWeight: 900, color: colors.brown }}>Acesso restrito</div>
             <div style={{ marginTop: 8, color: "#333" }}>
               Você precisa estar logado como <b>admin</b> para acessar este painel.
+              <div style={{ marginTop: 8, fontSize: 12, color: "#666" }}>
+                Seu role atual: <b>{toStr(user?.role || "-")}</b>
+              </div>
             </div>
           </div>
         </div>
@@ -753,6 +785,13 @@ export default function AdminDashboard() {
 
   const selectedCount =
     tab === "users" ? selectedUsers.size : tab === "reservations" ? selectedRes.size : selectedReviews.size;
+
+  const goTab = (t) => {
+    setTab(t);
+    if (t === "users") navigate("/admin/users");
+    else if (t === "reservations") navigate("/admin/reservations");
+    else navigate("/admin/reviews");
+  };
 
   return (
     <div style={{ padding: 16, background: colors.beige, minHeight: "100vh" }}>
@@ -855,13 +894,13 @@ export default function AdminDashboard() {
           </div>
 
           <div style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button type="button" onClick={() => setTab("users")} style={pillBtn(tab === "users")}>
+            <button type="button" onClick={() => goTab("users")} style={pillBtn(tab === "users")}>
               Usuários ({usersList.length})
             </button>
-            <button type="button" onClick={() => setTab("reservations")} style={pillBtn(tab === "reservations")}>
+            <button type="button" onClick={() => goTab("reservations")} style={pillBtn(tab === "reservations")}>
               Reservas ({reservationsList.length})
             </button>
-            <button type="button" onClick={() => setTab("reviews")} style={pillBtn(tab === "reviews")}>
+            <button type="button" onClick={() => goTab("reviews")} style={pillBtn(tab === "reviews")}>
               Avaliações ({reviewsList.length})
             </button>
           </div>
@@ -1114,9 +1153,7 @@ export default function AdminDashboard() {
                           <td style={{ padding: 10 }}>{r.status || "-"}</td>
                           <td style={{ padding: 10 }}>{fmtDate(r.startDate) || "-"}</td>
                           <td style={{ padding: 10 }}>{fmtDate(r.endDate) || "-"}</td>
-                          <td style={{ padding: 10 }}>
-                            {r.tutorName ? r.tutorName : r.tutorId ? `ID ${r.tutorId}` : "-"}
-                          </td>
+                          <td style={{ padding: 10 }}>{r.tutorName ? r.tutorName : r.tutorId ? `ID ${r.tutorId}` : "-"}</td>
                           <td style={{ padding: 10 }}>
                             {r.caregiverName ? r.caregiverName : r.caregiverId ? `ID ${r.caregiverId}` : "-"}
                           </td>
@@ -1197,9 +1234,7 @@ export default function AdminDashboard() {
                           <td style={{ padding: 10 }}>{r.reservationId || "-"}</td>
                           <td style={{ padding: 10 }}>{toStr(r.rating) || "-"}</td>
                           <td style={{ padding: 10, color: "#333" }}>{r.comment ? r.comment : "-"}</td>
-                          <td style={{ padding: 10 }}>
-                            {r.tutorName ? r.tutorName : r.tutorId ? `ID ${r.tutorId}` : "-"}
-                          </td>
+                          <td style={{ padding: 10 }}>{r.tutorName ? r.tutorName : r.tutorId ? `ID ${r.tutorId}` : "-"}</td>
                           <td style={{ padding: 10 }}>
                             {r.caregiverName ? r.caregiverName : r.caregiverId ? `ID ${r.caregiverId}` : "-"}
                           </td>
