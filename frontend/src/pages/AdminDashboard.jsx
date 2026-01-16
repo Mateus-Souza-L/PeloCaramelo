@@ -285,6 +285,7 @@ export default function AdminDashboard() {
 
   const roleLower = String(user?.role || "").toLowerCase();
   const isAdmin = roleLower.includes("admin");
+  const isAdminMaster = roleLower === "admin_master";
 
   const ENDPOINTS = useMemo(
     () => ({
@@ -293,6 +294,7 @@ export default function AdminDashboard() {
       listReviews: "/admin/reviews",
 
       setUserBlocked: (id) => `/admin/users/${id}/block`,
+      setUserRole: (id) => `/admin/users/${id}/role`, // ✅ NOVO
       deleteUser: (id) => `/admin/users/${id}`,
 
       updateReservationStatus: (id) => `/reservations/${id}/status`,
@@ -536,6 +538,31 @@ export default function AdminDashboard() {
     });
   };
 
+  // ✅ NOVO: alterar role (somente admin_master)
+  const bulkSetRole = (role) => {
+    if (!isAdminMaster) return showToast?.("Apenas admin master pode alterar roles.", "error");
+    if (!selectedUserIds.length) return showToast?.("Selecione usuários.", "info");
+
+    const label = role === "admin" ? "Tornar admin" : role === "tutor" ? "Voltar para tutor" : `Definir: ${role}`;
+
+    openConfirm({
+      title: `${label} para os selecionados?`,
+      description: `Isso alterará a role de ${selectedUserIds.length} usuário(s).`,
+      confirmText: label,
+      danger: role === "admin",
+      action: async () => {
+        await Promise.all(
+          selectedUserIds.map((id) =>
+            authRequest(ENDPOINTS.setUserRole(id), token, { method: "PATCH", body: { role } })
+          )
+        );
+        showToast?.("Roles atualizadas.", "success");
+        await loadUsers();
+        clearSelection();
+      },
+    });
+  };
+
   const bulkDeleteUsers = () => {
     if (!selectedUserIds.length) return showToast?.("Selecione usuários.", "info");
     openConfirm({
@@ -608,9 +635,7 @@ export default function AdminDashboard() {
       action: async ({ reasonText }) => {
         const reason = (reasonText || "").trim() || "Violação de diretrizes / conteúdo inadequado";
         await Promise.all(
-          selectedReviewIds.map((id) =>
-            authRequest(ENDPOINTS.hideReview(id), token, { method: "PATCH", body: { reason } })
-          )
+          selectedReviewIds.map((id) => authRequest(ENDPOINTS.hideReview(id), token, { method: "PATCH", body: { reason } }))
         );
         showToast?.("Avaliações ocultadas.", "success");
         await loadReviews();
@@ -779,8 +804,7 @@ export default function AdminDashboard() {
     );
   }
 
-  const selectedCount =
-    tab === "users" ? selectedUsers.size : tab === "reservations" ? selectedRes.size : selectedReviews.size;
+  const selectedCount = tab === "users" ? selectedUsers.size : tab === "reservations" ? selectedRes.size : selectedReviews.size;
 
   return (
     <div style={{ padding: 16, background: colors.beige, minHeight: "100vh" }}>
@@ -906,11 +930,7 @@ export default function AdminDashboard() {
                 />
               </div>
               <div style={{ gridColumn: "span 4" }}>
-                <MetricCard
-                  title="Usuários bloqueados"
-                  value={metrics.users.blockedUsers}
-                  subtitle="Total marcados como bloqueados"
-                />
+                <MetricCard title="Usuários bloqueados" value={metrics.users.blockedUsers} subtitle="Total marcados como bloqueados" />
               </div>
               <div style={{ gridColumn: "span 4" }}>
                 <MetricCard title="Reservas" value={metrics.reservations.totalRes} subtitle="Total no sistema" />
@@ -933,11 +953,7 @@ export default function AdminDashboard() {
                 <MetricCard title="Avaliações" value={metrics.reviews.totalReviews} subtitle="Total registradas" />
               </div>
               <div style={{ gridColumn: "span 3" }}>
-                <MetricCard
-                  title="Avaliações ocultas"
-                  value={metrics.reviews.hiddenReviews}
-                  subtitle={`Visíveis: ${metrics.reviews.visibleReviews}`}
-                />
+                <MetricCard title="Avaliações ocultas" value={metrics.reviews.hiddenReviews} subtitle={`Visíveis: ${metrics.reviews.visibleReviews}`} />
               </div>
             </div>
           </div>
@@ -959,6 +975,17 @@ export default function AdminDashboard() {
 
             {tab === "users" ? (
               <>
+                {isAdminMaster ? (
+                  <>
+                    <button type="button" onClick={() => bulkSetRole("tutor")} style={btn("light")}>
+                      Voltar para tutor
+                    </button>
+                    <button type="button" onClick={() => bulkSetRole("admin")} style={btn("brand")}>
+                      Tornar admin
+                    </button>
+                  </>
+                ) : null}
+
                 <button type="button" onClick={() => bulkSetBlocked(false)} style={btn("light")}>
                   Desbloquear
                 </button>
@@ -1150,9 +1177,7 @@ export default function AdminDashboard() {
                           <td style={{ padding: 10 }}>{r.status || "-"}</td>
                           <td style={{ padding: 10 }}>{fmtDate(r.startDate) || "-"}</td>
                           <td style={{ padding: 10 }}>{fmtDate(r.endDate) || "-"}</td>
-                          <td style={{ padding: 10 }}>
-                            {r.tutorName ? r.tutorName : r.tutorId ? `ID ${r.tutorId}` : "-"}
-                          </td>
+                          <td style={{ padding: 10 }}>{r.tutorName ? r.tutorName : r.tutorId ? `ID ${r.tutorId}` : "-"}</td>
                           <td style={{ padding: 10 }}>
                             {r.caregiverName ? r.caregiverName : r.caregiverId ? `ID ${r.caregiverId}` : "-"}
                           </td>
@@ -1233,9 +1258,7 @@ export default function AdminDashboard() {
                           <td style={{ padding: 10 }}>{r.reservationId || "-"}</td>
                           <td style={{ padding: 10 }}>{toStr(r.rating) || "-"}</td>
                           <td style={{ padding: 10, color: "#333" }}>{r.comment ? r.comment : "-"}</td>
-                          <td style={{ padding: 10 }}>
-                            {r.tutorName ? r.tutorName : r.tutorId ? `ID ${r.tutorId}` : "-"}
-                          </td>
+                          <td style={{ padding: 10 }}>{r.tutorName ? r.tutorName : r.tutorId ? `ID ${r.tutorId}` : "-"}</td>
                           <td style={{ padding: 10 }}>
                             {r.caregiverName ? r.caregiverName : r.caregiverId ? `ID ${r.caregiverId}` : "-"}
                           </td>
