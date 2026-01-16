@@ -8,6 +8,12 @@ import { authRequest } from "../services/api";
 /* ---------- helpers ---------- */
 const toStr = (v) => (v == null ? "" : String(v));
 
+return (
+  <div style={{ padding: 20, background: "#fff" }}>
+    <h1>ADMIN DASHBOARD CARREGOU</h1>
+  </div>
+);
+
 function pick(obj, keys, fallback = "") {
   for (const k of keys) {
     if (obj && obj[k] != null) return obj[k];
