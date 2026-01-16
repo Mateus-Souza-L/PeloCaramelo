@@ -64,7 +64,6 @@ function normUser(u) {
   const isBlockedRaw = pick(u, ["isBlocked", "is_blocked", "blocked"], false);
   const isBlocked = Boolean(isBlockedRaw);
 
-  // opcional (vai ficar vazio se o backend não mandar ainda)
   const blockedReason = pick(u, ["blockedReason", "blocked_reason", "block_reason"], "");
   const blockedUntil = pick(u, ["blockedUntil", "blocked_until", "block_until"], "");
 
@@ -236,10 +235,8 @@ export default function AdminDashboard() {
   const { user, token } = useAuth();
   const { showToast } = useToast();
 
-  // ====== tabs ======
-  const [tab, setTab] = useState("users"); // users | reservations | reviews
+  const [tab, setTab] = useState("users");
 
-  // ====== data ======
   const [usersList, setUsersList] = useState([]);
   const [reservationsList, setReservationsList] = useState([]);
   const [reviewsList, setReviewsList] = useState([]);
@@ -248,13 +245,11 @@ export default function AdminDashboard() {
   const [loadingRes, setLoadingRes] = useState(false);
   const [loadingReviews, setLoadingReviews] = useState(false);
 
-  // ====== filters ======
   const [qUsers, setQUsers] = useState("");
   const [qRes, setQRes] = useState("");
   const [qReviews, setQReviews] = useState("");
   const [showHidden, setShowHidden] = useState(true);
 
-  // ====== bulk selection ======
   const [selectedUsers, setSelectedUsers] = useState(() => new Set());
   const [selectedRes, setSelectedRes] = useState(() => new Set());
   const [selectedReviews, setSelectedReviews] = useState(() => new Set());
@@ -263,14 +258,13 @@ export default function AdminDashboard() {
   const resSelectAllRef = useRef(null);
   const reviewsSelectAllRef = useRef(null);
 
-  // ====== modal state ======
   const [confirmState, setConfirmState] = useState({
     open: false,
     title: "",
     description: "",
     confirmText: "Confirmar",
     danger: false,
-    action: null, // (ctx) => Promise
+    action: null,
     withReason: false,
     withUntil: false,
   });
@@ -281,83 +275,76 @@ export default function AdminDashboard() {
 
   const isAdmin = (user?.role || "").toLowerCase() === "admin";
 
-  // ====== endpoints ======
   const ENDPOINTS = useMemo(
     () => ({
-      // listas
       listUsers: "/admin/users",
       listReservations: "/admin/reservations",
       listReviews: "/admin/reviews",
 
-      // usuários
       setUserBlocked: (id) => `/admin/users/${id}/block`,
       deleteUser: (id) => `/admin/users/${id}`,
 
-      // reservas
       updateReservationStatus: (id) => `/reservations/${id}/status`,
       deleteReservation: (id) => `/admin/reservations/${id}`,
 
-      // avaliações
-      hideReview: (id) => `/admin/reviews/${id}/hide`, // PATCH body: { reason }
-      unhideReview: (id) => `/admin/reviews/${id}/unhide`, // PATCH
+      hideReview: (id) => `/admin/reviews/${id}/hide`,
+      unhideReview: (id) => `/admin/reviews/${id}/unhide`,
     }),
     []
   );
 
-  // ====== load ======
   const loadUsers = useCallback(async () => {
-    if (!token) return;
+    if (!token || !isAdmin) return;
     setLoadingUsers(true);
     try {
       const data = await authRequest(ENDPOINTS.listUsers, token);
       const arr = Array.isArray(data) ? data : data?.users || [];
       setUsersList(arr.map(normUser).filter(Boolean));
     } catch {
-      showToast?.("Erro ao carregar usuários (admin).", "error");
       setUsersList([]);
+      showToast?.("Erro ao carregar usuários (admin).", "error");
     } finally {
       setLoadingUsers(false);
     }
-  }, [token, ENDPOINTS.listUsers, showToast]);
+  }, [token, isAdmin, ENDPOINTS.listUsers, showToast]);
 
   const loadReservations = useCallback(async () => {
-    if (!token) return;
+    if (!token || !isAdmin) return;
     setLoadingRes(true);
     try {
       const data = await authRequest(ENDPOINTS.listReservations, token);
       const arr = Array.isArray(data) ? data : data?.reservations || [];
       setReservationsList(arr.map(normReservation).filter(Boolean));
     } catch {
-      showToast?.("Erro ao carregar reservas (admin).", "error");
       setReservationsList([]);
+      showToast?.("Erro ao carregar reservas (admin).", "error");
     } finally {
       setLoadingRes(false);
     }
-  }, [token, ENDPOINTS.listReservations, showToast]);
+  }, [token, isAdmin, ENDPOINTS.listReservations, showToast]);
 
   const loadReviews = useCallback(async () => {
-    if (!token) return;
+    if (!token || !isAdmin) return;
     setLoadingReviews(true);
     try {
       const data = await authRequest(ENDPOINTS.listReviews, token);
       const arr = Array.isArray(data) ? data : data?.items || data?.reviews || [];
       setReviewsList(arr.map(normReview).filter(Boolean));
     } catch {
-      showToast?.("Erro ao carregar avaliações (admin).", "error");
       setReviewsList([]);
+      showToast?.("Erro ao carregar avaliações (admin).", "error");
     } finally {
       setLoadingReviews(false);
     }
-  }, [token, ENDPOINTS.listReviews, showToast]);
+  }, [token, isAdmin, ENDPOINTS.listReviews, showToast]);
 
   useEffect(() => {
-    if (!token) return;
+    if (!token || !isAdmin) return;
     loadUsers();
     loadReservations();
     loadReviews();
-  }, [token, loadUsers, loadReservations, loadReviews]);
+  }, [token, isAdmin, loadUsers, loadReservations, loadReviews]);
 
-  // ====== derived ======
   const users = useMemo(() => {
     const q = qUsers.trim().toLowerCase();
     if (!q) return usersList;
@@ -390,7 +377,6 @@ export default function AdminDashboard() {
     });
   }, [reviewsList, qReviews, showHidden]);
 
-  // ====== ✅ MÉTRICAS ======
   const metrics = useMemo(() => {
     const totalUsers = usersList.length;
     const blockedUsers = usersList.filter((u) => Boolean(u?.isBlocked)).length;
@@ -416,7 +402,6 @@ export default function AdminDashboard() {
     };
   }, [usersList, reservationsList, reviewsList]);
 
-  // ====== select all indeterminate ======
   useEffect(() => {
     if (!usersSelectAllRef.current) return;
     const total = users.length;
@@ -438,7 +423,6 @@ export default function AdminDashboard() {
     reviewsSelectAllRef.current.indeterminate = selectedCount > 0 && selectedCount < total;
   }, [reviews, selectedReviews]);
 
-  // ====== selection helpers ======
   const toggleSet = (setter) => (id) => {
     const key = String(id);
     setter((prev) => {
@@ -473,7 +457,6 @@ export default function AdminDashboard() {
     setSelectedReviews(new Set());
   };
 
-  // ====== modal helpers ======
   const openConfirm = ({
     title,
     description,
@@ -516,7 +499,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // ====== bulk actions: USERS ======
   const selectedUserIds = useMemo(() => Array.from(selectedUsers), [selectedUsers]);
 
   const bulkSetBlocked = (blocked) => {
@@ -531,20 +513,16 @@ export default function AdminDashboard() {
       withUntil: blocked,
       action: async ({ reasonText, blockDays, blockUntil }) => {
         const reason = (reasonText || "").trim() || (blocked ? "Bloqueio administrativo" : "");
-
         const payload = { blocked, reason };
 
         if (blocked) {
-          if (blockUntil) payload.blockedUntil = blockUntil; // "YYYY-MM-DD" já serve
+          if (blockUntil) payload.blockedUntil = blockUntil;
           else payload.blockedDays = Number(blockDays || 7);
         }
 
         await Promise.all(
           selectedUserIds.map((id) =>
-            authRequest(ENDPOINTS.setUserBlocked(id), token, {
-              method: "PATCH",
-              body: payload,
-            })
+            authRequest(ENDPOINTS.setUserBlocked(id), token, { method: "PATCH", body: payload })
           )
         );
 
@@ -563,9 +541,7 @@ export default function AdminDashboard() {
       confirmText: "Excluir",
       danger: true,
       action: async () => {
-        await Promise.all(
-          selectedUserIds.map((id) => authRequest(ENDPOINTS.deleteUser(id), token, { method: "DELETE" }))
-        );
+        await Promise.all(selectedUserIds.map((id) => authRequest(ENDPOINTS.deleteUser(id), token, { method: "DELETE" })));
         showToast?.("Usuários excluídos.", "success");
         await loadUsers();
         clearSelection();
@@ -573,7 +549,6 @@ export default function AdminDashboard() {
     });
   };
 
-  // ====== bulk actions: RESERVATIONS ======
   const selectedResIds = useMemo(() => Array.from(selectedRes), [selectedRes]);
 
   const bulkDeleteReservations = () => {
@@ -605,10 +580,7 @@ export default function AdminDashboard() {
       action: async () => {
         await Promise.all(
           selectedResIds.map((id) =>
-            authRequest(ENDPOINTS.updateReservationStatus(id), token, {
-              method: "PATCH",
-              body: { status },
-            })
+            authRequest(ENDPOINTS.updateReservationStatus(id), token, { method: "PATCH", body: { status } })
           )
         );
         showToast?.("Reservas atualizadas.", "success");
@@ -618,7 +590,6 @@ export default function AdminDashboard() {
     });
   };
 
-  // ====== bulk actions: REVIEWS ======
   const selectedReviewIds = useMemo(() => Array.from(selectedReviews), [selectedReviews]);
 
   const bulkHideReviews = () => {
@@ -633,10 +604,7 @@ export default function AdminDashboard() {
         const reason = (reasonText || "").trim() || "Violação de diretrizes / conteúdo inadequado";
         await Promise.all(
           selectedReviewIds.map((id) =>
-            authRequest(ENDPOINTS.hideReview(id), token, {
-              method: "PATCH",
-              body: { reason },
-            })
+            authRequest(ENDPOINTS.hideReview(id), token, { method: "PATCH", body: { reason } })
           )
         );
         showToast?.("Avaliações ocultadas.", "success");
@@ -653,9 +621,7 @@ export default function AdminDashboard() {
       description: `Isso reexibirá ${selectedReviewIds.length} avaliação(ões).`,
       confirmText: "Reexibir",
       action: async () => {
-        await Promise.all(
-          selectedReviewIds.map((id) => authRequest(ENDPOINTS.unhideReview(id), token, { method: "PATCH" }))
-        );
+        await Promise.all(selectedReviewIds.map((id) => authRequest(ENDPOINTS.unhideReview(id), token, { method: "PATCH" })));
         showToast?.("Avaliações reexibidas.", "success");
         await loadReviews();
         clearSelection();
@@ -663,7 +629,6 @@ export default function AdminDashboard() {
     });
   };
 
-  // ====== Export CSV ======
   const exportUsersCSV = () => {
     if (!users.length) return showToast?.("Nada para exportar.", "info");
     const cols = [
@@ -714,7 +679,6 @@ export default function AdminDashboard() {
     showToast?.("CSV de avaliações baixado.", "success");
   };
 
-  // ====== UI tokens (PeloCaramelo) ======
   const colors = {
     brown: "#5A3A22",
     yellow: "#FFD700",
@@ -725,10 +689,7 @@ export default function AdminDashboard() {
     soft: "#faf7ef",
   };
 
-  const containerStyle = {
-    maxWidth: 1180,
-    margin: "0 auto",
-  };
+  const containerStyle = { maxWidth: 1180, margin: "0 auto" };
 
   const cardStyle = {
     background: "#fff",
@@ -757,12 +718,9 @@ export default function AdminDashboard() {
       background: "#fff",
       color: "#111",
     };
-    if (variant === "danger")
-      return { ...base, border: "1px solid transparent", background: colors.red, color: "#fff" };
-    if (variant === "dark")
-      return { ...base, border: "1px solid transparent", background: "#111", color: "#fff" };
-    if (variant === "brand")
-      return { ...base, border: "1px solid transparent", background: colors.yellow, color: colors.brown };
+    if (variant === "danger") return { ...base, border: "1px solid transparent", background: colors.red, color: "#fff" };
+    if (variant === "dark") return { ...base, border: "1px solid transparent", background: "#111", color: "#fff" };
+    if (variant === "brand") return { ...base, border: "1px solid transparent", background: colors.yellow, color: colors.brown };
     return base;
   };
 
@@ -798,7 +756,8 @@ export default function AdminDashboard() {
     );
   }
 
-  const selectedCount = tab === "users" ? selectedUsers.size : tab === "reservations" ? selectedRes.size : selectedReviews.size;
+  const selectedCount =
+    tab === "users" ? selectedUsers.size : tab === "reservations" ? selectedRes.size : selectedReviews.size;
 
   return (
     <div style={{ padding: 16, background: colors.beige, minHeight: "100vh" }}>
@@ -877,7 +836,6 @@ export default function AdminDashboard() {
       </ConfirmModal>
 
       <div style={containerStyle}>
-        {/* Header Card */}
         <div style={{ ...cardStyle, padding: 18 }}>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
             <div style={{ fontSize: 22, fontWeight: 1000, color: colors.brown }}>Admin — PeloCaramelo</div>
@@ -901,7 +859,6 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          {/* Tabs */}
           <div style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
             <button type="button" onClick={() => setTab("users")} style={pillBtn(tab === "users")}>
               Usuários ({usersList.length})
@@ -914,7 +871,6 @@ export default function AdminDashboard() {
             </button>
           </div>
 
-          {/* Métricas */}
           <div style={{ marginTop: 14 }}>
             <div style={{ fontWeight: 1100, color: colors.brown, marginBottom: 10 }}>Métricas</div>
 
@@ -927,11 +883,7 @@ export default function AdminDashboard() {
                 />
               </div>
               <div style={{ gridColumn: "span 4" }}>
-                <MetricCard
-                  title="Usuários bloqueados"
-                  value={metrics.users.blockedUsers}
-                  subtitle="Total marcados como bloqueados"
-                />
+                <MetricCard title="Usuários bloqueados" value={metrics.users.blockedUsers} subtitle="Total marcados como bloqueados" />
               </div>
               <div style={{ gridColumn: "span 4" }}>
                 <MetricCard title="Reservas" value={metrics.reservations.totalRes} subtitle="Total no sistema" />
@@ -954,16 +906,11 @@ export default function AdminDashboard() {
                 <MetricCard title="Avaliações" value={metrics.reviews.totalReviews} subtitle="Total registradas" />
               </div>
               <div style={{ gridColumn: "span 3" }}>
-                <MetricCard
-                  title="Avaliações ocultas"
-                  value={metrics.reviews.hiddenReviews}
-                  subtitle={`Visíveis: ${metrics.reviews.visibleReviews}`}
-                />
+                <MetricCard title="Avaliações ocultas" value={metrics.reviews.hiddenReviews} subtitle={`Visíveis: ${metrics.reviews.visibleReviews}`} />
               </div>
             </div>
           </div>
 
-          {/* Bulk bar */}
           <div
             style={{
               marginTop: 14,
@@ -1028,7 +975,6 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* Content Card */}
         <div style={{ marginTop: 14, ...cardStyle, padding: 14 }}>
           {tab === "users" ? (
             <>
@@ -1046,9 +992,7 @@ export default function AdminDashboard() {
                     outline: "none",
                   }}
                 />
-                <div style={{ color: "#555", fontWeight: 900 }}>
-                  {loadingUsers ? "Carregando..." : `Exibindo ${users.length}`}
-                </div>
+                <div style={{ color: "#555", fontWeight: 900 }}>{loadingUsers ? "Carregando..." : `Exibindo ${users.length}`}</div>
               </div>
 
               <div style={{ marginTop: 12, overflowX: "auto" }}>
@@ -1134,9 +1078,7 @@ export default function AdminDashboard() {
                     outline: "none",
                   }}
                 />
-                <div style={{ color: "#555", fontWeight: 900 }}>
-                  {loadingRes ? "Carregando..." : `Exibindo ${reservations.length}`}
-                </div>
+                <div style={{ color: "#555", fontWeight: 900 }}>{loadingRes ? "Carregando..." : `Exibindo ${reservations.length}`}</div>
               </div>
 
               <div style={{ marginTop: 12, overflowX: "auto" }}>
@@ -1173,9 +1115,7 @@ export default function AdminDashboard() {
                           <td style={{ padding: 10 }}>{r.status || "-"}</td>
                           <td style={{ padding: 10 }}>{fmtDate(r.startDate) || "-"}</td>
                           <td style={{ padding: 10 }}>{fmtDate(r.endDate) || "-"}</td>
-                          <td style={{ padding: 10 }}>
-                            {r.tutorName ? r.tutorName : r.tutorId ? `ID ${r.tutorId}` : "-"}
-                          </td>
+                          <td style={{ padding: 10 }}>{r.tutorName ? r.tutorName : r.tutorId ? `ID ${r.tutorId}` : "-"}</td>
                           <td style={{ padding: 10 }}>
                             {r.caregiverName ? r.caregiverName : r.caregiverId ? `ID ${r.caregiverId}` : "-"}
                           </td>
@@ -1216,9 +1156,7 @@ export default function AdminDashboard() {
                   Mostrar ocultas
                 </label>
 
-                <div style={{ color: "#555", fontWeight: 900 }}>
-                  {loadingReviews ? "Carregando..." : `Exibindo ${reviews.length}`}
-                </div>
+                <div style={{ color: "#555", fontWeight: 900 }}>{loadingReviews ? "Carregando..." : `Exibindo ${reviews.length}`}</div>
               </div>
 
               <div style={{ marginTop: 12, overflowX: "auto" }}>
@@ -1256,9 +1194,7 @@ export default function AdminDashboard() {
                           <td style={{ padding: 10 }}>{r.reservationId || "-"}</td>
                           <td style={{ padding: 10 }}>{toStr(r.rating) || "-"}</td>
                           <td style={{ padding: 10, color: "#333" }}>{r.comment ? r.comment : "-"}</td>
-                          <td style={{ padding: 10 }}>
-                            {r.tutorName ? r.tutorName : r.tutorId ? `ID ${r.tutorId}` : "-"}
-                          </td>
+                          <td style={{ padding: 10 }}>{r.tutorName ? r.tutorName : r.tutorId ? `ID ${r.tutorId}` : "-"}</td>
                           <td style={{ padding: 10 }}>
                             {r.caregiverName ? r.caregiverName : r.caregiverId ? `ID ${r.caregiverId}` : "-"}
                           </td>
@@ -1272,9 +1208,7 @@ export default function AdminDashboard() {
                                 color: r.isHidden ? colors.red : "#156b15",
                                 border: "1px solid #eee",
                               }}
-                              title={
-                                r.isHidden ? `Motivo: ${r.hiddenReason || "-"}\nEm: ${fmtDate(r.hiddenAt) || "-"}` : ""
-                              }
+                              title={r.isHidden ? `Motivo: ${r.hiddenReason || "-"}\nEm: ${fmtDate(r.hiddenAt) || "-"}` : ""}
                             >
                               {r.isHidden ? "Oculta" : "Visível"}
                             </span>
