@@ -245,15 +245,7 @@ export default function AdminDashboard() {
       <h1>ADMIN DASHBOARD CARREGOU</h1>
     </div>
   );
-
-  // todo o resto do código fica abaixo, mas não roda enquanto esse return existir
-
-useEffect(() => {
-  const p = (location.pathname || "").toLowerCase();
-  if (p.includes("/admin/reservations")) setTab("reservations");
-  else if (p.includes("/admin/reviews")) setTab("reviews");
-  else setTab("users");
-}, [location.pathname]);
+}
 
 const [usersList, setUsersList] = useState([]);
 const [reservationsList, setReservationsList] = useState([]);
