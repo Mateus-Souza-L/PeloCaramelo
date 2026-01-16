@@ -779,7 +779,8 @@ export default function AdminDashboard() {
     );
   }
 
-  const selectedCount = tab === "users" ? selectedUsers.size : tab === "reservations" ? selectedRes.size : selectedReviews.size;
+  const selectedCount =
+    tab === "users" ? selectedUsers.size : tab === "reservations" ? selectedRes.size : selectedReviews.size;
 
   return (
     <div style={{ padding: 16, background: colors.beige, minHeight: "100vh" }}>
@@ -905,7 +906,11 @@ export default function AdminDashboard() {
                 />
               </div>
               <div style={{ gridColumn: "span 4" }}>
-                <MetricCard title="Usuários bloqueados" value={metrics.users.blockedUsers} subtitle="Total marcados como bloqueados" />
+                <MetricCard
+                  title="Usuários bloqueados"
+                  value={metrics.users.blockedUsers}
+                  subtitle="Total marcados como bloqueados"
+                />
               </div>
               <div style={{ gridColumn: "span 4" }}>
                 <MetricCard title="Reservas" value={metrics.reservations.totalRes} subtitle="Total no sistema" />
@@ -928,7 +933,11 @@ export default function AdminDashboard() {
                 <MetricCard title="Avaliações" value={metrics.reviews.totalReviews} subtitle="Total registradas" />
               </div>
               <div style={{ gridColumn: "span 3" }}>
-                <MetricCard title="Avaliações ocultas" value={metrics.reviews.hiddenReviews} subtitle={`Visíveis: ${metrics.reviews.visibleReviews}`} />
+                <MetricCard
+                  title="Avaliações ocultas"
+                  value={metrics.reviews.hiddenReviews}
+                  subtitle={`Visíveis: ${metrics.reviews.visibleReviews}`}
+                />
               </div>
             </div>
           </div>
@@ -1014,7 +1023,9 @@ export default function AdminDashboard() {
                     outline: "none",
                   }}
                 />
-                <div style={{ color: "#555", fontWeight: 900 }}>{loadingUsers ? "Carregando..." : `Exibindo ${users.length}`}</div>
+                <div style={{ color: "#555", fontWeight: 900 }}>
+                  {loadingUsers ? "Carregando..." : `Exibindo ${users.length}`}
+                </div>
               </div>
 
               <div style={{ marginTop: 12, overflowX: "auto" }}>
@@ -1100,7 +1111,9 @@ export default function AdminDashboard() {
                     outline: "none",
                   }}
                 />
-                <div style={{ color: "#555", fontWeight: 900 }}>{loadingRes ? "Carregando..." : `Exibindo ${reservations.length}`}</div>
+                <div style={{ color: "#555", fontWeight: 900 }}>
+                  {loadingRes ? "Carregando..." : `Exibindo ${reservations.length}`}
+                </div>
               </div>
 
               <div style={{ marginTop: 12, overflowX: "auto" }}>
@@ -1137,7 +1150,9 @@ export default function AdminDashboard() {
                           <td style={{ padding: 10 }}>{r.status || "-"}</td>
                           <td style={{ padding: 10 }}>{fmtDate(r.startDate) || "-"}</td>
                           <td style={{ padding: 10 }}>{fmtDate(r.endDate) || "-"}</td>
-                          <td style={{ padding: 10 }}>{r.tutorName ? r.tutorName : r.tutorId ? `ID ${r.tutorId}` : "-"}</td>
+                          <td style={{ padding: 10 }}>
+                            {r.tutorName ? r.tutorName : r.tutorId ? `ID ${r.tutorId}` : "-"}
+                          </td>
                           <td style={{ padding: 10 }}>
                             {r.caregiverName ? r.caregiverName : r.caregiverId ? `ID ${r.caregiverId}` : "-"}
                           </td>
@@ -1178,7 +1193,9 @@ export default function AdminDashboard() {
                   Mostrar ocultas
                 </label>
 
-                <div style={{ color: "#555", fontWeight: 900 }}>{loadingReviews ? "Carregando..." : `Exibindo ${reviews.length}`}</div>
+                <div style={{ color: "#555", fontWeight: 900 }}>
+                  {loadingReviews ? "Carregando..." : `Exibindo ${reviews.length}`}
+                </div>
               </div>
 
               <div style={{ marginTop: 12, overflowX: "auto" }}>
@@ -1216,7 +1233,9 @@ export default function AdminDashboard() {
                           <td style={{ padding: 10 }}>{r.reservationId || "-"}</td>
                           <td style={{ padding: 10 }}>{toStr(r.rating) || "-"}</td>
                           <td style={{ padding: 10, color: "#333" }}>{r.comment ? r.comment : "-"}</td>
-                          <td style={{ padding: 10 }}>{r.tutorName ? r.tutorName : r.tutorId ? `ID ${r.tutorId}` : "-"}</td>
+                          <td style={{ padding: 10 }}>
+                            {r.tutorName ? r.tutorName : r.tutorId ? `ID ${r.tutorId}` : "-"}
+                          </td>
                           <td style={{ padding: 10 }}>
                             {r.caregiverName ? r.caregiverName : r.caregiverId ? `ID ${r.caregiverId}` : "-"}
                           </td>
