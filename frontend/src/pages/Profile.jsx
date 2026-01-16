@@ -60,18 +60,10 @@ const buildFormFromUser = (user) => {
   const rawPrices = user.prices;
 
   const safeServices =
-    rawServices &&
-    !Array.isArray(rawServices) &&
-    typeof rawServices === "object"
-      ? rawServices
-      : {};
+    rawServices && !Array.isArray(rawServices) && typeof rawServices === "object" ? rawServices : {};
 
   const safePrices =
-    rawPrices &&
-    !Array.isArray(rawPrices) &&
-    typeof rawPrices === "object"
-      ? rawPrices
-      : {};
+    rawPrices && !Array.isArray(rawPrices) && typeof rawPrices === "object" ? rawPrices : {};
 
   return {
     name: user.name ?? "",
@@ -97,11 +89,7 @@ const getAvgRating = (user, reservations) => {
 
   if (user.role === "tutor") {
     const ratings = reservations
-      .filter(
-        (r) =>
-          String(r.tutorId) === String(user.id) &&
-          typeof r.caregiverRating === "number"
-      )
+      .filter((r) => String(r.tutorId) === String(user.id) && typeof r.caregiverRating === "number")
       .map((r) => r.caregiverRating);
     if (!ratings.length) return null;
     return (ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1);
@@ -109,11 +97,7 @@ const getAvgRating = (user, reservations) => {
 
   if (user.role === "caregiver") {
     const ratings = reservations
-      .filter(
-        (r) =>
-          String(r.caregiverId) === String(user.id) &&
-          typeof r.tutorRating === "number"
-      )
+      .filter((r) => String(r.caregiverId) === String(user.id) && typeof r.tutorRating === "number")
       .map((r) => r.tutorRating);
     if (!ratings.length) return null;
     return (ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1);
@@ -123,13 +107,7 @@ const getAvgRating = (user, reservations) => {
 };
 
 // Modal simples de confirmação de senha (modo antigo, sem backend)
-function ConfirmPasswordModal({
-  open,
-  value,
-  onChange,
-  onCancel,
-  onConfirm,
-}) {
+function ConfirmPasswordModal({ open, value, onChange, onCancel, onConfirm }) {
   if (!open) return null;
 
   return (
@@ -146,9 +124,7 @@ function ConfirmPasswordModal({
         }}
       >
         <div className="bg-white p-6 rounded-xl shadow-lg w-full max-w-sm">
-          <h2 className="text-lg font-semibold text-[#5A3A22] mb-3 text-center">
-            Confirme sua senha
-          </h2>
+          <h2 className="text-lg font-semibold text-[#5A3A22] mb-3 text-center">Confirme sua senha</h2>
           <input
             type="password"
             value={value}
@@ -191,7 +167,9 @@ export default function Profile() {
   const [form, setForm] = useState(buildFormFromUser(null));
   const [reservations, setReservations] = useState([]);
 
-  const isCaregiver = user?.role === "caregiver";
+  const roleLower = String(user?.role || "").toLowerCase().trim();
+  const isCaregiver = roleLower === "caregiver";
+  const canEditName = roleLower === "admin_master"; // ✅ só admin_master pode editar nome
 
   // ao ter token, sempre buscar /users/me para trazer o usuário COMPLETO do backend
   useEffect(() => {
@@ -235,20 +213,15 @@ export default function Profile() {
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
-  const avgRating = useMemo(
-    () => getAvgRating(user, reservations),
-    [user, reservations]
-  );
+  const avgRating = useMemo(() => getAvgRating(user, reservations), [user, reservations]);
 
-  const handleChange = (field, value) =>
-    setForm((f) => ({ ...f, [field]: value }));
+  const handleChange = (field, value) => setForm((f) => ({ ...f, [field]: value }));
 
   const handleImage = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () =>
-      setForm((f) => ({ ...f, image: reader.result || "" }));
+    reader.onload = () => setForm((f) => ({ ...f, image: reader.result || "" }));
     reader.readAsDataURL(file);
   };
 
@@ -262,9 +235,7 @@ export default function Profile() {
     const v = (form.newCourse || "").trim();
     if (!v) return;
 
-    const exists = (form.courses || []).some(
-      (c) => c.toLowerCase() === v.toLowerCase()
-    );
+    const exists = (form.courses || []).some((c) => c.toLowerCase() === v.toLowerCase());
     if (exists) {
       showToast("Esse curso já foi adicionado.", "notify");
       return;
@@ -341,14 +312,8 @@ export default function Profile() {
       }
     }
 
-    // impede alteração de name/email mesmo via DevTools
-    const {
-      newPassword,
-      newCourse,
-      name: _ignoredName,
-      email: _ignoredEmail,
-      ...restForm
-    } = form;
+    // sempre ignora email (nunca muda)
+    const { newPassword, newCourse, email: _ignoredEmail, ...restForm } = form;
 
     // Se temos backend (token) → envia PATCH /users/me
     if (token) {
@@ -361,6 +326,11 @@ export default function Profile() {
         bio: restForm.bio || null,
         image: restForm.image || null,
       };
+
+      // ✅ só admin_master pode enviar name
+      if (canEditName) {
+        payload.name = String(restForm.name || "").trim() || null;
+      }
 
       if (isCaregiver) {
         // 🔹 Sanitiza services: só serviços TRUE
@@ -376,23 +346,14 @@ export default function Profile() {
         for (const key of Object.keys(restForm.prices || {})) {
           const val = restForm.prices[key];
 
-          if (
-            val !== undefined &&
-            val !== null &&
-            String(val).trim() !== "" &&
-            !Number.isNaN(
-              Number(String(val).replace(",", "."))
-            )
-          ) {
+          if (val !== undefined && val !== null && String(val).trim() !== "" && !Number.isNaN(Number(String(val).replace(",", ".")))) {
             cleanPrices[key] = String(val).replace(",", ".");
           }
         }
 
         payload.services = cleanServices;
         payload.prices = cleanPrices;
-        payload.courses = Array.isArray(restForm.courses)
-          ? restForm.courses
-          : [];
+        payload.courses = Array.isArray(restForm.courses) ? restForm.courses : [];
       }
 
       try {
@@ -406,8 +367,10 @@ export default function Profile() {
           : {
               ...user,
               ...restForm,
-              name: user.name,
+              // ✅ garante email
               email: user.email,
+              // ✅ garante nome se não for admin_master
+              name: canEditName ? restForm.name : user.name,
             };
 
         // atualiza contexto e localStorage para compatibilidade
@@ -439,8 +402,8 @@ export default function Profile() {
     const updatedUser = {
       ...user,
       ...restForm,
-      name: user.name,
-      email: user.email,
+      email: user.email, // nunca muda
+      name: canEditName ? restForm.name : user.name, // ✅ só admin_master muda nome
       password: newPassword || user.password,
     };
 
@@ -450,7 +413,8 @@ export default function Profile() {
         ? users.map((u) => (u.id === user.id ? updatedUser : u))
         : [...users, updatedUser];
 
-      localStorage.setItem("users", JSON.stringify(updatedUser));
+      // ✅ CORRETO: salva a lista
+      localStorage.setItem("users", JSON.stringify(updatedList));
       localStorage.setItem("currentUser", JSON.stringify(updatedUser));
       typeof setUser === "function" && setUser(updatedUser);
       window.dispatchEvent(new Event("users-updated"));
@@ -562,17 +526,13 @@ export default function Profile() {
               <div className="md:col-span-1">
                 <h3 className="font-semibold">Serviços</h3>
                 <ul className="list-disc pl-5 text-sm">
-                  {Object.keys(EMPTY_SERVICES).filter(
-                    (k) => form.services[k]
-                  ).length ? (
+                  {Object.keys(EMPTY_SERVICES).filter((k) => form.services[k]).length ? (
                     Object.keys(EMPTY_SERVICES)
                       .filter((k) => form.services[k])
                       .map((k) => (
                         <li key={k}>
                           {SERVICE_LABELS[k] || k} —{" "}
-                          {form.prices[k] !== "" &&
-                          form.prices[k] !== null &&
-                          form.prices[k] !== undefined
+                          {form.prices[k] !== "" && form.prices[k] !== null && form.prices[k] !== undefined
                             ? `R$ ${Number(form.prices[k]).toFixed(2)}`
                             : "sem preço"}
                         </li>
@@ -600,13 +560,7 @@ export default function Profile() {
                     />
                   </div>
                 </label>
-                <input
-                  id="img"
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleImage}
-                />
+                <input id="img" type="file" accept="image/*" className="hidden" onChange={handleImage} />
                 <p className="text-xs text-center text-[#5A3A22]/80">
                   Essa é a foto que aparece no seu perfil para outros usuários.
                 </p>
@@ -620,18 +574,22 @@ export default function Profile() {
 
               {/* CAMPOS TEXTO */}
               <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-3">
-                {/* Nome (somente leitura) */}
+                {/* Nome (admin_master pode editar) */}
                 <div>
                   <input
                     value={form.name}
-                    readOnly
-                    className="w-full border p-2 rounded-lg bg-gray-100 text-gray-700 cursor-not-allowed"
+                    onChange={(e) => canEditName && handleChange("name", e.target.value)}
+                    readOnly={!canEditName}
+                    className={`w-full border p-2 rounded-lg ${
+                      canEditName ? "bg-white" : "bg-gray-100 text-gray-700 cursor-not-allowed"
+                    }`}
                     placeholder="Nome completo"
-                    aria-readonly="true"
+                    aria-readonly={!canEditName ? "true" : "false"}
                   />
                   <p className="text-xs text-gray-500 mt-1">
-                    O nome é definido no cadastro e não pode ser alterado pelo
-                    painel.
+                    {canEditName
+                      ? "Você é admin master: pode alterar o nome para diferenciar admins criados."
+                      : "Apenas o admin master pode alterar o nome."}
                   </p>
                 </div>
 
@@ -645,7 +603,7 @@ export default function Profile() {
                     aria-readonly="true"
                   />
                   <p className="text-xs text-gray-500 mt-1">
-                    O e-mail de acesso também não pode ser alterado aqui.
+                    O e-mail de acesso não pode ser alterado aqui.
                   </p>
                 </div>
 
@@ -662,9 +620,7 @@ export default function Profile() {
                   <input
                     value={maskCep(form.cep)}
                     onChange={(e) => {
-                      const digits = e.target.value
-                        .replace(/\D/g, "")
-                        .slice(0, 8);
+                      const digits = e.target.value.replace(/\D/g, "").slice(0, 8);
                       handleChange("cep", digits);
                     }}
                     onBlur={fetchByCep}
@@ -677,9 +633,7 @@ export default function Profile() {
                     onClick={fetchByCep}
                     disabled={cepLoading}
                     className={`whitespace-nowrap px-3 rounded-lg font-semibold ${
-                      cepLoading
-                        ? "bg-yellow-300 cursor-wait"
-                        : "bg-[#FFD700] hover:bg-yellow-400"
+                      cepLoading ? "bg-yellow-300 cursor-wait" : "bg-[#FFD700] hover:bg-yellow-400"
                     } text-[#5A3A22]`}
                   >
                     {cepLoading ? "Buscando..." : "Buscar CEP"}
@@ -688,9 +642,7 @@ export default function Profile() {
 
                 <input
                   value={form.neighborhood}
-                  onChange={(e) =>
-                    handleChange("neighborhood", e.target.value)
-                  }
+                  onChange={(e) => handleChange("neighborhood", e.target.value)}
                   placeholder="Bairro"
                   className="w-full border p-2 rounded-lg"
                 />
@@ -719,20 +671,12 @@ export default function Profile() {
             {isCaregiver && (
               <>
                 <div className="border rounded-lg p-4 bg-[#FFF6CC]/50">
-                  <h3 className="font-semibold mb-2 text-[#5A3A22]">
-                    Serviços e Preços
-                  </h3>
+                  <h3 className="font-semibold mb-2 text-[#5A3A22]">Serviços e Preços</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {Object.keys(EMPTY_SERVICES).map((key) => (
                       <div key={key} className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={form.services[key]}
-                          onChange={() => toggleService(key)}
-                        />
-                        <span className="capitalize">
-                          {SERVICE_LABELS[key] || key}
-                        </span>
+                        <input type="checkbox" checked={form.services[key]} onChange={() => toggleService(key)} />
+                        <span className="capitalize">{SERVICE_LABELS[key] || key}</span>
                         {form.services[key] && (
                           <input
                             type="number"
@@ -743,10 +687,7 @@ export default function Profile() {
                             onChange={(e) =>
                               setForm((f) => ({
                                 ...f,
-                                prices: {
-                                  ...f.prices,
-                                  [key]: e.target.value,
-                                },
+                                prices: { ...f.prices, [key]: e.target.value },
                               }))
                             }
                             className="ml-auto border rounded p-1 w-32"
@@ -761,9 +702,7 @@ export default function Profile() {
                   <div className="flex gap-2 mb-2">
                     <input
                       value={form.newCourse}
-                      onChange={(e) =>
-                        handleChange("newCourse", e.target.value)
-                      }
+                      onChange={(e) => handleChange("newCourse", e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") {
                           e.preventDefault();
@@ -788,11 +727,7 @@ export default function Profile() {
                         className="bg-[#FFF6CC] px-3 py-1 rounded-full flex items-center gap-2"
                       >
                         {c}
-                        <button
-                          type="button"
-                          onClick={() => removeCourse(i)}
-                          className="text-[#95301F]"
-                        >
+                        <button type="button" onClick={() => removeCourse(i)} className="text-[#95301F]">
                           ×
                         </button>
                       </span>
@@ -816,14 +751,8 @@ export default function Profile() {
                 <input
                   type="password"
                   value={form.newPassword}
-                  onChange={(e) =>
-                    handleChange("newPassword", e.target.value)
-                  }
-                  placeholder={
-                    token
-                      ? "Troca de senha será feita futuramente pelo backend"
-                      : "Nova senha"
-                  }
+                  onChange={(e) => handleChange("newPassword", e.target.value)}
+                  placeholder={token ? "Troca de senha será feita futuramente pelo backend" : "Nova senha"}
                   autoComplete="new-password"
                   className="w-full border p-2 rounded-lg"
                 />
