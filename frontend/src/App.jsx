@@ -14,7 +14,6 @@ const Home = lazy(() => import("./pages/Home"));
 const Login = lazy(() => import("./pages/Login"));
 const Register = lazy(() => import("./pages/Register"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
-const AdminUsers = lazy(() => import("./pages/AdminUsers"));
 const Search = lazy(() => import("./pages/Search"));
 const CaregiverDetail = lazy(() => import("./pages/CaregiverDetail"));
 const ReservationDetail = lazy(() => import("./pages/ReservationDetail"));
@@ -72,10 +71,7 @@ export default function App() {
               {/* Públicas */}
               <Route path="/" element={withTitle("PeloCaramelo | Início", <Home />)} />
               <Route path="/login" element={withTitle("PeloCaramelo | Login", <Login />)} />
-              <Route
-                path="/register"
-                element={withTitle("PeloCaramelo | Cadastro", <Register />)}
-              />
+              <Route path="/register" element={withTitle("PeloCaramelo | Cadastro", <Register />)} />
               <Route path="/buscar" element={withTitle("PeloCaramelo | Buscar", <Search />)} />
               <Route
                 path="/caregiver/:id"
@@ -103,18 +99,36 @@ export default function App() {
                 }
               />
 
-              {/* /admin vira atalho para a área que já está OK */}
+              {/* Admin (uma única rota base + rotas das abas) */}
               <Route
                 path="/admin"
                 element={
                   <PrivateRoute roles={["admin", "admin_master"]}>
-                    <Navigate to="/admin/users" replace />
+                    {withTitle("PeloCaramelo | Admin", <AdminDashboard />)}
                   </PrivateRoute>
                 }
               />
 
               <Route
-                path="/admin"
+                path="/admin/users"
+                element={
+                  <PrivateRoute roles={["admin", "admin_master"]}>
+                    {withTitle("PeloCaramelo | Admin", <AdminDashboard />)}
+                  </PrivateRoute>
+                }
+              />
+
+              <Route
+                path="/admin/reservations"
+                element={
+                  <PrivateRoute roles={["admin", "admin_master"]}>
+                    {withTitle("PeloCaramelo | Admin", <AdminDashboard />)}
+                  </PrivateRoute>
+                }
+              />
+
+              <Route
+                path="/admin/reviews"
                 element={
                   <PrivateRoute roles={["admin", "admin_master"]}>
                     {withTitle("PeloCaramelo | Admin", <AdminDashboard />)}
