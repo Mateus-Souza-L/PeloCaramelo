@@ -1431,8 +1431,8 @@ export default function Dashboard() {
           <button
             onClick={() => setTab("reservasTutor")}
             className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${tab === "reservasTutor"
-                ? "bg-[#5A3A22] text-white"
-                : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
+              ? "bg-[#5A3A22] text-white"
+              : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
               }`}
             type="button"
           >
@@ -1442,8 +1442,8 @@ export default function Dashboard() {
           <button
             onClick={() => setTab("pets")}
             className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${tab === "pets"
-                ? "bg-[#5A3A22] text-white"
-                : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
+              ? "bg-[#5A3A22] text-white"
+              : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
               }`}
             type="button"
           >
@@ -1547,8 +1547,8 @@ export default function Dashboard() {
                         {statusHelper && (
                           <p
                             className={`mt-1 text-xs ${r.status === "Recusada" || r.status === "Cancelada"
-                                ? "text-red-600"
-                                : "text-[#5A3A22]"
+                              ? "text-red-600"
+                              : "text-[#5A3A22]"
                               }`}
                           >
                             {statusHelper}
@@ -1856,7 +1856,8 @@ export default function Dashboard() {
                   let cardClasses =
                     "relative border rounded-lg p-4 mb-3 text-[#5A3A22] shadow-sm transition ";
                   if (hasUnreadChat || hasUnreadResNotif) {
-                    cardClasses += "border-[#FFD700] bg-[#FFF8E0] ring-1 ring-[#FFD700]/40";
+                    cardClasses +=
+                      "border-[#FFD700] bg-[#FFF8E0] ring-1 ring-[#FFD700]/40";
                   } else {
                     cardClasses += "bg-white hover:bg-[#FFFDF8]";
                   }
@@ -1864,7 +1865,8 @@ export default function Dashboard() {
                   const statusHelper = getStatusHelperText(r, "caregiver");
 
                   const showCaregiverRating =
-                    r.caregiverRating != null && Number.isFinite(Number(r.caregiverRating));
+                    r.caregiverRating != null &&
+                    Number.isFinite(Number(r.caregiverRating));
 
                   return (
                     <div key={r.id} className={cardClasses}>
@@ -1882,7 +1884,9 @@ export default function Dashboard() {
                       )}
 
                       <button
-                        onClick={() => openReservation(r.id, { scrollToChat: hasUnreadChat })}
+                        onClick={() =>
+                          openReservation(r.id, { scrollToChat: hasUnreadChat })
+                        }
                         className="text-left w-full"
                         title="Abrir detalhes da reserva"
                         type="button"
@@ -1891,7 +1895,8 @@ export default function Dashboard() {
                           <b>Tutor:</b> {r.tutorName}
                         </p>
                         <p>
-                          <b>Período:</b> {formatDateBR(r.startDate)} até {formatDateBR(r.endDate)}
+                          <b>Período:</b> {formatDateBR(r.startDate)} até{" "}
+                          {formatDateBR(r.endDate)}
                         </p>
                         <p>
                           <b>Total:</b> R$ {Number(r.total || 0).toFixed(2)}
@@ -1905,15 +1910,17 @@ export default function Dashboard() {
 
                         {(hasUnreadChat || hasUnreadResNotif) && (
                           <p className="mt-1 text-xs font-semibold text-[#B25B38]">
-                            {hasUnreadChat ? "Nova mensagem nesta reserva" : "Atualização nesta reserva"}
+                            {hasUnreadChat
+                              ? "Nova mensagem nesta reserva"
+                              : "Atualização nesta reserva"}
                           </p>
                         )}
 
                         {statusHelper && (
                           <p
                             className={`mt-1 text-xs ${r.status === "Recusada" || r.status === "Cancelada"
-                              ? "text-red-600"
-                              : "text-[#5A3A22]"
+                                ? "text-red-600"
+                                : "text-[#5A3A22]"
                               }`}
                           >
                             {statusHelper}
@@ -1926,7 +1933,8 @@ export default function Dashboard() {
                           <p className="text-xs text-[#5A3A22] opacity-80">
                             {showCaregiverRating ? (
                               <>
-                                Sua avaliação para este tutor: <b>⭐ {Number(r.caregiverRating)}/5</b>
+                                Sua avaliação para este tutor:{" "}
+                                <b>⭐ {Number(r.caregiverRating)}/5</b>
                                 {r.caregiverReview ? ` — "${r.caregiverReview}"` : ""}
                               </>
                             ) : (
@@ -1977,8 +1985,9 @@ export default function Dashboard() {
                 <p className="text-center text-[#5A3A22]">Carregando reservas...</p>
               ) : (
                 <p className="text-center text-[#5A3A22]">Nenhuma reserva recebida.</p>
-              )
-          </div>
+              )}
+            </section>
+          )}
 
           {rejectModal.open && (
             <div className="fixed inset-0 z-[9999] flex items-end md:items-center justify-center bg-black/40 p-4">
