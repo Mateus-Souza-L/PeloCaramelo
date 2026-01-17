@@ -30,18 +30,21 @@ function assertSafeIdentifier(name, label = "identifier") {
 }
 
 const SAFE_AVAIL_TABLE = assertSafeIdentifier(AVAIL_TABLE, "table");
-const SAFE_AVAIL_COL_CAREGIVER = assertSafeIdentifier(
-  AVAIL_COL_CAREGIVER,
-  "column"
-);
+const SAFE_AVAIL_COL_CAREGIVER = assertSafeIdentifier(AVAIL_COL_CAREGIVER, "column");
 const SAFE_AVAIL_COL_DATEKEY = assertSafeIdentifier(AVAIL_COL_DATEKEY, "column");
-const SAFE_AVAIL_COL_AVAILABLE = assertSafeIdentifier(
-  AVAIL_COL_AVAILABLE,
-  "column"
-);
+const SAFE_AVAIL_COL_AVAILABLE = assertSafeIdentifier(AVAIL_COL_AVAILABLE, "column");
+
+function toNum(v) {
+  if (v == null || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
 
 function mapReservationRow(row) {
   if (!row) return null;
+
+  const pricePerDay = toNum(row.price_per_day);
+  const total = toNum(row.total);
 
   const obj = {
     id: row.id,
@@ -54,10 +57,10 @@ function mapReservationRow(row) {
     city: row.city,
     neighborhood: row.neighborhood,
     service: row.service,
-    price_per_day: row.price_per_day,
+    price_per_day: pricePerDay,
     start_date: row.start_date,
     end_date: row.end_date,
-    total: row.total,
+    total: total,
     status: row.status,
 
     tutor_rating: row.tutor_rating,
@@ -100,7 +103,6 @@ function toInt(v) {
   return Number.isFinite(n) && Number.isInteger(n) ? n : null;
 }
 
-// Aceita: [1,2], ["1","2"], "1,2", "[1,2]" (string JSON), null
 function normalizePetsIds(input) {
   if (input == null) return [];
 
@@ -119,7 +121,6 @@ function normalizePetsIds(input) {
   if (!Array.isArray(arr)) return [];
 
   const ids = arr.map((x) => toInt(x)).filter((n) => n != null);
-
   return Array.from(new Set(ids));
 }
 
@@ -169,15 +170,11 @@ async function createReservation({
 }) {
   let petsIdsIntArray = normalizePetsIds(petsIds);
 
-  // fallback: se não vier petsIds, tenta extrair do snapshot
   if (!petsIdsIntArray.length && Array.isArray(petsSnapshot)) {
-    const fromSnap = petsSnapshot
-      .map((p) => toInt(p?.id))
-      .filter((n) => n != null);
+    const fromSnap = petsSnapshot.map((p) => toInt(p?.id)).filter((n) => n != null);
     petsIdsIntArray = Array.from(new Set(fromSnap));
   }
 
-  // ✅ não permite criar reserva sem pets selecionados
   if (!petsIdsIntArray.length) {
     const err = new Error("Selecione ao menos 1 pet válido.");
     err.code = "INVALID_PETS";
@@ -220,10 +217,10 @@ async function createReservation({
     city || null,
     neighborhood || null,
     service,
-    pricePerDay,
+    toNum(pricePerDay),
     startDate,
     endDate,
-    total,
+    toNum(total),
     status || "Pendente",
     petsIdsIntArray,
     petsNames || null,
@@ -333,11 +330,8 @@ async function getReservationById(id) {
 
 async function updateReservationStatus(id, status, rejectReason = null) {
   const cleanedReason =
-    typeof rejectReason === "string" && rejectReason.trim()
-      ? rejectReason.trim()
-      : null;
+    typeof rejectReason === "string" && rejectReason.trim() ? rejectReason.trim() : null;
 
-  // ✅ força o mesmo tipo para o parâmetro $2 em TODOS os usos
   const sql = `
     UPDATE reservations
     SET
@@ -407,12 +401,7 @@ async function isCaregiverAvailableForRange(caregiverId, startDate, endDate) {
   return totalDays > 0 && availableDays === totalDays;
 }
 
-async function getMaxOverlappingByDay(
-  caregiverId,
-  startDate,
-  endDate,
-  excludeReservationId = null
-) {
+async function getMaxOverlappingByDay(caregiverId, startDate, endDate, excludeReservationId = null) {
   const sql = `
     WITH days AS (
       SELECT generate_series($2::date, $3::date, interval '1 day')::date AS day
@@ -446,12 +435,7 @@ async function getMaxOverlappingByDay(
   return Number(rows?.[0]?.max_overlapping || 0);
 }
 
-async function assertCaregiverCanBeBooked(
-  caregiverId,
-  startDate,
-  endDate,
-  excludeReservationId = null
-) {
+async function assertCaregiverCanBeBooked(caregiverId, startDate, endDate, excludeReservationId = null) {
   const [available, capacity, maxOverlapping] = await Promise.all([
     isCaregiverAvailableForRange(caregiverId, startDate, endDate),
     getCaregiverCapacity(caregiverId),

@@ -533,7 +533,14 @@ async function createReservationController(req, res) {
       payload: { reservationId: reservation?.id, status: "Pendente" },
     });
 
-    return res.status(201).json({ reservation });
+    return res.status(201).json({
+      reservation: {
+        ...reservation,
+        price_per_day:
+          reservation?.price_per_day != null ? Number(reservation.price_per_day) : null,
+        total: reservation?.total != null ? Number(reservation.total) : null,
+      },
+    });
   } catch (err) {
     console.error("Erro em POST /reservations:", err);
     return res.status(500).json({
@@ -674,6 +681,15 @@ async function getReservationDetailController(req, res) {
     const enrichedArr = await attachMyReviewFields([reservation], user.id);
     reservation = enrichedArr?.[0] || reservation;
 
+    // ✅ hardening: garante campos essenciais (evita detail com 0/undefined)
+    reservation = {
+      ...reservation,
+      service: reservation?.service ?? null,
+      price_per_day:
+        reservation?.price_per_day != null ? Number(reservation.price_per_day) : null,
+      total: reservation?.total != null ? Number(reservation.total) : null,
+    };
+
     return res.json({ reservation });
   } catch (err) {
     console.error("Erro em GET /reservations/:id:", err);
@@ -784,7 +800,14 @@ async function updateReservationStatusController(req, res) {
         },
       });
 
-      return res.json({ reservation: updated });
+      return res.json({
+        reservation: {
+          ...updated,
+          price_per_day:
+            updated?.price_per_day != null ? Number(updated.price_per_day) : null,
+          total: updated?.total != null ? Number(updated.total) : null,
+        },
+      });
     }
 
     // Caregiver alterando
@@ -857,7 +880,15 @@ async function updateReservationStatusController(req, res) {
         payload: { reservationId: updated?.id, prevStatus, nextStatus },
       });
 
-      return res.json({ reservation: updated });
+      return res.json({
+        reservation: {
+          ...updated,
+          price_per_day:
+            updated?.price_per_day != null ? Number(updated.price_per_day) : null,
+          total: updated?.total != null ? Number(updated.total) : null,
+        },
+      });
+
     }
 
     // Admin
@@ -903,7 +934,14 @@ async function updateReservationStatusController(req, res) {
         payload: { reservationId: updated?.id, prevStatus, nextStatus },
       });
 
-      return res.json({ reservation: updated });
+      return res.json({
+        reservation: {
+          ...updated,
+          price_per_day:
+            updated?.price_per_day != null ? Number(updated.price_per_day) : null,
+          total: updated?.total != null ? Number(updated.total) : null,
+        },
+      });
     }
 
     return res
