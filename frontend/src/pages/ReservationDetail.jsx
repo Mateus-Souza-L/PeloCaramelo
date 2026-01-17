@@ -180,6 +180,8 @@ export default function ReservationDetail() {
   const { showToast } = useToast();
 
   const [reservation, setReservation] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
   const [caregiver, setCaregiver] = useState(null);
   const [tutor, setTutor] = useState(null);
   const [tutorPets, setTutorPets] = useState([]);
@@ -343,6 +345,9 @@ export default function ReservationDetail() {
           fetchRef.current.inFlight = true;
 
           try {
+            setLoading(true);
+            setNotFound(false);
+
             const data = await authRequest(`/reservations/${id}`, token);
             const dbRes = data?.reservation;
 
@@ -352,7 +357,15 @@ export default function ReservationDetail() {
             } else {
               fetchRef.current.key = "";
             }
+
+            setLoading(false);
+
           } catch (err) {
+            setLoading(false);
+
+            if (err?.response?.status === 404 || err?.status === 404) {
+              setNotFound(true);
+            }
             console.error("Erro ao carregar reserva do servidor:", err);
             fetchRef.current.key = "";
           } finally {
