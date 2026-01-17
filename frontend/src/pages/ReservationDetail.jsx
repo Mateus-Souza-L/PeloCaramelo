@@ -43,6 +43,29 @@ const safeGetLocalStorage = (key) => {
 
 const isNonEmptyArray = (v) => Array.isArray(v) && v.length > 0;
 
+const onlyDigits = (v) => String(v ?? "").replace(/\D+/g, "");
+
+const maskPhone = (phone) => {
+  const d = onlyDigits(phone);
+  if (!d) return "—";
+
+  // (31) 9****-**34
+  const ddd = d.length >= 10 ? d.slice(0, 2) : "";
+  const rest = ddd ? d.slice(2) : d;
+
+  if (rest.length < 4) return ddd ? `(${ddd}) ${rest}` : rest;
+
+  const first = rest[0];
+  const last2 = rest.slice(-2);
+  const maskedMid = "*".repeat(Math.max(0, rest.length - 3));
+  const masked = `${first}${maskedMid}${last2}`;
+
+  const left = masked.slice(0, Math.min(5, masked.length));
+  const right = masked.slice(Math.min(5, masked.length));
+
+  return ddd ? `(${ddd}) ${left}${right ? `-${right}` : ""}` : masked;
+};
+
 const pickPetImage = (p) =>
   p?.image ||
   p?.photo ||
@@ -339,26 +362,40 @@ export default function ReservationDetail() {
       }
 
       if (!current) current = storedLocal;
+
+      // ✅ garante que qualquer fonte (server/local) vira o formato esperado no render
+      let normalizedCurrent = current ? normalizeReservationFromApi(current) : null;
+
+      // fallback: se não veio do server, tenta normalizar o storedLocal
+      if (!normalizedCurrent && storedLocal) {
+        normalizedCurrent = normalizeReservationFromApi(storedLocal);
+      }
+
+      // se ainda não deu, usa o que tiver
+      const finalReservation = normalizedCurrent || current || storedLocal || null;
+
       if (cancelled) return;
 
-      setReservation(current);
+      setReservation(finalReservation);
+
 
       const users = safeJsonParse(safeGetLocalStorage("users") || "[]");
       const usersList = Array.isArray(users) ? users : [];
 
       const currentCaregiver =
-        current &&
-        (usersList.find((u) => String(u?.id) === String(current.caregiverId)) || null);
+        finalReservation &&
+        (usersList.find((u) => String(u?.id) === String(finalReservation.caregiverId)) || null);
 
       const currentTutor =
-        current &&
-        (usersList.find((u) => String(u?.id) === String(current.tutorId)) || null);
+        finalReservation &&
+        (usersList.find((u) => String(u?.id) === String(finalReservation.tutorId)) || null);
+
 
       setCaregiver(currentCaregiver);
       setTutor(currentTutor);
 
-      if (current?.tutorId) {
-        const petsKey = `pets_${current.tutorId}`;
+      if (finalReservation?.tutorId) {
+        const petsKey = `pets_${finalReservation.tutorId}`;
         const petsRaw = safeGetLocalStorage(petsKey) || "[]";
         const pets = safeJsonParse(petsRaw);
         setTutorPets(Array.isArray(pets) ? pets : []);
@@ -679,7 +716,7 @@ export default function ReservationDetail() {
       console.error("Erro ao sincronizar status no servidor:", err);
       showToast(
         err?.message ||
-          "Não foi possível sincronizar o status com o servidor. Ele foi atualizado apenas localmente por enquanto.",
+        "Não foi possível sincronizar o status com o servidor. Ele foi atualizado apenas localmente por enquanto.",
         "error"
       );
       return false;
@@ -772,7 +809,7 @@ export default function ReservationDetail() {
 
       showToast(
         result.message ||
-          "Avaliação salva localmente, mas falhou ao registrar no servidor. Tente novamente.",
+        "Avaliação salva localmente, mas falhou ao registrar no servidor. Tente novamente.",
         "error"
       );
     } finally {
@@ -984,7 +1021,7 @@ export default function ReservationDetail() {
               <b>Email:</b> {tutor?.email || "—"}
             </p>
             <p>
-              <b>Telefone:</b> {tutor?.phone || "—"}
+              <b>Telefone:</b> {maskPhone(tutor?.phone)}
             </p>
             {canCaregiverSeeTutorAddress && (
               <>
@@ -1010,7 +1047,7 @@ export default function ReservationDetail() {
               <b>Email:</b> {caregiver?.email || "—"}
             </p>
             <p>
-              <b>Telefone:</b> {caregiver?.phone || "—"}
+              <b>Telefone:</b> {maskPhone(caregiver?.phone)}
             </p>
             {canTutorSeeCaregiverAddress && (
               <>
@@ -1107,11 +1144,10 @@ export default function ReservationDetail() {
                   type="button"
                   onClick={openRatingModal}
                   disabled={ratingBusy}
-                  className={`mt-3 px-4 py-2 rounded-lg font-semibold shadow-md text-sm ${
-                    ratingBusy
-                      ? "bg-[#FFD700]/60 cursor-not-allowed text-[#5A3A22]"
-                      : "bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22]"
-                  }`}
+                  className={`mt-3 px-4 py-2 rounded-lg font-semibold shadow-md text-sm ${ratingBusy
+                    ? "bg-[#FFD700]/60 cursor-not-allowed text-[#5A3A22]"
+                    : "bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22]"
+                    }`}
                 >
                   {ratingBusy ? "Enviando..." : isTutor ? "Avaliar cuidador" : "Avaliar tutor"}
                 </button>
