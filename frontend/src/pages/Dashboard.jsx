@@ -1399,11 +1399,10 @@ export default function Dashboard() {
         <div className="max-w-[1400px] mx-auto mb-4 flex gap-3 justify-center">
           <button
             onClick={() => setTab("reservasTutor")}
-            className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${
-              tab === "reservasTutor"
+            className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${tab === "reservasTutor"
                 ? "bg-[#5A3A22] text-white"
                 : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
-            }`}
+              }`}
             type="button"
           >
             Minhas Reservas
@@ -1411,11 +1410,10 @@ export default function Dashboard() {
 
           <button
             onClick={() => setTab("pets")}
-            className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${
-              tab === "pets"
+            className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${tab === "pets"
                 ? "bg-[#5A3A22] text-white"
                 : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
-            }`}
+              }`}
             type="button"
           >
             Meus Pets
@@ -1467,9 +1465,8 @@ export default function Dashboard() {
                       {(hasUnreadChat || hasUnreadResNotif) && (
                         <div className="absolute top-3 right-3 flex items-center gap-2">
                           <span
-                            className={`w-2.5 h-2.5 rounded-full ${
-                              hasUnreadChat ? "bg-blue-600" : "bg-red-600"
-                            }`}
+                            className={`w-2.5 h-2.5 rounded-full ${hasUnreadChat ? "bg-blue-600" : "bg-red-600"
+                              }`}
                             title={hasUnreadChat ? "Nova mensagem" : "Atualização"}
                           />
                           <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/70 border border-[#FFD700]/50 text-[#5A3A22]">
@@ -1516,11 +1513,10 @@ export default function Dashboard() {
 
                         {statusHelper && (
                           <p
-                            className={`mt-1 text-xs ${
-                              r.status === "Recusada" || r.status === "Cancelada"
+                            className={`mt-1 text-xs ${r.status === "Recusada" || r.status === "Cancelada"
                                 ? "text-red-600"
                                 : "text-[#5A3A22]"
-                            }`}
+                              }`}
                           >
                             {statusHelper}
                           </p>
@@ -1652,22 +1648,20 @@ export default function Dashboard() {
         <div className="max-w-[1400px] mx-auto mb-4 flex gap-3 justify-center">
           <button
             onClick={() => setTab("disponibilidade")}
-            className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${
-              tab === "disponibilidade"
+            className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${tab === "disponibilidade"
                 ? "bg-[#5A3A22] text-white"
                 : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
-            }`}
+              }`}
             type="button"
           >
             Disponibilidade
           </button>
           <button
             onClick={() => setTab("reservas")}
-            className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${
-              tab === "reservas"
+            className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${tab === "reservas"
                 ? "bg-[#5A3A22] text-white"
                 : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
-            }`}
+              }`}
             type="button"
           >
             Reservas Recebidas
@@ -1749,11 +1743,10 @@ export default function Dashboard() {
                   onClick={saveAvailability}
                   type="button"
                   disabled={!unsaved}
-                  className={`font-semibold px-5 py-2 rounded-lg shadow-md ${
-                    unsaved
+                  className={`font-semibold px-5 py-2 rounded-lg shadow-md ${unsaved
                       ? "bg-green-700 hover:bg-green-800 text-white"
                       : "bg-green-700/50 text-white/70 cursor-not-allowed"
-                  }`}
+                    }`}
                 >
                   💾 Salvar Alterações
                 </button>
@@ -1838,24 +1831,36 @@ export default function Dashboard() {
                   const statusHelper = getStatusHelperText(r, "caregiver");
 
                   const showCaregiverRating =
-                    r.caregiverRating != null &&
-                    Number.isFinite(Number(r.caregiverRating));
+                    r.caregiverRating != null && Number.isFinite(Number(r.caregiverRating));
 
                   const showActions = r.status === "Pendente";
 
                   return (
                     <div key={r.id} className={cardClasses}>
+                      {(hasUnreadChat || hasUnreadResNotif) && (
+                        <div className="absolute top-3 right-3 flex items-center gap-2">
+                          <span
+                            className={`w-2.5 h-2.5 rounded-full ${hasUnreadChat ? "bg-blue-600" : "bg-red-600"
+                              }`}
+                            title={hasUnreadChat ? "Nova mensagem" : "Atualização"}
+                          />
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/70 border border-[#FFD700]/50 text-[#5A3A22]">
+                            {hasUnreadChat ? "CHAT" : "UPDATE"}
+                          </span>
+                        </div>
+                      )}
+
                       <button
                         onClick={() => openReservation(r.id, { scrollToChat: hasUnreadChat })}
                         className="text-left w-full"
                         type="button"
+                        title="Abrir detalhes da reserva"
                       >
                         <p>
                           <b>Tutor:</b> {r.tutorName}
                         </p>
                         <p>
-                          <b>Período:</b> {formatDateBR(r.startDate)} até{" "}
-                          {formatDateBR(r.endDate)}
+                          <b>Período:</b> {formatDateBR(r.startDate)} até {formatDateBR(r.endDate)}
                         </p>
                         <p>
                           <b>Total:</b> R$ {Number(r.total || 0).toFixed(2)}
@@ -1869,9 +1874,7 @@ export default function Dashboard() {
 
                         {(hasUnreadChat || hasUnreadResNotif) && (
                           <p className="mt-1 text-xs font-semibold text-[#B25B38]">
-                            {hasUnreadChat
-                              ? "Nova mensagem nesta reserva"
-                              : "Atualização nesta reserva"}
+                            {hasUnreadChat ? "Nova mensagem nesta reserva" : "Atualização nesta reserva"}
                           </p>
                         )}
 
@@ -1880,12 +1883,13 @@ export default function Dashboard() {
                         )}
                       </button>
 
-                      <div className="mt-3 flex items-center justify-between gap-3 flex-wrap">
+                      <div className="mt-2 flex items-center justify-between">
                         {alreadyRated ? (
                           <p className="text-xs text-[#5A3A22] opacity-80">
                             {showCaregiverRating ? (
                               <>
                                 Sua avaliação: <b>⭐ {Number(r.caregiverRating)}/5</b>
+                                {r.caregiverReview ? ` — "${r.caregiverReview}"` : ""}
                               </>
                             ) : (
                               <>Você já avaliou esta reserva.</>
@@ -1928,12 +1932,6 @@ export default function Dashboard() {
                           )}
                         </div>
                       </div>
-
-                      {r.status === "Recusada" && r.rejectReason ? (
-                        <p className="mt-2 text-xs text-[#5A3A22] bg-[#FFF8F0] border rounded-lg p-2">
-                          <b>Motivo da recusa:</b> {r.rejectReason}
-                        </p>
-                      ) : null}
                     </div>
                   );
                 })
