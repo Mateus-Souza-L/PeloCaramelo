@@ -1903,7 +1903,9 @@ export default function Dashboard() {
                         </p>
                         <p>
                           <b>Status:</b>{" "}
-                          <span className={`font-semibold ${getStatusColor(r.status)}`}>
+                          <span
+                            className={`font-semibold ${getStatusColor(r.status)}`}
+                          >
                             {r.status}
                           </span>
                         </p>
@@ -1935,7 +1937,9 @@ export default function Dashboard() {
                               <>
                                 Sua avaliação para este tutor:{" "}
                                 <b>⭐ {Number(r.caregiverRating)}/5</b>
-                                {r.caregiverReview ? ` — "${r.caregiverReview}"` : ""}
+                                {r.caregiverReview
+                                  ? ` — "${r.caregiverReview}"`
+                                  : ""}
                               </>
                             ) : (
                               <>Você já avaliou esta reserva.</>
@@ -1951,7 +1955,9 @@ export default function Dashboard() {
                           {canRate && (
                             <button
                               type="button"
-                              onClick={() => openRatingModal(r, "Avaliar tutor")}
+                              onClick={() =>
+                                openRatingModal(r, "Avaliar tutor")
+                              }
                               className="px-3 py-1 rounded-lg text-xs font-semibold bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22] shadow"
                             >
                               Avaliar tutor
@@ -1962,7 +1968,9 @@ export default function Dashboard() {
                             <div className="flex gap-2">
                               <button
                                 type="button"
-                                onClick={() => handleAcceptReservationFromList(r)}
+                                onClick={() =>
+                                  handleAcceptReservationFromList(r)
+                                }
                                 className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-xs font-semibold"
                               >
                                 Aceitar
@@ -1982,12 +1990,17 @@ export default function Dashboard() {
                   );
                 })
               ) : reservationsLoading ? (
-                <p className="text-center text-[#5A3A22]">Carregando reservas...</p>
+                <p className="text-center text-[#5A3A22]">
+                  Carregando reservas...
+                </p>
               ) : (
-                <p className="text-center text-[#5A3A22]">Nenhuma reserva recebida.</p>
+                <p className="text-center text-[#5A3A22]">
+                  Nenhuma reserva recebida.
+                </p>
               )}
             </section>
           )}
+
 
           {rejectModal.open && (
             <div className="fixed inset-0 z-[9999] flex items-end md:items-center justify-center bg-black/40 p-4">
