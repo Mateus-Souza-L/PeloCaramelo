@@ -40,7 +40,6 @@ const safeGetLocalStorage = (key) => {
 };
 
 const isNonEmptyArray = (v) => Array.isArray(v) && v.length > 0;
-
 const onlyDigits = (v) => String(v ?? "").replace(/\D+/g, "");
 
 const maskPhone = (phone) => {
@@ -104,7 +103,7 @@ const normalizeSnapshotArray = (maybeSnap, fallbackIds = []) => {
 const normalizeReservationFromApi = (r) => {
   if (!r) return null;
 
-  let petsIds = r.pets_ids ?? r.petsIds ?? [];
+  let petsIds = r.pets_ids ?? [];
   if (typeof petsIds === "string") {
     const parsed = safeJsonParse(petsIds);
     petsIds = Array.isArray(parsed) ? parsed : [];
@@ -117,9 +116,6 @@ const normalizeReservationFromApi = (r) => {
 
   const petsSnapshot = normalizeSnapshotArray(snapshot, petsIds);
 
-  const priceRaw = r.price_per_day ?? r.pricePerDay ?? r.pricePerDay ?? 0;
-  const totalRaw = r.total ?? 0;
-
   return {
     id: toStr(r.id),
     tutorId: toStr(r.tutor_id ?? r.tutorId),
@@ -128,8 +124,8 @@ const normalizeReservationFromApi = (r) => {
     caregiverName: r.caregiver_name ?? r.caregiverName,
     city: r.city || "",
     neighborhood: r.neighborhood || "",
-    service: r.service ?? "",
-    pricePerDay: Number(priceRaw || 0),
+    service: r.service,
+    pricePerDay: Number(r.price_per_day ?? r.pricePerDay ?? 0),
     startDate: r.start_date
       ? String(r.start_date).slice(0, 10)
       : r.startDate
@@ -140,7 +136,7 @@ const normalizeReservationFromApi = (r) => {
       : r.endDate
         ? String(r.endDate).slice(0, 10)
         : "",
-    total: Number(totalRaw || 0),
+    total: Number(r.total || 0),
     status: r.status || "Pendente",
 
     tutorRating: r.tutor_rating ?? r.tutorRating,
@@ -165,25 +161,16 @@ function isConcludedStatus(status) {
   return (
     status === "Concluida" ||
     status === "Concluída" ||
-    status === "Finalizada" ||
-    status === "Concluída"
+    status === "Finalizada"
   );
 }
 
-function LoadingCard({ text = "Carregando..." }) {
-  return (
-    <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] flex items-center justify-center">
-      <div className="pc-card pc-card-accent flex items-center gap-3">
-        <span className="inline-block w-4 h-4 rounded-full border-2 border-[#5A3A22] border-t-transparent animate-spin" />
-        <span>{text}</span>
-      </div>
-    </div>
-  );
-}
+const CenterCard = ({ children }) => (
+  <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] flex items-center justify-center px-4">
+    <div className="pc-card pc-card-accent text-center">{children}</div>
+  </div>
+);
 
-/* ===========================================================
-   ReservationDetail
-   =========================================================== */
 export default function ReservationDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -235,7 +222,9 @@ export default function ReservationDetail() {
 
   const emitReservationUpdated = useCallback(
     (payload = {}) => {
-      const rid = String(payload.reservationId ?? reservationIdRef.current ?? id ?? "");
+      const rid = String(
+        payload.reservationId ?? reservationIdRef.current ?? id ?? ""
+      );
       if (!rid) return;
 
       window.dispatchEvent(
@@ -262,7 +251,6 @@ export default function ReservationDetail() {
         idx >= 0 ? list.map((x, i) => (i === idx ? light : x)) : [light, ...list];
 
       safeSetLocalStorage(reservationsStorageKey, JSON.stringify(nextList));
-
       setReservation(next);
 
       emitReservationUpdated({
@@ -297,6 +285,7 @@ export default function ReservationDetail() {
       ) {
         merged.petsIds = fallbackLocal.petsIds.map((x) => toStr(x)).filter(Boolean);
       }
+
       if (
         (!merged.petsNames || !String(merged.petsNames).trim()) &&
         fallbackLocal?.petsNames
@@ -308,6 +297,7 @@ export default function ReservationDetail() {
         merged.tutorRating = fallbackLocal.tutorRating;
         merged.tutorReview = fallbackLocal?.tutorReview ?? merged.tutorReview;
       }
+
       if (merged.caregiverRating == null && fallbackLocal?.caregiverRating != null) {
         merged.caregiverRating = fallbackLocal.caregiverRating;
         merged.caregiverReview =
@@ -327,91 +317,102 @@ export default function ReservationDetail() {
     [persistLocalReservation, emitReservationUpdated]
   );
 
-  // --------------------------
-  // Carrega a reserva (local -> server)
-  // --------------------------
   useEffect(() => {
     let cancelled = false;
 
-    const loadReservation = async () => {
+    const loadAll = async () => {
+      setLoading(true);
       setNotFound(false);
 
-      const storedAllRaw = safeGetLocalStorage(reservationsStorageKey) || "[]";
-      const storedAll = safeJsonParse(storedAllRaw);
-      const list = Array.isArray(storedAll) ? storedAll : [];
-      const storedLocalRaw =
-        list.find((r) => String(r?.id) === String(id)) || null;
-
-      const storedLocal = storedLocalRaw
-        ? normalizeReservationFromApi(storedLocalRaw) || storedLocalRaw
-        : null;
-
-      // Se tem local, já pinta na tela e evita “não encontrada”
-      if (!cancelled && storedLocal) {
-        setReservation(storedLocal);
-        setLoading(false);
-      } else if (!cancelled) {
-        // Sem local, mostra loading
-        setLoading(true);
-        setReservation(null);
-      }
-
-      const numericId = Number(id);
-      const shouldFetchFromServer =
-        token &&
-        user &&
-        Number.isFinite(numericId) &&
-        numericId > 0 &&
-        numericId <= 2147483647;
-
-      if (!shouldFetchFromServer) {
-        if (!cancelled) setLoading(false);
-        return;
-      }
-
-      const fetchKey = `${String(id)}:${String(token)}:${String(reloadKey)}`;
-
-      // evita fetch duplicado
-      if (fetchRef.current.inFlight || fetchRef.current.key === fetchKey) {
-        if (!cancelled && !storedLocal) setLoading(false);
-        return;
-      }
-
-      fetchRef.current.inFlight = true;
+      let current = null;
 
       try {
-        const data = await authRequest(`/reservations/${id}`, token);
-        const dbRes = data?.reservation;
+        const storedAllRaw = safeGetLocalStorage(reservationsStorageKey) || "[]";
+        const storedAll = safeJsonParse(storedAllRaw);
+        const list = Array.isArray(storedAll) ? storedAll : [];
+        const storedLocal = list.find((r) => String(r?.id) === String(id)) || null;
+
+        const numericId = Number(id);
+        const shouldFetchFromServer =
+          token &&
+          user &&
+          Number.isFinite(numericId) &&
+          numericId > 0 &&
+          numericId <= 2147483647;
+
+        if (shouldFetchFromServer) {
+          const fetchKey = `${String(id)}:${String(token)}:${String(reloadKey)}`;
+
+          if (!fetchRef.current.inFlight && fetchRef.current.key !== fetchKey) {
+            fetchRef.current.inFlight = true;
+
+            try {
+              const data = await authRequest(`/reservations/${id}`, token);
+              const dbRes = data?.reservation;
+
+              if (dbRes) {
+                current = applyServerReservation(dbRes, storedLocal) || null;
+                fetchRef.current.key = fetchKey;
+              } else {
+                fetchRef.current.key = "";
+              }
+            } catch (err) {
+              if (err?.response?.status === 404 || err?.status === 404) {
+                setNotFound(true);
+              }
+              console.error("Erro ao carregar reserva do servidor:", err);
+              fetchRef.current.key = "";
+            } finally {
+              fetchRef.current.inFlight = false;
+            }
+          }
+        }
+
+        if (!current) current = storedLocal;
+
+        let normalizedCurrent = current ? normalizeReservationFromApi(current) : null;
+        if (!normalizedCurrent && storedLocal) {
+          normalizedCurrent = normalizeReservationFromApi(storedLocal);
+        }
+
+        const finalReservation = normalizedCurrent || current || storedLocal || null;
+
+        if (!finalReservation && !shouldFetchFromServer) {
+          setNotFound(true);
+        }
 
         if (cancelled) return;
 
-        if (dbRes) {
-          const applied = applyServerReservation(dbRes, storedLocal) || null;
-          fetchRef.current.key = fetchKey;
-          if (applied) setReservation(applied);
-          setNotFound(false);
+        setReservation(finalReservation);
+
+        const users = safeJsonParse(safeGetLocalStorage("users") || "[]");
+        const usersList = Array.isArray(users) ? users : [];
+
+        const currentCaregiver =
+          finalReservation &&
+          (usersList.find((u) => String(u?.id) === String(finalReservation.caregiverId)) || null);
+
+        const currentTutor =
+          finalReservation &&
+          (usersList.find((u) => String(u?.id) === String(finalReservation.tutorId)) || null);
+
+        setCaregiver(currentCaregiver);
+        setTutor(currentTutor);
+
+        if (finalReservation?.tutorId) {
+          const petsKey = `pets_${finalReservation.tutorId}`;
+          const petsRaw = safeGetLocalStorage(petsKey) || "[]";
+          const pets = safeJsonParse(petsRaw);
+          setTutorPets(Array.isArray(pets) ? pets : []);
         } else {
-          // resposta sem reserva
-          fetchRef.current.key = "";
-          if (!storedLocal) setNotFound(true);
+          setTutorPets([]);
         }
-      } catch (err) {
-        if (cancelled) return;
-
-        const status = err?.response?.status ?? err?.status ?? null;
-        if (status === 404) {
-          if (!storedLocal) setNotFound(true);
-        }
-
-        console.error("Erro ao carregar reserva do servidor:", err);
-        fetchRef.current.key = "";
       } finally {
-        fetchRef.current.inFlight = false;
         if (!cancelled) setLoading(false);
       }
     };
 
-    loadReservation();
+    loadAll();
 
     const onStorage = (e) => {
       if (!(e instanceof StorageEvent)) return;
@@ -424,52 +425,24 @@ export default function ReservationDetail() {
         (tid && k === `pets_${tid}`);
 
       if (!relevant) return;
-      loadReservation();
+      loadAll();
     };
 
     window.addEventListener("storage", onStorage);
+
     return () => {
       cancelled = true;
       window.removeEventListener("storage", onStorage);
     };
-  }, [id, token, user?.id, user?.role, reloadKey, reservationsStorageKey, applyServerReservation]);
+  }, [
+    id,
+    token,
+    user,
+    reloadKey,
+    reservationsStorageKey,
+    applyServerReservation,
+  ]);
 
-  // --------------------------
-  // Carrega tutor/cuidador/pets (a partir da reserva)
-  // --------------------------
-  useEffect(() => {
-    if (!reservation?.id) {
-      setTutor(null);
-      setCaregiver(null);
-      setTutorPets([]);
-      return;
-    }
-
-    const users = safeJsonParse(safeGetLocalStorage("users") || "[]");
-    const usersList = Array.isArray(users) ? users : [];
-
-    const currentCaregiver =
-      usersList.find((u) => String(u?.id) === String(reservation.caregiverId)) || null;
-
-    const currentTutor =
-      usersList.find((u) => String(u?.id) === String(reservation.tutorId)) || null;
-
-    setCaregiver(currentCaregiver);
-    setTutor(currentTutor);
-
-    if (reservation?.tutorId) {
-      const petsKey = `pets_${reservation.tutorId}`;
-      const petsRaw = safeGetLocalStorage(petsKey) || "[]";
-      const pets = safeJsonParse(petsRaw);
-      setTutorPets(Array.isArray(pets) ? pets : []);
-    } else {
-      setTutorPets([]);
-    }
-  }, [reservation?.id, reservation?.tutorId, reservation?.caregiverId]);
-
-  // --------------------------
-  // Notificações (local + backend)
-  // --------------------------
   const markBackendNotificationsReadForReservation = useCallback(async () => {
     if (!token) return false;
     if (!reservation?.id) return false;
@@ -503,16 +476,6 @@ export default function ReservationDetail() {
     markBackendNotificationsReadForReservation();
   }, [user?.id, reservation?.id, markBackendNotificationsReadForReservation]);
 
-  const myUserId = String(
-    user?.id ??
-      (isTutor
-        ? reservation?.tutorId
-        : isCaregiver
-          ? reservation?.caregiverId
-          : "") ??
-      ""
-  );
-
   const isOwner = useMemo(() => {
     if (!reservation || !user?.id) return false;
     const uid = String(user.id);
@@ -522,6 +485,12 @@ export default function ReservationDetail() {
       user?.role === "admin"
     );
   }, [reservation, user?.id, user?.role]);
+
+  const myUserId = String(
+    user?.id ??
+    (isTutor ? reservation?.tutorId : isCaregiver ? reservation?.caregiverId : "") ??
+    ""
+  );
 
   const clearChatUnreadForThisReservation = useCallback(async () => {
     if (!reservation?.id) return;
@@ -561,17 +530,13 @@ export default function ReservationDetail() {
     if (didAutoScrollChatRef.current) return;
 
     const cameFromState = !!location?.state?.scrollToChat;
-    const cameFromHash =
-      String(window.location.hash || "").toLowerCase() === "#chat";
+    const cameFromHash = String(window.location.hash || "").toLowerCase() === "#chat";
     if (!cameFromState && !cameFromHash) return;
 
     didAutoScrollChatRef.current = true;
 
     setTimeout(() => {
-      chatSectionRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
+      chatSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
 
       setTimeout(() => {
         window.dispatchEvent(
@@ -587,8 +552,7 @@ export default function ReservationDetail() {
     if (!user?.id || !reservation?.id) return;
     if (didClearChatUnreadRef.current) return;
 
-    const cameFromHash =
-      String(window.location.hash || "").toLowerCase() === "#chat";
+    const cameFromHash = String(window.location.hash || "").toLowerCase() === "#chat";
     const cameFromState = !!location?.state?.scrollToChat;
     if (!cameFromHash && !cameFromState) return;
 
@@ -613,8 +577,7 @@ export default function ReservationDetail() {
       const rect = el.getBoundingClientRect();
       const viewportH = window.innerHeight || document.documentElement.clientHeight;
 
-      const isChatVisible =
-        rect.top < viewportH * 0.65 && rect.bottom > viewportH * 0.15;
+      const isChatVisible = rect.top < viewportH * 0.65 && rect.bottom > viewportH * 0.15;
 
       if (!isChatVisible) {
         el.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -759,7 +722,7 @@ export default function ReservationDetail() {
       console.error("Erro ao sincronizar status no servidor:", err);
       showToast(
         err?.message ||
-          "Não foi possível sincronizar o status com o servidor. Ele foi atualizado apenas localmente por enquanto.",
+        "Não foi possível sincronizar o status com o servidor. Ele foi atualizado apenas localmente por enquanto.",
         "error"
       );
       return false;
@@ -812,6 +775,7 @@ export default function ReservationDetail() {
 
     try {
       const next = { ...reservation };
+
       const cleanComment = (comment || "").trim() || null;
       const cleanValue = Number(value);
 
@@ -848,7 +812,7 @@ export default function ReservationDetail() {
 
       showToast(
         result.message ||
-          "Avaliação salva localmente, mas falhou ao registrar no servidor. Tente novamente.",
+        "Avaliação salva localmente, mas falhou ao registrar no servidor. Tente novamente.",
         "error"
       );
     } finally {
@@ -947,40 +911,17 @@ export default function ReservationDetail() {
     return [];
   }, [selectedPetsFromLocal, selectedPetsFromSnapshot]);
 
-  // --------------------------
-  // Render states (sem “piscar não encontrado”)
-  // --------------------------
-  if (loading && !reservation) {
-    return <LoadingCard text="Carregando reserva..." />;
+  // ✅ estados de tela (sem flicker de "não encontrada")
+  if (loading) {
+    return <CenterCard>Carregando reserva...</CenterCard>;
   }
 
-  if (!reservation && notFound) {
-    return (
-      <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] flex items-center justify-center">
-        <div className="pc-card pc-card-accent flex flex-col gap-3">
-          <div>Reserva não encontrada.</div>
-          <button
-            type="button"
-            onClick={() => navigate("/dashboard")}
-            className="bg-[#5A3A22] hover:bg-[#95301F] text-white px-4 py-2 rounded-lg font-semibold"
-          >
-            Voltar ao painel
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (!reservation) {
-    return <LoadingCard text="Carregando..." />;
+  if (notFound || !reservation) {
+    return <CenterCard>Reserva não encontrada.</CenterCard>;
   }
 
   if (!isOwner) {
-    return (
-      <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] flex items-center justify-center">
-        <div className="pc-card pc-card-accent">Você não tem acesso a esta reserva.</div>
-      </div>
-    );
+    return <CenterCard>Você não tem acesso a esta reserva.</CenterCard>;
   }
 
   const headerTitle = isTutor
@@ -991,12 +932,6 @@ export default function ReservationDetail() {
 
   const effectiveToken = token || user?.token || null;
 
-  const safeStart = reservation.startDate ? formatDateBR(reservation.startDate) : "—";
-  const safeEnd = reservation.endDate ? formatDateBR(reservation.endDate) : "—";
-  const safeService = reservation.service || "—";
-  const safePrice = Number(reservation.pricePerDay || 0).toFixed(2);
-  const safeTotal = Number(reservation.total || 0).toFixed(2);
-
   return (
     <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] py-8 px-6">
       <div className="max-w-[1400px] mx-auto bg-white rounded-2xl shadow p-6 border-l-4 border-[#FFD700]/80">
@@ -1005,21 +940,14 @@ export default function ReservationDetail() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-[#5A3A22]">
           <div className="pc-card pc-card-accent">
             <h2 className="font-semibold mb-2">Informações</h2>
+            <p><b>Status:</b> {reservation.status}</p>
             <p>
-              <b>Status:</b> {reservation.status}
+              <b>Período:</b> {formatDateBR(reservation.startDate)} até{" "}
+              {formatDateBR(reservation.endDate)}
             </p>
-            <p>
-              <b>Período:</b> {safeStart} até {safeEnd}
-            </p>
-            <p>
-              <b>Serviço:</b> {safeService}
-            </p>
-            <p>
-              <b>Preço/dia:</b> R$ {safePrice}
-            </p>
-            <p>
-              <b>Total:</b> R$ {safeTotal}
-            </p>
+            <p><b>Serviço:</b> {reservation.service}</p>
+            <p><b>Preço/dia:</b> R$ {Number(reservation.pricePerDay || 0).toFixed(2)}</p>
+            <p><b>Total:</b> R$ {Number(reservation.total || 0).toFixed(2)}</p>
 
             {reservation.status === "Recusada" && reservation.rejectReason && (
               <div className="mt-3 p-3 rounded-xl border bg-[#FFF8F0]">
@@ -1039,9 +967,7 @@ export default function ReservationDetail() {
 
             {isTutor ? (
               canTutorSeeCaregiverAddress ? (
-                <p className="mt-1">
-                  <b>Endereço completo do cuidador:</b> {caregiver?.address}
-                </p>
+                <p className="mt-1"><b>Endereço completo do cuidador:</b> {caregiver?.address}</p>
               ) : (
                 <p className="mt-1 text-sm opacity-80">
                   Endereço completo do cuidador visível após <b>Aceita</b>.
@@ -1049,9 +975,7 @@ export default function ReservationDetail() {
               )
             ) : isCaregiver ? (
               canCaregiverSeeTutorAddress ? (
-                <p className="mt-1">
-                  <b>Endereço completo do tutor:</b> {tutor?.address}
-                </p>
+                <p className="mt-1"><b>Endereço completo do tutor:</b> {tutor?.address}</p>
               ) : (
                 <p className="mt-1 text-sm opacity-80">
                   Endereço completo do tutor visível após <b>Aceita</b>.
@@ -1078,52 +1002,30 @@ export default function ReservationDetail() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6 text-[#5A3A22]">
           <div className="pc-card pc-card-accent">
             <h2 className="font-semibold mb-2">Tutor</h2>
-            <p>
-              <b>Nome:</b> {tutor?.name || "—"}
-            </p>
-            <p>
-              <b>Email:</b> {tutor?.email || "—"}
-            </p>
-            <p>
-              <b>Telefone:</b> {maskPhone(tutor?.phone)}
-            </p>
+            <p><b>Nome:</b> {tutor?.name || "—"}</p>
+            <p><b>Email:</b> {tutor?.email || "—"}</p>
+            <p><b>Telefone:</b> {maskPhone(tutor?.phone)}</p>
+
             {canCaregiverSeeTutorAddress && (
               <>
-                <p>
-                  <b>Bairro:</b> {tutor?.neighborhood || "—"}
-                </p>
-                <p>
-                  <b>Cidade:</b> {tutor?.city || "—"}
-                </p>
-                <p>
-                  <b>Endereço completo:</b> {tutor?.address || "—"}
-                </p>
+                <p><b>Bairro:</b> {tutor?.neighborhood || "—"}</p>
+                <p><b>Cidade:</b> {tutor?.city || "—"}</p>
+                <p><b>Endereço completo:</b> {tutor?.address || "—"}</p>
               </>
             )}
           </div>
 
           <div className="pc-card pc-card-accent">
             <h2 className="font-semibold mb-2">Cuidador</h2>
-            <p>
-              <b>Nome:</b> {caregiver?.name || "—"}
-            </p>
-            <p>
-              <b>Email:</b> {caregiver?.email || "—"}
-            </p>
-            <p>
-              <b>Telefone:</b> {maskPhone(caregiver?.phone)}
-            </p>
+            <p><b>Nome:</b> {caregiver?.name || "—"}</p>
+            <p><b>Email:</b> {caregiver?.email || "—"}</p>
+            <p><b>Telefone:</b> {maskPhone(caregiver?.phone)}</p>
+
             {canTutorSeeCaregiverAddress && (
               <>
-                <p>
-                  <b>Bairro:</b> {caregiver?.neighborhood || "—"}
-                </p>
-                <p>
-                  <b>Cidade:</b> {caregiver?.city || "—"}
-                </p>
-                <p>
-                  <b>Endereço completo:</b> {caregiver?.address || "—"}
-                </p>
+                <p><b>Bairro:</b> {caregiver?.neighborhood || "—"}</p>
+                <p><b>Cidade:</b> {caregiver?.city || "—"}</p>
+                <p><b>Endereço completo:</b> {caregiver?.address || "—"}</p>
               </>
             )}
           </div>
@@ -1167,13 +1069,9 @@ export default function ReservationDetail() {
                     />
                     <div className="text-xs md:text-sm">
                       <p className="font-semibold text-sm md:text-base">{pet.name}</p>
-                      <p className="opacity-80">
-                        {specie} {breed}
-                      </p>
+                      <p className="opacity-80">{specie} {breed}</p>
                       {porte && <p className="opacity-80">Porte: {String(porte)}</p>}
-                      {pet.approxAge && (
-                        <p className="opacity-80">Idade aproximada: {pet.approxAge}</p>
-                      )}
+                      {pet.approxAge && <p className="opacity-80">Idade aproximada: {pet.approxAge}</p>}
                       {!!pet.adjectives?.length && (
                         <p className="mt-1 text-[11px] opacity-90">
                           {pet.adjectives.join(" • ")}
@@ -1214,11 +1112,10 @@ export default function ReservationDetail() {
                   type="button"
                   onClick={openRatingModal}
                   disabled={ratingBusy}
-                  className={`mt-3 px-4 py-2 rounded-lg font-semibold shadow-md text-sm ${
-                    ratingBusy
-                      ? "bg-[#FFD700]/60 cursor-not-allowed text-[#5A3A22]"
-                      : "bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22]"
-                  }`}
+                  className={`mt-3 px-4 py-2 rounded-lg font-semibold shadow-md text-sm ${ratingBusy
+                    ? "bg-[#FFD700]/60 cursor-not-allowed text-[#5A3A22]"
+                    : "bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22]"
+                    }`}
                 >
                   {ratingBusy ? "Enviando..." : isTutor ? "Avaliar cuidador" : "Avaliar tutor"}
                 </button>
@@ -1246,6 +1143,7 @@ export default function ReservationDetail() {
         {(isTutor || isCaregiver) && (
           <div className="mt-8" ref={chatSectionRef} id="chat">
             <ChatBox
+              key={`${reservation.id}-${reservation.status}`}   // ✅ evita erro #300/#310 ao mudar status
               reservationId={reservation.id}
               token={effectiveToken}
               currentUserId={myUserId}

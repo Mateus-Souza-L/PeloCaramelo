@@ -1,5 +1,5 @@
 // frontend/src/components/ChatBox.jsx
-import { useEffect, useState, useRef, useCallback, useMemo } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import {
   getChatMessages,
   sendChatMessage,
@@ -23,21 +23,16 @@ export default function ChatBox({
   const [sending, setSending] = useState(false);
   const [input, setInput] = useState("");
 
-  // botão "ver novas"
   const [hasNewWhileAway, setHasNewWhileAway] = useState(false);
 
   const containerRef = useRef(null);
   const rootRef = useRef(null);
 
-  // controle de rolagem / polling
   const lastMessageIdRef = useRef(null);
   const initialLoadRef = useRef(true);
   const isAtBottomRef = useRef(true);
 
-  // evita spam de evento no polling
   const lastNewEventIdRef = useRef(null);
-
-  // chat visível na tela?
   const isInViewportRef = useRef(true);
 
   // ---------------------------
@@ -205,10 +200,7 @@ export default function ChatBox({
     markReadServer();
 
     const notifyNewMessage = (msgId) => {
-      if (
-        msgId != null &&
-        String(lastNewEventIdRef.current) === String(msgId)
-      )
+      if (msgId != null && String(lastNewEventIdRef.current) === String(msgId))
         return;
 
       lastNewEventIdRef.current = msgId ?? lastNewEventIdRef.current;
@@ -328,7 +320,7 @@ export default function ChatBox({
     const optimisticMessage = {
       id: tempId,
       reservation_id: reservationId,
-      sender_id: currentUserId, // importante p/ isMineMsg bater com o backend
+      sender_id: currentUserId,
       receiver_id: null,
       message: text,
       status: "sending",
@@ -365,14 +357,6 @@ export default function ChatBox({
     }
   }
 
-  if (!canChat) {
-    return (
-      <div className="mt-6 p-4 rounded-2xl bg-[#FFF7E0] border border-[#EBCBA9] text-sm text-[#5A3A22]">
-        O chat desta reserva está desativado no momento.
-      </div>
-    );
-  }
-
   const renderStatus = (msg) => {
     const fromMe = isMineMsg(msg);
     if (!fromMe) return null;
@@ -393,7 +377,7 @@ export default function ChatBox({
     return <span className="text-[10px] opacity-70">✓ enviada</span>;
   };
 
-  // (opcional) Debug seguro: só loga fora do JSX, e só quando quiser habilitar
+  // ✅ Debug (mantém hook sempre no mesmo lugar — sem quebrar hooks quando canChat muda)
   const DEBUG_CHAT = false;
   useEffect(() => {
     if (!DEBUG_CHAT) return;
@@ -403,6 +387,15 @@ export default function ChatBox({
       messages.map((m) => ({ id: m.id, sender: getSenderId(m) }))
     );
   }, [DEBUG_CHAT, currentUserId, messages, getSenderId]);
+
+  // ✅ Agora pode retornar condicional sem quebrar hooks
+  if (!canChat) {
+    return (
+      <div className="mt-6 p-4 rounded-2xl bg-[#FFF7E0] border border-[#EBCBA9] text-sm text-[#5A3A22]">
+        O chat desta reserva está desativado no momento.
+      </div>
+    );
+  }
 
   return (
     <div
@@ -467,10 +460,7 @@ export default function ChatBox({
                     {msg.created_at || msg.createdAt
                       ? new Date(msg.created_at || msg.createdAt).toLocaleString(
                           "pt-BR",
-                          {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          }
+                          { hour: "2-digit", minute: "2-digit" }
                         )
                       : ""}
                   </span>

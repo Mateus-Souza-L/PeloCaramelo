@@ -102,6 +102,10 @@ export default function CaregiverDetail() {
 
   const [caregiver, setCaregiver] = useState(null);
 
+  // ✅ evita piscar “não encontrado” antes de terminar o fetch
+  const [caregiverLoading, setCaregiverLoading] = useState(true);
+  const [caregiverLoaded, setCaregiverLoaded] = useState(false);
+
   // reservas (para avaliações / address access)
   const [reservations, setReservations] = useState([]);
 
@@ -484,6 +488,11 @@ export default function CaregiverDetail() {
     };
 
     const loadCaregiver = async () => {
+      if (!cancelled) {
+        setCaregiverLoading(true);
+        setCaregiverLoaded(false);
+      }
+
       let cg = null;
 
       try {
@@ -545,6 +554,8 @@ export default function CaregiverDetail() {
       if (cancelled) return;
 
       setCaregiver(cg || null);
+      setCaregiverLoading(false);
+      setCaregiverLoaded(true);
 
       if (cg) {
         try {
@@ -1358,13 +1369,22 @@ export default function CaregiverDetail() {
   };
 
   // ---------- RENDER ----------
-  if (!caregiver) {
+  if (caregiverLoading && !caregiverLoaded) {
+    return (
+      <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] flex items-center justify-center">
+        <div className="pc-card pc-card-accent">Carregando cuidador...</div>
+      </div>
+    );
+  }
+
+  if (!caregiver && caregiverLoaded) {
     return (
       <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] flex items-center justify-center">
         <div className="pc-card pc-card-accent">Cuidador não encontrado.</div>
       </div>
     );
   }
+
 
   const pricedServices = Object.keys(caregiver.services || {}).filter(
     (k) => caregiver.services[k] && (svcPriceMap[k] ?? 0) > 0
@@ -1502,7 +1522,7 @@ export default function CaregiverDetail() {
         <div className="mb-4">
           <p className="text-xs text-[#5A3A22] opacity-70">
             Datas disponíveis cadastradas: <b>{availableKeys.length}</b>
-          </p>          
+          </p>
 
           {nextDates.length > 0 && (
             <div className="mt-2 text-sm text-[#5A3A22]">
