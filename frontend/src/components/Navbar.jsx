@@ -14,9 +14,12 @@ export default function Navbar() {
   const { user, logout, token } = useAuth();
   const navigate = useNavigate();
 
-  const isTutor = user?.role === "tutor";
-  const isCaregiver = user?.role === "caregiver";
-  const isAdmin = user?.role === "admin";
+  const role = String(user?.role || "").toLowerCase().trim();
+
+  const isTutor = role === "tutor";
+  const isCaregiver = role === "caregiver";
+  const isAdminLike = role === "admin" || role === "admin_master";
+
   const canUseBell = isTutor || isCaregiver; // admin tem acesso ao painel, mas não usa contadores
 
   const [chatUnreadIds, setChatUnreadIds] = useState([]);
@@ -29,7 +32,6 @@ export default function Navbar() {
     try {
       logout?.();
     } finally {
-      // limpa UI local
       setChatUnreadIds([]);
       setReservationUnreadCount(0);
       navigate("/", { replace: true });
@@ -39,7 +41,7 @@ export default function Navbar() {
   /* ================= CHAT (backend-driven) ================= */
 
   const loadUnreadChatFromServer = useCallback(async () => {
-    if (!user || !token || isAdmin) {
+    if (!user || !token || isAdminLike) {
       setChatUnreadIds([]);
       return;
     }
@@ -60,12 +62,12 @@ export default function Navbar() {
     } catch (err) {
       console.error("Erro ao carregar unread de chat (Navbar):", err);
     }
-  }, [user, token, isAdmin]);
+  }, [user, token, isAdminLike]);
 
   /* ================= RESERVAS (snapshot + local notifs) ================= */
 
   const loadReservationEventsFromServer = useCallback(async () => {
-    if (!user || !token || isAdmin) {
+    if (!user || !token || isAdminLike) {
       setReservationUnreadCount(0);
       return;
     }
@@ -83,14 +85,13 @@ export default function Navbar() {
       const data = await authRequest(endpoint, token);
       const apiRes = Array.isArray(data?.reservations) ? data.reservations : [];
 
-      // snapshot guarda status + ratings
-      // shape: { [id]: { status: string, tutorRating: number|null, caregiverRating: number|null } }
       const currentMap = {};
       for (const r of apiRes) {
         if (r?.id == null) continue;
         const idStr = String(r.id);
 
-        const tutorRating = r.tutor_rating == null ? null : Number(r.tutor_rating);
+        const tutorRating =
+          r.tutor_rating == null ? null : Number(r.tutor_rating);
         const caregiverRating =
           r.caregiver_rating == null ? null : Number(r.caregiver_rating);
 
@@ -103,7 +104,7 @@ export default function Navbar() {
         };
       }
 
-      const snapshotKey = `reservationsSnapshot_${user.role}_${user.id}`;
+      const snapshotKey = `reservationsSnapshot_${role}_${user.id}`;
       let prevMap = null;
 
       try {
@@ -114,7 +115,6 @@ export default function Navbar() {
 
       localStorage.setItem(snapshotKey, JSON.stringify(currentMap));
 
-      // primeiro load: só carrega localStorage (não cria eventos)
       if (!prevMap) {
         loadReservationNotifs(user.id);
         setReservationUnreadCount(getUnreadReservationNotifsCount(user.id));
@@ -165,7 +165,6 @@ export default function Navbar() {
         for (const r of apiRes) {
           const idStr = String(r.id);
 
-          // nova pré-reserva
           if (prevStatus(idStr) === undefined && curStatus(idStr) != null) {
             newEvents.push({
               reservationId: idStr,
@@ -175,7 +174,6 @@ export default function Navbar() {
             });
           }
 
-          // tutor cancelou após aceita
           if (prevStatus(idStr) === "Aceita" && curStatus(idStr) === "Cancelada") {
             newEvents.push({
               reservationId: idStr,
@@ -185,7 +183,6 @@ export default function Navbar() {
             });
           }
 
-          // caregiver recebeu avaliação do tutor
           if (prevTutorRating(idStr) == null && curTutorRating(idStr) != null) {
             newEvents.push({
               reservationId: idStr,
@@ -201,7 +198,6 @@ export default function Navbar() {
         for (const r of apiRes) {
           const idStr = String(r.id);
 
-          // cuidador aceitou
           if (prevStatus(idStr) !== "Aceita" && curStatus(idStr) === "Aceita") {
             newEvents.push({
               reservationId: idStr,
@@ -211,7 +207,6 @@ export default function Navbar() {
             });
           }
 
-          // cuidador recusou
           if (prevStatus(idStr) !== "Recusada" && curStatus(idStr) === "Recusada") {
             newEvents.push({
               reservationId: idStr,
@@ -221,11 +216,7 @@ export default function Navbar() {
             });
           }
 
-          // tutor recebeu avaliação do cuidador
-          if (
-            prevCaregiverRating(idStr) == null &&
-            curCaregiverRating(idStr) != null
-          ) {
+          if (prevCaregiverRating(idStr) == null && curCaregiverRating(idStr) != null) {
             newEvents.push({
               reservationId: idStr,
               type: "rating",
@@ -242,7 +233,6 @@ export default function Navbar() {
       setReservationUnreadCount(getUnreadReservationNotifsCount(user.id));
     } catch (err) {
       console.error("Erro ao carregar notificações de reserva (Navbar):", err);
-      // fallback local
       if (user?.id) {
         loadReservationNotifs(user.id);
         setReservationUnreadCount(getUnreadReservationNotifsCount(user.id));
@@ -250,7 +240,7 @@ export default function Navbar() {
         setReservationUnreadCount(0);
       }
     }
-  }, [user, token, isAdmin, isTutor, isCaregiver]);
+  }, [user, token, isAdminLike, isTutor, isCaregiver, isCaregiver, role]);
 
   /* ================= LISTENERS ================= */
 
@@ -293,7 +283,7 @@ export default function Navbar() {
       return;
     }
 
-    if (isAdmin) {
+    if (isAdminLike) {
       setChatUnreadIds([]);
       setReservationUnreadCount(0);
       return;
@@ -309,17 +299,17 @@ export default function Navbar() {
     return () => clearInterval(intervalId);
   }, [
     user?.id,
-    user?.role,
+    role,
     token,
-    isAdmin,
+    isAdminLike,
     loadUnreadChatFromServer,
     loadReservationEventsFromServer,
   ]);
 
-  // Sino: admin vai pro /admin; tutor/caregiver vai pro /dashboard?tab=reservas
+  // Sino: admin vai pro /admin/users; tutor/caregiver vai pro /dashboard?tab=reservas
   const handleBellClick = () => {
     if (!user) return;
-    if (isAdmin) return navigate("/admin");
+    if (isAdminLike) return navigate("/admin/users");
     navigate("/dashboard?tab=reservas");
   };
 
@@ -373,9 +363,9 @@ export default function Navbar() {
           </Link>
         )}
 
-        {isAdmin && (
+        {isAdminLike && (
           <Link
-            to="/admin"
+            to="/admin/users"
             className="bg-red-600 px-3 py-1 rounded-lg font-semibold"
           >
             Painel Admin
