@@ -1596,10 +1596,9 @@ export default function Dashboard() {
               ) : reservationsLoading ? (
                 <p className="text-center text-[#5A3A22]">Carregando suas reservas...</p>
               ) : (
-                <p className="text-center text-[#5A3A22]">Você ainda não fez reservas.</p>
-              )
-
-          {tab === "pets" && <TutorPets />}
+                <p className="text-center text-[#5A3A22]">Você ainda não fez reservas.</p>              
+              )}
+              {tab === "pets" && <TutorPets />}
             </div>
 
           {cancelConfirmId && (
