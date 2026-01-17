@@ -51,11 +51,13 @@ const normalizeReservationFromApi = (r) => {
     total: Number(r.total || 0),
     status: r.status || "Pendente",
 
+    // ⚠️ estes campos podem vir nulos do servidor (mesmo já tendo review)
     tutorRating: r.tutor_rating ?? null,
     tutorReview: r.tutor_review ?? null,
     caregiverRating: r.caregiver_rating ?? null,
     caregiverReview: r.caregiver_review ?? null,
 
+    // flags opcionais (caso backend mande no futuro)
     __hasTutorReview: r.__hasTutorReview ?? r.has_tutor_review ?? false,
     __hasCaregiverReview: r.__hasCaregiverReview ?? r.has_caregiver_review ?? false,
 
@@ -77,7 +79,6 @@ function normalizeReservationFromLocal(r) {
     r.start_date ??
     (r.start ? String(r.start).slice(0, 10) : "") ??
     "";
-
   const endDate =
     r.endDate ??
     r.end_date ??
@@ -86,7 +87,6 @@ function normalizeReservationFromLocal(r) {
 
   const petsIdsRaw = r.petsIds ?? r.pets_ids ?? [];
   let petsIds = petsIdsRaw;
-
   if (typeof petsIds === "string") {
     try {
       const parsed = JSON.parse(petsIds);
@@ -214,6 +214,7 @@ function getStatusToastType(status) {
 
 // -----------------------------------------------------
 // ✅ merge: preserva rating/review do cache local quando servidor vier vazio
+// (agora com normalização do local)
 // -----------------------------------------------------
 function mergePreservingLocalRatings(apiList, localList) {
   const localMap = new Map(
@@ -238,6 +239,7 @@ function mergePreservingLocalRatings(apiList, localList) {
       merged.__hasCaregiverReview = true;
     }
 
+    // se tinha texto local, isso também significa "avaliou"
     if (
       !merged.__hasTutorReview &&
       typeof localR.tutorReview === "string" &&
@@ -269,22 +271,30 @@ export default function Dashboard() {
   const [tab, setTab] = useState("disponibilidade");
   const [reservations, setReservations] = useState([]);
 
+  // ✅ flags para evitar “Você ainda não fez reservas” piscar antes de carregar do servidor
   const [reservationsLoading, setReservationsLoading] = useState(false);
   const [reservationsLoaded, setReservationsLoaded] = useState(false);
 
+  // chat não lido (ids)
   const [unreadChatIds, setUnreadChatIds] = useState([]);
+
+  // notificações de RESERVA não lidas (ids)
   const [unreadResIds, setUnreadResIds] = useState([]);
 
-  const [availableDates, setAvailableDates] = useState([]);
-  const [pendingDates, setPendingDates] = useState([]);
+  // disponibilidade (cuidador)
+  const [availableDates, setAvailableDates] = useState([]); // keys salvas
+  const [pendingDates, setPendingDates] = useState([]); // keys editando
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [unsaved, setUnsaved] = useState(false);
 
+  // avaliação
   const [ratingReservation, setRatingReservation] = useState(null);
   const [ratingTitle, setRatingTitle] = useState("");
 
+  // confirm cancel
   const [cancelConfirmId, setCancelConfirmId] = useState(null);
 
+  // modal justificativa recusa
   const [rejectModal, setRejectModal] = useState({
     open: false,
     reservationId: null,
@@ -292,25 +302,30 @@ export default function Dashboard() {
     text: "",
   });
 
+  // ✅ reviews do usuário logado (para esconder o botão Avaliar pelo /reviews/me)
   const [myReviewedReservationIds, setMyReviewedReservationIds] = useState(() => new Set());
   const [myReviewsLoaded, setMyReviewsLoaded] = useState(false);
 
+  // storage key reservas por usuário/role (evita mistura de cache)
   const reservationsStorageKey = useMemo(() => {
     if (!user?.id || !user?.role) return "reservations";
     return `reservations_${String(user.role)}_${String(user.id)}`;
   }, [user?.id, user?.role]);
 
+  // ✅ storage key disponibilidade por cuidador logado (resolve sumir no reload)
   const availabilityStorageKey = useMemo(() => {
     if (!user?.id) return "availability";
     return `availability_${String(user.id)}`;
   }, [user?.id]);
 
+  // "hoje" (00:00)
   const today = useMemo(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
     return d;
   }, []);
 
+  // refresh de notifs de reserva (não lidas)
   const refreshUnreadReservationNotifs = useCallback(() => {
     if (!user?.id) {
       setUnreadResIds([]);
@@ -321,6 +336,9 @@ export default function Dashboard() {
     setUnreadResIds(ids);
   }, [user?.id]);
 
+  /* ===========================================================
+     ✅ anti-spam (dedupe + throttle)
+     =========================================================== */
   const refreshTimerRef = useRef(null);
 
   const chatFetchGuardRef = useRef({ inFlight: false, lastAt: 0 });
@@ -328,6 +346,7 @@ export default function Dashboard() {
   const availFetchGuardRef = useRef({ inFlight: false, lastAt: 0, lastKey: "" });
   const myReviewsGuardRef = useRef({ inFlight: false, lastAt: 0, lastKey: "" });
 
+  // ---------- CHAT unread (backend-driven) ----------
   const loadUnreadChatFromServer = useCallback(async () => {
     if (!user || !token) {
       setUnreadChatIds([]);
@@ -357,6 +376,7 @@ export default function Dashboard() {
     }
   }, [user, token]);
 
+  // ---------- ✅ /reviews/me (para esconder botão Avaliar quando já avaliou) ----------
   const loadMyReviewsFromServer = useCallback(async () => {
     if (!user?.id || !token) {
       setMyReviewedReservationIds(new Set());
@@ -382,6 +402,7 @@ export default function Dashboard() {
     try {
       const data = await authRequest("/reviews/me", token);
 
+      // aceita: array direto OU { reviews: [...] }
       const list = Array.isArray(data)
         ? data
         : Array.isArray(data?.reviews)
@@ -404,6 +425,7 @@ export default function Dashboard() {
       setMyReviewsLoaded(true);
     } catch (err) {
       console.error("Erro ao carregar /reviews/me (Dashboard):", err);
+      // não quebra: só deixa o fallback antigo segurar o botão quando possível
       setMyReviewedReservationIds(new Set());
       setMyReviewsLoaded(false);
     } finally {
@@ -411,12 +433,10 @@ export default function Dashboard() {
     }
   }, [user?.id, user?.role, token]);
 
+  // ---------- reservas ----------
   const loadReservations = useCallback(async () => {
-    // ✅ correção: garante estados consistentes quando user ainda não existe (ou logout)
     if (!user) {
       setReservations([]);
-      setReservationsLoading(false);
-      setReservationsLoaded(true);
       return [];
     }
 
@@ -435,11 +455,11 @@ export default function Dashboard() {
     resFetchGuardRef.current.lastAt = now;
     resFetchGuardRef.current.lastKey = guardKey;
 
+    // ✅ só mostra loading visual na primeira carga real (evita “piscar” no refresh)
     if (!reservationsLoaded) setReservationsLoading(true);
 
     const applyReservations = (resList) => {
-      const safe = Array.isArray(resList) ? resList : [];
-      setReservations(safe);
+      setReservations(resList);
       refreshUnreadReservationNotifs();
     };
 
@@ -448,6 +468,7 @@ export default function Dashboard() {
         const raw = localStorage.getItem(reservationsStorageKey) || "[]";
         const parsed = JSON.parse(raw);
         const list = Array.isArray(parsed) ? parsed : [];
+        // ✅ normaliza cache antigo (camel/snake)
         return list.map(normalizeReservationFromLocal).filter(Boolean);
       } catch {
         return [];
@@ -460,6 +481,7 @@ export default function Dashboard() {
         (Array.isArray(localCache) ? localCache : []).map((x) => [String(x?.id), x])
       );
 
+      // tenta servidor
       if (token && (isTutor || isCaregiver)) {
         try {
           const endpoint = isTutor ? "/reservations/tutor" : "/reservations/caregiver";
@@ -476,6 +498,7 @@ export default function Dashboard() {
               return {
                 ...srv,
 
+                // ✅ preserva avaliações locais se o backend não mandar
                 tutorRating: srv.tutorRating ?? local.tutorRating ?? null,
                 tutorReview: srv.tutorReview ?? local.tutorReview ?? null,
 
@@ -492,11 +515,11 @@ export default function Dashboard() {
                   srv.__hasCaregiverReview ||
                   local.__hasCaregiverReview ||
                   local.caregiverRating != null ||
-                  (typeof local.caregiverReview === "string" &&
-                    local.caregiverReview.trim().length > 0),
+                  (typeof local.caregiverReview === "string" && local.caregiverReview.trim().length > 0),
               };
             });
 
+          // ✅ merge com local pra não "voltar" o botão de avaliar (fallback)
           const merged = mergePreservingLocalRatings(normalized, localCache);
 
           try {
@@ -516,6 +539,7 @@ export default function Dashboard() {
         }
       }
 
+      // fallback local
       applyReservations(localCache);
       return localCache;
     } finally {
@@ -530,7 +554,6 @@ export default function Dashboard() {
     isCaregiver,
     reservationsStorageKey,
     refreshUnreadReservationNotifs,
-    reservationsLoaded,
     showToast,
   ]);
 
@@ -606,6 +629,7 @@ export default function Dashboard() {
     availFetchGuardRef.current.lastKey = guardKey;
 
     try {
+      // 1) cache local imediato
       let cachedLocalDates = [];
       try {
         const cached = JSON.parse(localStorage.getItem(availabilityStorageKey) || "[]");
@@ -618,6 +642,7 @@ export default function Dashboard() {
         cachedLocalDates = [];
       }
 
+      // 2) depois busca do servidor e sobrescreve SOMENTE se vier algo
       if (!token) return;
 
       try {
@@ -802,6 +827,7 @@ export default function Dashboard() {
 
       if (detail?.reason === "dashboard-apply") return;
 
+      // ✅ se vier rating no evento, aplica no state (evita botão voltar antes do refresh)
       if (rid && (detail?.reason === "rating-local" || detail?.reason === "rating-saved")) {
         const role = String(detail?.fromRole || detail?.role || user?.role || "");
         const rating = detail?.rating;
@@ -840,6 +866,7 @@ export default function Dashboard() {
           });
         }
 
+        // ✅ ao avaliar, já marca no Set para esconder o botão imediatamente
         if (rid) {
           setMyReviewedReservationIds((prev) => {
             const next = new Set(prev);
@@ -850,6 +877,7 @@ export default function Dashboard() {
         }
       }
 
+      // status/rejectReason (como estava)
       if (rid && detail?.status) {
         setReservations((prev) => {
           const list = Array.isArray(prev) ? prev : [];
@@ -976,7 +1004,7 @@ export default function Dashboard() {
     availabilityStorageKey,
   ]);
 
-    // polling leve (chat 15s, reservas 60s, reviews 60s)
+  // polling leve (chat 15s, reservas 60s, reviews 60s)
   useEffect(() => {
     if (!user?.id || !token) return;
 
@@ -1005,42 +1033,31 @@ export default function Dashboard() {
   ]);
 
   // ---------- status da reserva ----------
-  const applyAndPersistReservation = useCallback(
-    (updatedReservation) => {
-      if (!updatedReservation?.id) return;
+  const applyAndPersistReservation = (updatedReservation) => {
+    const id = String(updatedReservation.id);
+    const nextList = (reservations || []).map((r) =>
+      String(r.id) === id ? updatedReservation : r
+    );
 
-      const id = String(updatedReservation.id);
+    try {
+      localStorage.setItem(reservationsStorageKey, JSON.stringify(nextList));
+    } catch {
+      // ignore
+    }
 
-      // ✅ usa setState funcional (evita "stale state" quando eventos e refresh batem juntos)
-      setReservations((prev) => {
-        const list = Array.isArray(prev) ? prev : [];
-        const nextList = list.map((r) =>
-          String(r?.id) === id ? updatedReservation : r
-        );
+    setReservations(nextList);
 
-        try {
-          localStorage.setItem(reservationsStorageKey, JSON.stringify(nextList));
-        } catch {
-          // ignore
-        }
-
-        // dispara evento para o resto do app
-        window.dispatchEvent(
-          new CustomEvent("reservation-updated", {
-            detail: {
-              reservationId: id,
-              status: updatedReservation.status,
-              source: "local",
-              reason: "dashboard-apply",
-            },
-          })
-        );
-
-        return nextList;
-      });
-    },
-    [reservationsStorageKey]
-  );
+    window.dispatchEvent(
+      new CustomEvent("reservation-updated", {
+        detail: {
+          reservationId: id,
+          status: updatedReservation.status,
+          source: "local",
+          reason: "dashboard-apply",
+        },
+      })
+    );
+  };
 
   const setStatus = async (id, status, rejectReason = null) => {
     const current = (reservations || []).find((r) => String(r.id) === String(id));
@@ -1220,9 +1237,12 @@ export default function Dashboard() {
     if (Number.isNaN(end.getTime())) return false;
     if (end > today) return false;
 
+    // ✅ regra pedida:
+    // botão só aparece se concluída e NÃO existir review do usuário para reservation_id (/reviews/me)
     const hasMine = hasMyReviewForReservation(r.id);
     if (hasMine) return false;
 
+    // ✅ fallback: enquanto /reviews/me não carregou (ou falhou), não quebrar o comportamento atual
     if (!myReviewsLoaded) {
       if (isTutor) return !hasAlreadyReviewedFallback(r, "tutor");
       if (isCaregiver) return !hasAlreadyReviewedFallback(r, "caregiver");
@@ -1278,6 +1298,7 @@ export default function Dashboard() {
     }
     setReservations(next);
 
+    // ✅ já marca no set (some o botão imediatamente)
     setMyReviewedReservationIds((prev) => {
       const s = new Set(prev);
       s.add(String(ratingReservation.id));
@@ -1333,9 +1354,7 @@ export default function Dashboard() {
         try {
           const rid = String(ratingReservation.id);
 
-          const targetUserId = isTutor
-            ? ratingReservation.caregiverId
-            : ratingReservation.tutorId;
+          const targetUserId = isTutor ? ratingReservation.caregiverId : ratingReservation.tutorId;
 
           if (targetUserId) {
             const notif = {
@@ -1406,12 +1425,222 @@ export default function Dashboard() {
 
     return (
       <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] p-6">
-        {/* ... seu JSX do tutor (igual ao que você mandou) ... */}
+        <div className="max-w-[1400px] mx-auto mb-4 flex gap-3 justify-center">
+          <button
+            onClick={() => setTab("reservasTutor")}
+            className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${tab === "reservasTutor"
+              ? "bg-[#5A3A22] text-white"
+              : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
+              }`}
+            type="button"
+          >
+            Minhas Reservas
+          </button>
+          <button
+            onClick={() => setTab("pets")}
+            className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${tab === "pets"
+              ? "bg-[#5A3A22] text-white"
+              : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
+              }`}
+            type="button"
+          >
+            Meus Pets
+          </button>
+        </div>
+
+        <div className="max-w-[1400px] mx-auto mb-4 flex justify-end">
+          <Link
+            to="/avaliacoes"
+            className="px-4 py-2 rounded-2xl bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22] font-semibold shadow text-sm"
+          >
+            Ver minhas avaliações
+          </Link>
+        </div>
+
+        <div className="max-w-[1400px] mx-auto bg-white rounded-2xl shadow p-6 border-l-4 border-[#FFD700]/80">
+          {tab === "reservasTutor" && (
+            <>
+              {myRes.length ? (
+                myRes.map((r) => {
+                  const canRate = canRateReservation(r);
+
+                  const idStr = String(r.id);
+                  const hasUnreadChat = unreadChatIds.includes(idStr);
+                  const hasUnreadResNotif = unreadResIds.includes(idStr);
+
+                  const alreadyByMe = hasMyReviewForReservation(idStr);
+                  const alreadyFallback = hasAlreadyReviewedFallback(r, "tutor");
+                  const alreadyRated = alreadyByMe || alreadyFallback;
+
+                  let cardClasses =
+                    "relative border rounded-lg p-4 mb-3 text-[#5A3A22] shadow-sm transition ";
+                  if (hasUnreadChat || hasUnreadResNotif) {
+                    cardClasses += "border-[#FFD700] bg-[#FFF8E0] ring-1 ring-[#FFD700]/40";
+                  } else {
+                    cardClasses += "bg-white hover:bg-[#FFFDF8]";
+                  }
+
+                  const statusHelper = getStatusHelperText(r, "tutor");
+                  const rejectReason = r.status === "Recusada" ? r.rejectReason || null : null;
+
+                  const showTutorRating =
+                    r.tutorRating != null && Number.isFinite(Number(r.tutorRating));
+
+                  return (
+                    <div key={r.id} className={cardClasses}>
+                      {(hasUnreadChat || hasUnreadResNotif) && (
+                        <div className="absolute top-3 right-3 flex items-center gap-2">
+                          <span
+                            className={`w-2.5 h-2.5 rounded-full ${hasUnreadChat ? "bg-blue-600" : "bg-red-600"
+                              }`}
+                            title={hasUnreadChat ? "Nova mensagem" : "Atualização"}
+                          />
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/70 border border-[#FFD700]/50 text-[#5A3A22]">
+                            {hasUnreadChat ? "CHAT" : "UPDATE"}
+                          </span>
+                        </div>
+                      )}
+
+                      <button
+                        onClick={() => openReservation(r.id, { scrollToChat: hasUnreadChat })}
+                        className="text-left w-full"
+                        title="Abrir detalhes da reserva"
+                        type="button"
+                      >
+                        <p>
+                          <b>Cuidador:</b> {r.caregiverName}
+                        </p>
+                        <p>
+                          <b>Cidade:</b> {r.city}
+                        </p>
+                        <p>
+                          <b>Período:</b> {formatDateBR(r.startDate)} até {formatDateBR(r.endDate)}
+                        </p>
+                        <p>
+                          <b>Total:</b> R$ {Number(r.total || 0).toFixed(2)}
+                        </p>
+                        <p>
+                          <b>Status:</b>{" "}
+                          <span className={`font-semibold ${getStatusColor(r.status)}`}>
+                            {r.status}
+                          </span>
+                        </p>
+
+                        {(hasUnreadChat || hasUnreadResNotif) && (
+                          <p className="mt-1 text-xs font-semibold text-[#B25B38]">
+                            {hasUnreadChat ? "Nova mensagem nesta reserva" : "Atualização nesta reserva"}
+                          </p>
+                        )}
+
+                        {statusHelper && (
+                          <p
+                            className={`mt-1 text-xs ${r.status === "Recusada" || r.status === "Cancelada"
+                              ? "text-red-600"
+                              : "text-[#5A3A22]"
+                              }`}
+                          >
+                            {statusHelper}
+                          </p>
+                        )}
+
+                        {r.status === "Recusada" && rejectReason && (
+                          <p className="mt-2 text-xs text-[#5A3A22] bg-[#FFF8F0] border rounded-lg p-2">
+                            <b>Motivo da recusa:</b> {rejectReason}
+                          </p>
+                        )}
+                      </button>
+
+                      <div className="mt-2 flex items-center justify-between">
+                        {alreadyRated ? (
+                          <p className="text-xs text-[#5A3A22] opacity-80">
+                            {showTutorRating ? (
+                              <>
+                                Sua avaliação para este cuidador: <b>⭐ {Number(r.tutorRating)}/5</b>
+                                {r.tutorReview ? ` — "${r.tutorReview}"` : ""}
+                              </>
+                            ) : (
+                              <>Você já avaliou esta reserva.</>
+                            )}
+                          </p>
+                        ) : (
+                          <p className="text-xs text-[#5A3A22] opacity-70">
+                            Após a reserva ser concluída, você poderá avaliar o cuidador.
+                          </p>
+                        )}
+
+                        <div className="flex gap-2 items-center">
+                          {canRate && (
+                            <button
+                              type="button"
+                              onClick={() => openRatingModal(r, "Avaliar cuidador")}
+                              className="px-3 py-1 rounded-lg text-xs font-semibold bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22] shadow"
+                            >
+                              Avaliar cuidador
+                            </button>
+                          )}
+
+                          {(r.status === "Pendente" || r.status === "Aceita") && (
+                            <button
+                              type="button"
+                              onClick={() => handleCancelReservationAsTutor(r.id)}
+                              className="px-3 py-1 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 text-white shadow"
+                            >
+                              Cancelar reserva
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <p className="text-center text-[#5A3A22]">Você ainda não fez reservas.</p>
+              )}
+            </>
+          )}
+
+          {tab === "pets" && <TutorPets />}
+        </div>
+
+        {cancelConfirmId && (
+          <div className="fixed bottom-6 right-6 z-[9999] w-[360px] max-w-[92vw]">
+            <div className="bg-white shadow-xl rounded-2xl border-l-4 border-red-600 p-4">
+              <p className="text-sm text-[#5A3A22] font-semibold">
+                Tem certeza que deseja cancelar esta reserva?
+              </p>
+              <p className="text-xs text-[#5A3A22] opacity-80 mt-1">Essa ação não pode ser desfeita.</p>
+
+              <div className="flex justify-end gap-2 mt-4">
+                <button
+                  type="button"
+                  onClick={dismissCancelReservation}
+                  className="px-3 py-2 rounded-lg text-xs font-semibold bg-gray-200 hover:bg-gray-300 text-[#5A3A22]"
+                >
+                  Manter reserva
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmCancelReservation}
+                  className="px-3 py-2 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 text-white"
+                >
+                  Cancelar reserva
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <RatingModal
+          isOpen={!!ratingReservation}
+          title={ratingTitle || "Avaliar"}
+          onClose={closeRatingModal}
+          onSubmit={handleSubmitRating}
+        />
       </div>
     );
   }
 
-    // ------------------ CUIDADOR ------------------
+  // ------------------ CUIDADOR ------------------
   if (isCaregiver) {
     const received = (reservations || [])
       .filter((r) => String(r.caregiverId) === String(user.id))
@@ -1419,10 +1648,8 @@ export default function Dashboard() {
         const idA = String(a.id);
         const idB = String(b.id);
 
-        const attA =
-          unreadChatIds.includes(idA) || unreadResIds.includes(idA) ? 1 : 0;
-        const attB =
-          unreadChatIds.includes(idB) || unreadResIds.includes(idB) ? 1 : 0;
+        const attA = unreadChatIds.includes(idA) || unreadResIds.includes(idA) ? 1 : 0;
+        const attB = unreadChatIds.includes(idB) || unreadResIds.includes(idB) ? 1 : 0;
 
         if (attA !== attB) return attB - attA;
         return parseLocalKey(b.startDate) - parseLocalKey(a.startDate);
@@ -1432,11 +1659,346 @@ export default function Dashboard() {
 
     return (
       <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] p-6">
-        {/* ... TODO o seu JSX do cuidador fica aqui dentro ... */}
+        <div className="max-w-[1400px] mx-auto mb-4 flex gap-3 justify-center">
+          <button
+            onClick={() => setTab("disponibilidade")}
+            className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${tab === "disponibilidade"
+              ? "bg-[#5A3A22] text-white"
+              : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
+              }`}
+            type="button"
+          >
+            Disponibilidade
+          </button>
+          <button
+            onClick={() => setTab("reservas")}
+            className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${tab === "reservas"
+              ? "bg-[#5A3A22] text-white"
+              : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
+              }`}
+            type="button"
+          >
+            Reservas Recebidas
+          </button>
+        </div>
+
+        <div className="max-w-[1400px] mx-auto mb-4 flex justify-end">
+          <Link
+            to="/avaliacoes"
+            className="px-4 py-2 rounded-2xl bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22] font-semibold shadow text-sm"
+          >
+            Ver minhas avaliações
+          </Link>
+        </div>
 
         <div className="max-w-[1400px] mx-auto bg-white rounded-2xl shadow p-6 border-l-4 border-[#FFD700]/80">
-          {/* SEU conteúdo */}
+          {tab === "disponibilidade" && (
+            <section>
+              <div className="flex flex-wrap items-center gap-4 text-sm text-[#5A3A22] mb-4">
+                <span className="inline-flex items-center gap-2">
+                  <span className="w-3 h-3 rounded-full bg-[#D2A679] inline-block" /> Hoje
+                </span>
+                <span className="inline-flex items-center gap-2">
+                  <span className="w-3 h-3 rounded-full bg-green-700 inline-block" /> Salvo
+                </span>
+                <span className="inline-flex items-center gap-2">
+                  <span className="w-3 h-3 rounded-full bg-green-500 inline-block" /> Novo
+                </span>
+                <span className="inline-flex items-center gap-2">
+                  <span className="w-3 h-3 rounded-full bg-red-400 inline-block" /> Remover
+                </span>
+              </div>
+
+              <div className="flex justify-center">
+                <Calendar
+                  className="mx-auto"
+                  activeStartDate={currentMonth}
+                  onActiveStartDateChange={({ activeStartDate }) => setCurrentMonth(activeStartDate)}
+                  onClickDay={(date) => {
+                    if (date < today) return;
+
+                    const key = toLocalKey(date);
+                    setPendingDates((prev) =>
+                      prev.includes(key) ? prev.filter((d) => d !== key) : [...prev, key]
+                    );
+                    setUnsaved(true);
+                  }}
+                  tileDisabled={({ date }) => date < today}
+                  tileClassName={({ date }) => {
+                    const key = toLocalKey(date);
+
+                    const isSaved = availableDates.includes(key);
+                    const isPending = pendingDates.includes(key);
+                    const isPast = date < today;
+
+                    const cls = [];
+
+                    if (key === todayKey) cls.push("pc-cal-today");
+
+                    if (isSaved && isPending) cls.push("pc-cal-saved");
+                    if (isSaved && !isPending) cls.push("pc-cal-remove");
+                    if (isPending && !isSaved) cls.push("pc-cal-new");
+                    if (isPast) cls.push("pc-cal-past");
+
+                    return cls.join(" ");
+                  }}
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 mt-5">
+                <button
+                  onClick={discardAvailability}
+                  type="button"
+                  className="bg-gray-400 hover:bg-gray-500 text-white font-semibold px-5 py-2 rounded-lg shadow-md"
+                >
+                  ↩️ Descartar
+                </button>
+                <button
+                  onClick={saveAvailability}
+                  type="button"
+                  disabled={!unsaved}
+                  className={`font-semibold px-5 py-2 rounded-lg shadow-md ${unsaved
+                    ? "bg-green-700 hover:bg-green-800 text-white"
+                    : "bg-green-700/50 text-white/70 cursor-not-allowed"
+                    }`}
+                >
+                  💾 Salvar Alterações
+                </button>
+              </div>
+
+              <div className="bg-[#F9F5F2] p-4 rounded-lg shadow-md mt-6">
+                <h3 className="text-lg font-semibold text-[#5A3A22] mb-3">
+                  Datas disponíveis em{" "}
+                  {currentMonth.toLocaleString("pt-BR", { month: "long", year: "numeric" })}
+                </h3>
+
+                {pendingDates.length ? (
+                  <ul className="list-disc pl-5 text-sm text-[#5A3A22] space-y-1">
+                    {normalizeAvailKeys(pendingDates)
+                      .filter((key) => {
+                        const dt = parseLocalKey(key);
+                        return (
+                          dt.getMonth() === currentMonth.getMonth() &&
+                          dt.getFullYear() === currentMonth.getFullYear()
+                        );
+                      })
+                      .sort()
+                      .map((key) => {
+                        const dt = parseLocalKey(key);
+                        const isPast = dt < today;
+                        const wasSaved = availableDates.includes(key);
+                        const isNew = !wasSaved;
+
+                        return (
+                          <li
+                            key={key}
+                            className={isPast ? "line-through opacity-60" : ""}
+                            title={isPast ? "Data já passou" : isNew ? "Novo (ainda não salvo)" : "Salvo"}
+                          >
+                            {formatDateBR(key)}
+                            {isNew ? (
+                              <span className="ml-2 text-xs font-semibold text-green-600">(novo)</span>
+                            ) : null}
+                          </li>
+                        );
+                      })}
+                  </ul>
+                ) : (
+                  <p className="text-gray-600 text-sm">Nenhuma data disponível neste mês.</p>
+                )}
+
+                {unsaved && (
+                  <p className="mt-3 text-xs text-[#B25B38] font-semibold">
+                    Você tem alterações não salvas.
+                  </p>
+                )}
+              </div>
+            </section>
+          )}
+
+          {tab === "reservas" && (
+            <section>
+              {received.length ? (
+                received.map((r) => {
+                  const canRate = canRateReservation(r);
+
+                  const idStr = String(r.id);
+                  const hasUnreadChat = unreadChatIds.includes(idStr);
+                  const hasUnreadResNotif = unreadResIds.includes(idStr);
+
+                  const alreadyByMe = hasMyReviewForReservation(idStr);
+                  const alreadyFallback = hasAlreadyReviewedFallback(r, "caregiver");
+                  const alreadyRated = alreadyByMe || alreadyFallback;
+
+                  let cardClasses =
+                    "relative border rounded-lg p-4 mb-3 text-[#5A3A22] shadow-sm transition ";
+                  if (hasUnreadChat || hasUnreadResNotif) {
+                    cardClasses += "border-[#FFD700] bg-[#FFF8E0] ring-1 ring-[#FFD700]/40";
+                  } else {
+                    cardClasses += "bg-white hover:bg-[#FFFDF8]";
+                  }
+
+                  const statusHelper = getStatusHelperText(r, "caregiver");
+
+                  const showCaregiverRating =
+                    r.caregiverRating != null && Number.isFinite(Number(r.caregiverRating));
+
+                  return (
+                    <div key={r.id} className={cardClasses}>
+                      {(hasUnreadChat || hasUnreadResNotif) && (
+                        <div className="absolute top-3 right-3 flex items-center gap-2">
+                          <span
+                            className={`w-2.5 h-2.5 rounded-full ${hasUnreadChat ? "bg-blue-600" : "bg-red-600"
+                              }`}
+                            title={hasUnreadChat ? "Nova mensagem" : "Atualização"}
+                          />
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/70 border border-[#FFD700]/50 text-[#5A3A22]">
+                            {hasUnreadChat ? "CHAT" : "UPDATE"}
+                          </span>
+                        </div>
+                      )}
+
+                      <button
+                        onClick={() => openReservation(r.id, { scrollToChat: hasUnreadChat })}
+                        className="text-left w-full"
+                        title="Abrir detalhes da reserva"
+                        type="button"
+                      >
+                        <p>
+                          <b>Tutor:</b> {r.tutorName}
+                        </p>
+                        <p>
+                          <b>Período:</b> {formatDateBR(r.startDate)} até {formatDateBR(r.endDate)}
+                        </p>
+                        <p>
+                          <b>Total:</b> R$ {Number(r.total || 0).toFixed(2)}
+                        </p>
+                        <p>
+                          <b>Status:</b>{" "}
+                          <span className={`font-semibold ${getStatusColor(r.status)}`}>
+                            {r.status}
+                          </span>
+                        </p>
+
+                        {(hasUnreadChat || hasUnreadResNotif) && (
+                          <p className="mt-1 text-xs font-semibold text-[#B25B38]">
+                            {hasUnreadChat ? "Nova mensagem nesta reserva" : "Atualização nesta reserva"}
+                          </p>
+                        )}
+
+                        {statusHelper && (
+                          <p
+                            className={`mt-1 text-xs ${r.status === "Recusada" || r.status === "Cancelada"
+                              ? "text-red-600"
+                              : "text-[#5A3A22]"
+                              }`}
+                          >
+                            {statusHelper}
+                          </p>
+                        )}
+                      </button>
+
+                      <div className="mt-2 flex items-center justify-between">
+                        {alreadyRated ? (
+                          <p className="text-xs text-[#5A3A22] opacity-80">
+                            {showCaregiverRating ? (
+                              <>
+                                Sua avaliação para este tutor: <b>⭐ {Number(r.caregiverRating)}/5</b>
+                                {r.caregiverReview ? ` — "${r.caregiverReview}"` : ""}
+                              </>
+                            ) : (
+                              <>Você já avaliou esta reserva.</>
+                            )}
+                          </p>
+                        ) : (
+                          <p className="text-xs text-[#5A3A22] opacity-70">
+                            Após a reserva ser concluída, você poderá avaliar o tutor.
+                          </p>
+                        )}
+
+                        <div className="flex gap-2 items-center">
+                          {canRate && (
+                            <button
+                              type="button"
+                              onClick={() => openRatingModal(r, "Avaliar tutor")}
+                              className="px-3 py-1 rounded-lg text-xs font-semibold bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22] shadow"
+                            >
+                              Avaliar tutor
+                            </button>
+                          )}
+
+                          {r.status === "Pendente" && (
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleAcceptReservationFromList(r)}
+                                className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-xs font-semibold"
+                              >
+                                Aceitar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => openRejectModal(r)}
+                                className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-xs font-semibold"
+                              >
+                                Recusar
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <p className="text-center text-[#5A3A22]">Nenhuma reserva recebida.</p>
+              )}
+            </section>
+          )}
         </div>
+
+        {rejectModal.open && (
+          <div className="fixed inset-0 z-[9999] flex items-end md:items-center justify-center bg-black/40 p-4">
+            <div className="w-full max-w-[520px] bg-white rounded-2xl shadow-xl border-l-4 border-red-600 p-4">
+              <p className="text-sm font-semibold text-[#5A3A22]">Recusar pré-reserva</p>
+              <p className="text-xs text-[#5A3A22] opacity-80 mt-1">
+                (Opcional) Escreva um motivo para o tutor entender o porquê da recusa.
+              </p>
+
+              <textarea
+                value={rejectModal.text}
+                onChange={(e) => setRejectModal((s) => ({ ...s, text: e.target.value }))}
+                rows={4}
+                placeholder="Ex.: Não estarei disponível nesse dia / Já tenho outra reserva / Fora da minha área..."
+                className="mt-3 w-full border rounded-xl p-3 text-sm text-[#5A3A22] outline-none focus:ring-2 focus:ring-[#FFD700]/70"
+              />
+
+              <div className="flex justify-end gap-2 mt-4">
+                <button
+                  type="button"
+                  onClick={closeRejectModal}
+                  className="px-3 py-2 rounded-lg text-xs font-semibold bg-gray-200 hover:bg-gray-300 text-[#5A3A22]"
+                >
+                  Voltar
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmRejectWithReason}
+                  className="px-3 py-2 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 text-white"
+                >
+                  Recusar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <RatingModal
+          isOpen={!!ratingReservation}
+          title={ratingTitle || "Avaliar"}
+          onClose={closeRatingModal}
+          onSubmit={handleSubmitRating}
+        />
       </div>
     );
   }
