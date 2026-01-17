@@ -1411,7 +1411,7 @@ export default function Dashboard() {
     );
   }
 
-  // ------------------ CUIDADOR ------------------
+    // ------------------ CUIDADOR ------------------
   if (isCaregiver) {
     const received = (reservations || [])
       .filter((r) => String(r.caregiverId) === String(user.id))
@@ -1419,8 +1419,10 @@ export default function Dashboard() {
         const idA = String(a.id);
         const idB = String(b.id);
 
-        const attA = unreadChatIds.includes(idA) || unreadResIds.includes(idA) ? 1 : 0;
-        const attB = unreadChatIds.includes(idB) || unreadResIds.includes(idB) ? 1 : 0;
+        const attA =
+          unreadChatIds.includes(idA) || unreadResIds.includes(idA) ? 1 : 0;
+        const attB =
+          unreadChatIds.includes(idB) || unreadResIds.includes(idB) ? 1 : 0;
 
         if (attA !== attB) return attB - attA;
         return parseLocalKey(b.startDate) - parseLocalKey(a.startDate);
@@ -1430,7 +1432,11 @@ export default function Dashboard() {
 
     return (
       <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] p-6">
-        {/* ... seu JSX do cuidador (igual ao que você mandou) ... */}
+        {/* ... TODO o seu JSX do cuidador fica aqui dentro ... */}
+
+        <div className="max-w-[1400px] mx-auto bg-white rounded-2xl shadow p-6 border-l-4 border-[#FFD700]/80">
+          {/* SEU conteúdo */}
+        </div>
       </div>
     );
   }
