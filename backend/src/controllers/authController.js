@@ -1,6 +1,7 @@
 // backend/src/controllers/authController.js
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
 const pool = require("../config/db");
 const { createUser, findUserByEmail, findUserById } = require("../models/userModel");
 
@@ -265,4 +266,164 @@ async function me(req, res) {
   }
 }
 
-module.exports = { register, login, me };
+// POST /auth/forgot-password
+async function forgotPassword(req, res) {
+  try {
+    const body = readBody(req) || req.body || {};
+    const email = String(body.email || "").trim().toLowerCase();
+
+    // Resposta sempre igual (não revela se o e-mail existe)
+    const genericOk = () =>
+      res.json({
+        ok: true,
+        message: "Se o e-mail existir, enviaremos um link de recuperação.",
+      });
+
+    if (!email) return genericOk();
+
+    const user = await findUserByEmail(email);
+    if (!user) return genericOk();
+
+    // Se estiver bloqueado (qualquer variação), não envia (mas responde igual)
+    const bi = pickBlockInfo ? pickBlockInfo(user) : { blocked: !!user.blocked };
+    if (bi?.blocked) return genericOk();
+
+    const token = crypto.randomBytes(32).toString("hex");
+
+    const expiresMinutesRaw = Number(process.env.PASSWORD_RESET_EXPIRES_MINUTES || 60);
+    const expiresMinutes =
+      Number.isFinite(expiresMinutesRaw) && expiresMinutesRaw >= 5 ? expiresMinutesRaw : 60;
+
+    await pool.query(
+      `
+      INSERT INTO password_resets (user_id, token, expires_at, used)
+      VALUES ($1, $2, NOW() + ($3::text || ' minutes')::interval, false)
+      `,
+      [user.id, token, String(expiresMinutes)]
+    );
+
+    // Monta URL pro front (preferência: FRONTEND_URL; fallback: origin)
+    const baseUrl =
+      String(process.env.FRONTEND_URL || "").trim().replace(/\/+$/, "") ||
+      String(req.get("origin") || "").trim().replace(/\/+$/, "");
+
+    const resetUrl = baseUrl
+      ? `${baseUrl}/reset-password?token=${encodeURIComponent(token)}`
+      : `RESET_TOKEN=${token}`;
+
+    // Por enquanto: log. (Depois ligamos Resend/SMTP)
+    console.log(`[PeloCaramelo] Reset de senha para ${email}: ${resetUrl}`);
+
+    return genericOk();
+  } catch (err) {
+    console.error("Erro em /auth/forgot-password:", err);
+    // Continua retornando genérico por segurança
+    return res.json({
+      ok: true,
+      message: "Se o e-mail existir, enviaremos um link de recuperação.",
+    });
+  }
+}
+
+// POST /auth/reset-password
+async function resetPassword(req, res) {
+  const client = await pool.connect();
+  try {
+    const body = readBody(req) || req.body || {};
+    const token = String(body.token || "").trim();
+    const password = String(body.password || "");
+
+    if (!token || !password) {
+      return res.status(400).json({ error: "Token e nova senha são obrigatórios." });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ error: "Senha deve ter pelo menos 6 caracteres." });
+    }
+
+    await client.query("BEGIN");
+
+    const { rows } = await client.query(
+      `
+      SELECT id, user_id, expires_at, used
+      FROM password_resets
+      WHERE token = $1
+      LIMIT 1
+      `,
+      [token]
+    );
+
+    const resetRow = rows[0];
+    if (!resetRow) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "Token inválido." });
+    }
+
+    const expired = new Date(resetRow.expires_at).getTime() < Date.now();
+    if (resetRow.used || expired) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "Token expirado ou já utilizado." });
+    }
+
+    // (opcional) revalida usuário
+    const { rows: userRows } = await client.query(`SELECT * FROM users WHERE id = $1 LIMIT 1`, [
+      resetRow.user_id,
+    ]);
+    const user = userRows[0];
+    if (!user) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Usuário não encontrado." });
+    }
+
+    const bi = pickBlockInfo ? pickBlockInfo(user) : { blocked: !!user.blocked };
+    if (bi?.blocked) {
+      await client.query("ROLLBACK");
+      return res.status(403).json({ error: "Usuário bloqueado." });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    await client.query(
+      `
+      UPDATE users
+      SET password_hash = $2,
+          updated_at = NOW()
+      WHERE id = $1
+      `,
+      [resetRow.user_id, passwordHash]
+    );
+
+    // Marca token como usado
+    await client.query(
+      `
+      UPDATE password_resets
+      SET used = true
+      WHERE id = $1
+      `,
+      [resetRow.id]
+    );
+
+    // Invalida quaisquer outros tokens ainda ativos do mesmo usuário
+    await client.query(
+      `
+      UPDATE password_resets
+      SET used = true
+      WHERE user_id = $1 AND used = false
+      `,
+      [resetRow.user_id]
+    );
+
+    await client.query("COMMIT");
+    return res.json({ ok: true, message: "Senha atualizada com sucesso." });
+  } catch (err) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {}
+    console.error("Erro em /auth/reset-password:", err);
+    return res.status(500).json({ error: "Erro ao redefinir senha." });
+  } finally {
+    client.release();
+  }
+}
+
+module.exports = { register, login, me, forgotPassword, resetPassword };
