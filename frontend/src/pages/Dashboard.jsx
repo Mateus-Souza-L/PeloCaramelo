@@ -1841,7 +1841,15 @@ export default function Dashboard() {
 
           {tab === "reservas" && (
             <section>
-              {received.length ? (
+              {reservationsLoading ? (
+                <p className="text-center text-[#5A3A22]">
+                  Carregando reservas...
+                </p>
+              ) : received.length === 0 ? (
+                <p className="text-center text-[#5A3A22]">
+                  Nenhuma reserva recebida.
+                </p>
+              ) : (
                 received.map((r) => {
                   const canRate = canRateReservation(r);
 
@@ -1856,8 +1864,7 @@ export default function Dashboard() {
                   let cardClasses =
                     "relative border rounded-lg p-4 mb-3 text-[#5A3A22] shadow-sm transition ";
                   if (hasUnreadChat || hasUnreadResNotif) {
-                    cardClasses +=
-                      "border-[#FFD700] bg-[#FFF8E0] ring-1 ring-[#FFD700]/40";
+                    cardClasses += "border-[#FFD700] bg-[#FFF8E0] ring-1 ring-[#FFD700]/40";
                   } else {
                     cardClasses += "bg-white hover:bg-[#FFFDF8]";
                   }
@@ -1870,25 +1877,11 @@ export default function Dashboard() {
 
                   return (
                     <div key={r.id} className={cardClasses}>
-                      {(hasUnreadChat || hasUnreadResNotif) && (
-                        <div className="absolute top-3 right-3 flex items-center gap-2">
-                          <span
-                            className={`w-2.5 h-2.5 rounded-full ${hasUnreadChat ? "bg-blue-600" : "bg-red-600"
-                              }`}
-                            title={hasUnreadChat ? "Nova mensagem" : "Atualização"}
-                          />
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/70 border border-[#FFD700]/50 text-[#5A3A22]">
-                            {hasUnreadChat ? "CHAT" : "UPDATE"}
-                          </span>
-                        </div>
-                      )}
-
                       <button
                         onClick={() =>
                           openReservation(r.id, { scrollToChat: hasUnreadChat })
                         }
                         className="text-left w-full"
-                        title="Abrir detalhes da reserva"
                         type="button"
                       >
                         <p>
@@ -1903,28 +1896,13 @@ export default function Dashboard() {
                         </p>
                         <p>
                           <b>Status:</b>{" "}
-                          <span
-                            className={`font-semibold ${getStatusColor(r.status)}`}
-                          >
+                          <span className={`font-semibold ${getStatusColor(r.status)}`}>
                             {r.status}
                           </span>
                         </p>
 
-                        {(hasUnreadChat || hasUnreadResNotif) && (
-                          <p className="mt-1 text-xs font-semibold text-[#B25B38]">
-                            {hasUnreadChat
-                              ? "Nova mensagem nesta reserva"
-                              : "Atualização nesta reserva"}
-                          </p>
-                        )}
-
                         {statusHelper && (
-                          <p
-                            className={`mt-1 text-xs ${r.status === "Recusada" || r.status === "Cancelada"
-                                ? "text-red-600"
-                                : "text-[#5A3A22]"
-                              }`}
-                          >
+                          <p className="mt-1 text-xs text-[#5A3A22]">
                             {statusHelper}
                           </p>
                         )}
@@ -1935,11 +1913,8 @@ export default function Dashboard() {
                           <p className="text-xs text-[#5A3A22] opacity-80">
                             {showCaregiverRating ? (
                               <>
-                                Sua avaliação para este tutor:{" "}
+                                Sua avaliação:{" "}
                                 <b>⭐ {Number(r.caregiverRating)}/5</b>
-                                {r.caregiverReview
-                                  ? ` — "${r.caregiverReview}"`
-                                  : ""}
                               </>
                             ) : (
                               <>Você já avaliou esta reserva.</>
@@ -1951,56 +1926,22 @@ export default function Dashboard() {
                           </p>
                         )}
 
-                        <div className="flex gap-2 items-center">
-                          {canRate && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                openRatingModal(r, "Avaliar tutor")
-                              }
-                              className="px-3 py-1 rounded-lg text-xs font-semibold bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22] shadow"
-                            >
-                              Avaliar tutor
-                            </button>
-                          )}
-
-                          {r.status === "Pendente" && (
-                            <div className="flex gap-2">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  handleAcceptReservationFromList(r)
-                                }
-                                className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-xs font-semibold"
-                              >
-                                Aceitar
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => openRejectModal(r)}
-                                className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-xs font-semibold"
-                              >
-                                Recusar
-                              </button>
-                            </div>
-                          )}
-                        </div>
+                        {canRate && (
+                          <button
+                            type="button"
+                            onClick={() => openRatingModal(r, "Avaliar tutor")}
+                            className="px-3 py-1 rounded-lg text-xs font-semibold bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22] shadow"
+                          >
+                            Avaliar tutor
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
                 })
-              ) : reservationsLoading ? (
-                <p className="text-center text-[#5A3A22]">
-                  Carregando reservas...
-                </p>
-              ) : (
-                <p className="text-center text-[#5A3A22]">
-                  Nenhuma reserva recebida.
-                </p>
               )}
             </section>
           )}
-
 
           {rejectModal.open && (
             <div className="fixed inset-0 z-[9999] flex items-end md:items-center justify-center bg-black/40 p-4">
