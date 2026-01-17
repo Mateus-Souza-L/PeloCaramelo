@@ -659,10 +659,8 @@ async function getReservationDetailController(req, res) {
 
     const { id } = req.params;
 
-    let reservation = req.reservation || null;
-    if (!reservation) {
-      reservation = await reservationModel.getReservationById(id);
-    }
+    // ✅ SEMPRE busca completo do banco no DETAIL (evita req.reservation "capado")
+    let reservation = await reservationModel.getReservationById(id);
 
     if (!reservation) {
       return res.status(404).json({
