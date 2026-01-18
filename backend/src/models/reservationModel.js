@@ -45,11 +45,6 @@ function toInt(v) {
   return Number.isFinite(n) && Number.isInteger(n) ? n : null;
 }
 
-function cleanStr(v) {
-  const s = typeof v === "string" ? v.trim() : "";
-  return s ? s : null;
-}
-
 function mapReservationRow(row) {
   if (!row) return null;
 
@@ -129,28 +124,47 @@ function normalizePetsIds(input) {
   return Array.from(new Set(ids));
 }
 
-function parseISODateOrThrow(d, label) {
-  const s = String(d || "").trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) {
-    const err = new Error(`${label} inválida (use YYYY-MM-DD).`);
-    err.code = "INVALID_DATE";
-    throw err;
-  }
-  const dt = new Date(`${s}T00:00:00.000Z`);
-  if (Number.isNaN(dt.getTime())) {
-    const err = new Error(`${label} inválida.`);
-    err.code = "INVALID_DATE";
-    throw err;
-  }
-  return dt;
+function daysInclusive(startDate, endDate) {
+  const a = new Date(`${String(startDate).slice(0, 10)}T00:00:00.000Z`);
+  const b = new Date(`${String(endDate).slice(0, 10)}T00:00:00.000Z`);
+  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return null;
+  const diff = Math.floor((b.getTime() - a.getTime()) / 86400000);
+  return diff >= 0 ? diff + 1 : null;
 }
 
-function daysInclusive(startISO, endISO) {
-  const a = parseISODateOrThrow(startISO, "startDate");
-  const b = parseISODateOrThrow(endISO, "endDate");
-  const diff = Math.floor((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24));
-  const days = diff + 1;
-  return days;
+function cleanText(v) {
+  const s = typeof v === "string" ? v.trim() : "";
+  return s ? s : null;
+}
+
+async function getUserNameById(id) {
+  const sql = `SELECT name FROM users WHERE id::text = $1::text LIMIT 1`;
+  const { rows } = await pool.query(sql, [String(id)]);
+  const name = rows?.[0]?.name;
+  return cleanText(name);
+}
+
+async function getPetsSnapshotByIds(tutorId, petsIds) {
+  if (!petsIds?.length) return [];
+  const sql = `
+    SELECT id, name, species, breed, size, age, temperament, notes, image
+    FROM pets
+    WHERE tutor_id::text = $1::text
+      AND id = ANY($2::int[])
+    ORDER BY id ASC
+  `;
+  const { rows } = await pool.query(sql, [String(tutorId), petsIds]);
+  return (rows || []).map((p) => ({
+    id: p.id,
+    name: p.name || "",
+    species: p.species || "",
+    breed: p.breed || "",
+    size: p.size || "",
+    age: p.age || "",
+    temperament: Array.isArray(p.temperament) ? p.temperament : [],
+    notes: p.notes || "",
+    image: p.image || "",
+  }));
 }
 
 function getDefaultCap() {
@@ -180,42 +194,6 @@ async function getCaregiverCapacity(caregiverId) {
   return finalCap;
 }
 
-async function getUserNameById(userId) {
-  const { rows } = await pool.query(
-    `SELECT name FROM users WHERE id::text = $1::text LIMIT 1`,
-    [String(userId)]
-  );
-  return cleanStr(rows?.[0]?.name);
-}
-
-async function buildPetsSnapshotFromIds(tutorId, petsIdsIntArray) {
-  if (!petsIdsIntArray?.length) return [];
-
-  // garante que esses pets são do tutor
-  const { rows } = await pool.query(
-    `
-    SELECT id, name, species, breed, size, age, temperament, notes, image
-    FROM pets
-    WHERE tutor_id::text = $1::text
-      AND id = ANY($2::int[])
-    ORDER BY id ASC
-    `,
-    [String(tutorId), petsIdsIntArray]
-  );
-
-  return rows.map((p) => ({
-    id: p.id,
-    name: p.name ?? "",
-    species: p.species ?? "",
-    breed: p.breed ?? "",
-    size: p.size ?? "",
-    age: p.age ?? "",
-    temperament: Array.isArray(p.temperament) ? p.temperament : [],
-    notes: p.notes ?? "",
-    image: p.image ?? "",
-  }));
-}
-
 async function createReservation({
   tutorId,
   caregiverId,
@@ -233,36 +211,43 @@ async function createReservation({
   petsNames,
   petsSnapshot,
 }) {
-  const tid = String(tutorId ?? "").trim();
-  const cid = String(caregiverId ?? "").trim();
-
-  if (!tid || !cid) {
-    const err = new Error("tutorId e caregiverId são obrigatórios.");
-    err.code = "MISSING_FIELDS";
+  const tutorIdStr = String(tutorId ?? "").trim();
+  const caregiverIdStr = String(caregiverId ?? "").trim();
+  if (!tutorIdStr) {
+    const err = new Error("Tutor inválido.");
+    err.code = "INVALID_TUTOR";
+    throw err;
+  }
+  if (!caregiverIdStr) {
+    const err = new Error("Cuidador inválido.");
+    err.code = "INVALID_CAREGIVER";
     throw err;
   }
 
-  const svc = cleanStr(service);
+  const svc = cleanText(service);
   if (!svc) {
-    const err = new Error("service é obrigatório.");
-    err.code = "MISSING_FIELDS";
-    throw err;
-  }
-
-  // valida datas (e impede range invertido)
-  const d = daysInclusive(startDate, endDate);
-  if (d < 1) {
-    const err = new Error("Intervalo de datas inválido.");
-    err.code = "INVALID_DATE_RANGE";
+    const err = new Error("Serviço inválido.");
+    err.code = "INVALID_SERVICE";
     throw err;
   }
 
   const ppd = toNum(pricePerDay);
-  if (!ppd || ppd <= 0) {
-    const err = new Error("pricePerDay deve ser > 0.");
-    err.code = "INVALID_PRICE";
+  if (ppd == null || !(ppd > 0)) {
+    const err = new Error("Preço por dia inválido.");
+    err.code = "INVALID_PRICE_PER_DAY";
     throw err;
   }
+
+  const di = daysInclusive(startDate, endDate);
+  if (!di) {
+    const err = new Error("Datas inválidas.");
+    err.code = "INVALID_DATES";
+    throw err;
+  }
+
+  const computedTotal = Math.round(ppd * di * 100) / 100;
+  const finalTotal = toNum(total);
+  const totalToUse = finalTotal != null && finalTotal >= 0 ? finalTotal : computedTotal;
 
   let petsIdsIntArray = normalizePetsIds(petsIds);
 
@@ -277,38 +262,17 @@ async function createReservation({
     throw err;
   }
 
-  // nomes obrigatórios por causa dos NOT NULL da sua tabela
-  let finalTutorName = cleanStr(tutorName);
-  let finalCaregiverName = cleanStr(caregiverName);
+  let tutorNameDb = cleanText(tutorName);
+  let caregiverNameDb = cleanText(caregiverName);
 
-  if (!finalTutorName) finalTutorName = await getUserNameById(tid);
-  if (!finalCaregiverName) finalCaregiverName = await getUserNameById(cid);
+  if (!tutorNameDb) tutorNameDb = (await getUserNameById(tutorIdStr)) || "Tutor";
+  if (!caregiverNameDb) caregiverNameDb = (await getUserNameById(caregiverIdStr)) || "Cuidador";
 
-  if (!finalTutorName || !finalCaregiverName) {
-    const err = new Error("Não foi possível resolver tutor_name/caregiver_name.");
-    err.code = "MISSING_USER_NAME";
-    throw err;
+  let snapshotArr = Array.isArray(petsSnapshot) ? petsSnapshot : null;
+  if (!snapshotArr) {
+    snapshotArr = await getPetsSnapshotByIds(tutorIdStr, petsIdsIntArray);
   }
-
-  // total NOT NULL -> calcula se não vier
-  let finalTotal = toNum(total);
-  if (finalTotal == null) {
-    finalTotal = Number((d * ppd).toFixed(2));
-  }
-  if (!Number.isFinite(finalTotal) || finalTotal <= 0) {
-    const err = new Error("total inválido.");
-    err.code = "INVALID_TOTAL";
-    throw err;
-  }
-
-  // snapshot (recomendado para histórico)
-  let finalPetsSnapshot = Array.isArray(petsSnapshot) ? petsSnapshot : null;
-  if (!finalPetsSnapshot) {
-    finalPetsSnapshot = await buildPetsSnapshotFromIds(tid, petsIdsIntArray);
-  }
-  if (!Array.isArray(finalPetsSnapshot)) finalPetsSnapshot = [];
-
-  const petsSnapshotJson = toJsonbArray(finalPetsSnapshot);
+  const petsSnapshotJson = toJsonbArray(snapshotArr);
 
   const sql = `
     INSERT INTO reservations (
@@ -337,20 +301,20 @@ async function createReservation({
   `;
 
   const values = [
-    tid,
-    cid,
-    finalTutorName,
-    finalCaregiverName,
-    cleanStr(city),
-    cleanStr(neighborhood),
+    tutorIdStr,
+    caregiverIdStr,
+    tutorNameDb,
+    caregiverNameDb,
+    cleanText(city),
+    cleanText(neighborhood),
     svc,
     ppd,
-    String(startDate),
-    String(endDate),
-    finalTotal,
-    cleanStr(status) || "Pendente",
+    String(startDate).slice(0, 10),
+    String(endDate).slice(0, 10),
+    totalToUse,
+    cleanText(status) || "Pendente",
     petsIdsIntArray,
-    cleanStr(petsNames),
+    cleanText(petsNames),
     petsSnapshotJson,
     null,
   ];

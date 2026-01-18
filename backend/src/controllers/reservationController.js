@@ -1,14 +1,10 @@
 // backend/src/controllers/reservationController.js
 const reservationModel = require("../models/reservationModel");
-const availabilityModel = require("../models/availabilityModel"); // usado para validar disponibilidade
-const pool = require("../config/db"); // fallback/queries auxiliares
-const {
-  createReservationNotification,
-} = require("../models/notificationModel"); // ✅ notif
+const availabilityModel = require("../models/availabilityModel");
+const pool = require("../config/db");
+const { createReservationNotification } = require("../models/notificationModel");
 
-// -----------------------------------------------------------------------------
 // Helpers
-// -----------------------------------------------------------------------------
 
 function toNum(v) {
   if (v == null || v === "") return null;
@@ -23,10 +19,6 @@ function toInt(v) {
   return Number.isFinite(i) ? i : null;
 }
 
-function toStr(v) {
-  return v == null ? "" : String(v);
-}
-
 function isValidISODate(d) {
   if (d == null) return false;
   if (d instanceof Date && Number.isFinite(d.getTime())) return true;
@@ -34,9 +26,6 @@ function isValidISODate(d) {
   return false;
 }
 
-/**
- * Converte qualquer coisa (Date/string/number) em "YYYY-MM-DD"
- */
 function toDateKey(v) {
   if (v == null) return null;
 
@@ -80,10 +69,6 @@ function normalizeDateRange(startDate, endDate) {
   return { startDate: sKey, endDate: eKey };
 }
 
-/**
- * ✅ Se req.body vier como string (double JSON.stringify no front),
- * tenta parsear com segurança.
- */
 function parseBodySafe(raw) {
   if (!raw) return {};
   if (typeof raw === "object") return raw;
@@ -101,9 +86,6 @@ function parseBodySafe(raw) {
   return {};
 }
 
-/**
- * ⚠️ Model às vezes vem snake_case.
- */
 function getResIds(reservation) {
   return {
     tutorId: reservation?.tutorId ?? reservation?.tutor_id ?? null,
@@ -137,26 +119,20 @@ function isConcludedStatus(status) {
 function getStartEndSafe(obj, fallbackReservation) {
   const start = toDateKey(
     obj?.startDate ??
-    obj?.start_date ??
-    fallbackReservation?.startDate ??
-    fallbackReservation?.start_date
+      obj?.start_date ??
+      fallbackReservation?.startDate ??
+      fallbackReservation?.start_date
   );
   const end = toDateKey(
     obj?.endDate ??
-    obj?.end_date ??
-    fallbackReservation?.endDate ??
-    fallbackReservation?.end_date
+      obj?.end_date ??
+      fallbackReservation?.endDate ??
+      fallbackReservation?.end_date
   );
   return { start, end };
 }
 
-// ✅ Notificações (não quebra fluxo se falhar)
-async function notifyReservationEventSafe({
-  reservation,
-  actorUser,
-  type,
-  payload,
-}) {
+async function notifyReservationEventSafe({ reservation, actorUser, type, payload }) {
   try {
     if (!reservation || !actorUser?.id) return;
 
@@ -167,7 +143,6 @@ async function notifyReservationEventSafe({
 
     if (!tId || !cId) return;
 
-    // manda pro "outro lado"
     const targetUserId = actorId === tId ? cId : tId;
 
     await createReservationNotification({
@@ -181,15 +156,9 @@ async function notifyReservationEventSafe({
   }
 }
 
-/**
- * ✅ Enriquecimento: pega minhas reviews (tabela reviews) para uma lista de reservas
- * e injeta em cada reserva:
- *  - my_rating, my_review, my_review_is_hidden, my_review_hidden_reason, my_review_hidden_at
- */
 async function attachMyReviewFields(reservations, reviewerId) {
   try {
-    if (!Array.isArray(reservations) || reservations.length === 0)
-      return reservations;
+    if (!Array.isArray(reservations) || reservations.length === 0) return reservations;
 
     const rid = reviewerId != null ? String(reviewerId) : "";
     if (!rid) return reservations;
@@ -229,24 +198,22 @@ async function attachMyReviewFields(reservations, reviewerId) {
 
     return reservations.map((r) => {
       const k = String(toInt(r?.id ?? r?.reservation_id) ?? "");
-      const extra = map.get(k) || {
-        my_rating: null,
-        my_review: null,
-        my_review_is_hidden: false,
-        my_review_hidden_reason: null,
-        my_review_hidden_at: null,
-      };
+      const extra =
+        map.get(k) || {
+          my_rating: null,
+          my_review: null,
+          my_review_is_hidden: false,
+          my_review_hidden_reason: null,
+          my_review_hidden_at: null,
+        };
       return { ...r, ...extra };
     });
   } catch (err) {
     console.error("attachMyReviewFields error:", err);
-    return reservations; // não quebra listagem
+    return reservations;
   }
 }
 
-/**
- * Só cria/aceita se TODOS os dias do período estiverem disponíveis.
- */
 async function assertRangeIsFullyAvailableOrThrow(caregiverId, startKey, endKey) {
   const caregiverIdStr = caregiverId == null ? "" : String(caregiverId);
   const s = toDateKey(startKey);
@@ -260,22 +227,14 @@ async function assertRangeIsFullyAvailableOrThrow(caregiverId, startKey, endKey)
     };
   }
 
-  if (
-    availabilityModel &&
-    typeof availabilityModel.isRangeAvailable === "function"
-  ) {
+  if (availabilityModel && typeof availabilityModel.isRangeAvailable === "function") {
     const ok = await availabilityModel.isRangeAvailable(caregiverIdStr, s, e);
     if (!ok) {
-      return {
-        ok: false,
-        code: "NOT_AVAILABLE",
-        message: "Período sem disponibilidade.",
-      };
+      return { ok: false, code: "NOT_AVAILABLE", message: "Período sem disponibilidade." };
     }
     return { ok: true };
   }
 
-  // fallback SQL
   try {
     const sql = `
       WITH days AS (
@@ -297,11 +256,7 @@ async function assertRangeIsFullyAvailableOrThrow(caregiverId, startKey, endKey)
     const available = Number(row?.available_days ?? 0);
 
     if (!Number.isFinite(total) || total <= 0 || available !== total) {
-      return {
-        ok: false,
-        code: "NOT_AVAILABLE",
-        message: "Período sem disponibilidade.",
-      };
+      return { ok: false, code: "NOT_AVAILABLE", message: "Período sem disponibilidade." };
     }
 
     return { ok: true };
@@ -315,12 +270,7 @@ async function assertRangeIsFullyAvailableOrThrow(caregiverId, startKey, endKey)
   }
 }
 
-async function assertCapacityOrThrow(
-  caregiverId,
-  startKey,
-  endKey,
-  excludeReservationId = null
-) {
+async function assertCapacityOrThrow(caregiverId, startKey, endKey, excludeReservationId = null) {
   if (typeof reservationModel.assertCaregiverCanBeBooked !== "function") {
     return { ok: true };
   }
@@ -339,11 +289,7 @@ async function assertCapacityOrThrow(
   );
 
   if (!check?.available) {
-    return {
-      ok: false,
-      code: "NOT_AVAILABLE",
-      message: "Período sem disponibilidade.",
-    };
+    return { ok: false, code: "NOT_AVAILABLE", message: "Período sem disponibilidade." };
   }
 
   if (check.maxOverlapping >= check.capacity) {
@@ -363,7 +309,6 @@ function normalizeIntIds(input) {
 
   let arr = input;
 
-  // aceita string "1,2" ou string JSON "[1,2]"
   if (typeof arr === "string") {
     const s = arr.trim();
     if (!s) return [];
@@ -383,17 +328,56 @@ function normalizeIntIds(input) {
   return Array.from(new Set(out));
 }
 
-// -----------------------------------------------------------------------------
+function daysInclusive(startKey, endKey) {
+  const s = new Date(toDateKey(startKey));
+  const e = new Date(toDateKey(endKey));
+  if (!Number.isFinite(s.getTime()) || !Number.isFinite(e.getTime())) return null;
+  const diffMs = e.getTime() - s.getTime();
+  if (diffMs < 0) return null;
+  const days = Math.floor(diffMs / (1000 * 60 * 60 * 24)) + 1;
+  return days >= 1 ? days : null;
+}
+
+async function getUserDisplayNameById(id) {
+  try {
+    const idStr = id == null ? "" : String(id);
+    if (!idStr) return null;
+
+    const sql = `
+      SELECT name, email
+      FROM users
+      WHERE id::text = $1
+      LIMIT 1
+    `;
+    const { rows } = await pool.query(sql, [idStr]);
+    const r = rows?.[0] || null;
+
+    const name = typeof r?.name === "string" ? r.name.trim() : "";
+    if (name) return name;
+
+    const email = typeof r?.email === "string" ? r.email.trim() : "";
+    if (email) return email;
+
+    return null;
+  } catch (err) {
+    console.error("getUserDisplayNameById error:", err);
+    return null;
+  }
+}
+
+function cleanNonEmptyString(v) {
+  const s = typeof v === "string" ? v.trim() : "";
+  return s ? s : null;
+}
+
 // CREATE (tutor)
-// -----------------------------------------------------------------------------
+
 async function createReservationController(req, res) {
   try {
     const user = req.user;
 
     if (!user?.id) {
-      return res
-        .status(401)
-        .json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
+      return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
     }
     if (user.role !== "tutor") {
       return res.status(403).json({
@@ -404,35 +388,28 @@ async function createReservationController(req, res) {
 
     const body = parseBodySafe(req.body);
 
-    // compat camelCase/snake_case
     const caregiverId = body.caregiverId ?? body.caregiver_id ?? null;
-    const caregiverName = body.caregiverName ?? body.caregiver_name ?? null;
+    const caregiverNameRaw = body.caregiverName ?? body.caregiver_name ?? null;
     const city = body.city ?? null;
     const neighborhood = body.neighborhood ?? null;
     const service = body.service ?? null;
 
-    const pricePerDay =
-      body.pricePerDay ?? body.price_per_day ?? body.price ?? null;
+    const pricePerDay = body.pricePerDay ?? body.price_per_day ?? body.price ?? null;
     const startDate = body.startDate ?? body.start_date ?? null;
     const endDate = body.endDate ?? body.end_date ?? null;
-    const total = body.total ?? null;
+    const totalRaw = body.total ?? null;
 
-    // ⚠️ pets podem vir em vários formatos (array, string "1,2", string JSON etc.)
     const petsIdsRaw = body.petsIds ?? body.pets_ids ?? null;
     const petsNames = body.petsNames ?? body.pets_names ?? null;
     const petsSnapshotRaw = body.petsSnapshot ?? body.pets_snapshot ?? null;
 
     const tutorId = String(user.id);
+
     const tutorName =
-      (typeof user.name === "string" && user.name.trim()
-        ? user.name.trim()
-        : null) ||
-      (typeof user.email === "string" && user.email.trim()
-        ? user.email.trim()
-        : null) ||
+      cleanNonEmptyString(user?.name) ||
+      cleanNonEmptyString(user?.email) ||
       "Tutor";
 
-    // valida obrigatórios com missing detalhado
     const missing = [];
     if (!caregiverId) missing.push("caregiverId/caregiver_id");
     if (!service) missing.push("service");
@@ -442,28 +419,24 @@ async function createReservationController(req, res) {
     const ppd = toNum(pricePerDay);
     if (ppd == null || ppd <= 0) missing.push("pricePerDay/price_per_day (> 0)");
 
-    // opcional, mas ajuda a evitar reserva sem pets por engano
-    // (se você quiser permitir sem pet, é só remover isso)
     const petsProvided =
-      petsIdsRaw != null ||
-      (Array.isArray(petsSnapshotRaw) && petsSnapshotRaw.length > 0);
-    if (!petsProvided) missing.push("petsIds/pets_snapshot (selecione ao menos 1 pet)");
+      petsIdsRaw != null || (Array.isArray(petsSnapshotRaw) && petsSnapshotRaw.length > 0);
+    if (!petsProvided) {
+      missing.push("petsIds/pets_snapshot (selecione ao menos 1 pet)");
+    }
 
     if (missing.length) {
       return res.status(400).json({
         error: "Dados obrigatórios ausentes.",
         code: "MISSING_FIELDS",
         missing,
-        receivedType: typeof req.body,
         receivedKeys: Object.keys(body || {}),
       });
     }
 
     const range = normalizeDateRange(startDate, endDate);
     if (!range) {
-      return res
-        .status(400)
-        .json({ error: "Intervalo de datas inválido.", code: "INVALID_DATES" });
+      return res.status(400).json({ error: "Intervalo de datas inválido.", code: "INVALID_DATES" });
     }
 
     const caregiverIdStr = String(caregiverId);
@@ -495,34 +468,47 @@ async function createReservationController(req, res) {
     }
 
     const petsSnapshotClean = Array.isArray(petsSnapshotRaw) ? petsSnapshotRaw : [];
-
-    // ✅ normaliza ids aqui (garante int[])
     const petsIdsClean = normalizeIntIds(petsIdsRaw);
 
-    // ✅ fallback: se não vier petsNames, monta pelo snapshot
     const petsNamesClean =
-      typeof petsNames === "string" && petsNames.trim()
-        ? petsNames.trim()
-        : petsSnapshotClean
-          .map((p) => p?.name)
-          .filter(Boolean)
-          .join(", ") || null;
+      cleanNonEmptyString(petsNames) ||
+      (petsSnapshotClean.map((p) => p?.name).filter(Boolean).join(", ") || null);
+
+    const caregiverName =
+      cleanNonEmptyString(caregiverNameRaw) ||
+      (await getUserDisplayNameById(caregiverIdStr)) ||
+      "Cuidador";
+
+    const computedDays = daysInclusive(range.startDate, range.endDate);
+    const computedTotal =
+      computedDays != null && ppd != null ? Number(ppd) * Number(computedDays) : null;
+
+    const totalFinal = toNum(totalRaw);
+    const totalToUse = totalFinal != null ? totalFinal : computedTotal;
+
+    if (totalToUse == null || totalToUse <= 0) {
+      return res.status(400).json({
+        error: "Total inválido. Não foi possível calcular o total.",
+        code: "INVALID_TOTAL",
+        details: { pricePerDay: ppd, days: computedDays },
+      });
+    }
 
     const reservation = await reservationModel.createReservation({
       tutorId,
       caregiverId: caregiverIdStr,
       tutorName,
-      caregiverName: caregiverName || null,
+      caregiverName,
       city: city || null,
       neighborhood: neighborhood || null,
       service,
       pricePerDay: ppd,
       startDate: range.startDate,
       endDate: range.endDate,
-      total: toNum(total),
+      total: totalToUse,
       status: "Pendente",
-      petsIds: petsIdsClean,              // ✅ agora é int[]
-      petsNames: petsNamesClean,          // ✅ string
+      petsIds: petsIdsClean,
+      petsNames: petsNamesClean,
       petsSnapshot: petsSnapshotClean,
     });
 
@@ -536,8 +522,7 @@ async function createReservationController(req, res) {
     return res.status(201).json({
       reservation: {
         ...reservation,
-        price_per_day:
-          reservation?.price_per_day != null ? Number(reservation.price_per_day) : null,
+        price_per_day: reservation?.price_per_day != null ? Number(reservation.price_per_day) : null,
         total: reservation?.total != null ? Number(reservation.total) : null,
       },
     });
@@ -550,21 +535,17 @@ async function createReservationController(req, res) {
   }
 }
 
-// -----------------------------------------------------------------------------
 // LIST - tutor
-// -----------------------------------------------------------------------------
+
 async function listTutorReservationsController(req, res) {
   try {
     const user = req.user;
-    if (!user?.id)
-      return res
-        .status(401)
-        .json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
+    if (!user?.id) {
+      return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
+    }
 
-    // admin: permite listar tudo (MVP operacional)
     if (String(user.role) === "admin") {
-      const qTutorId =
-        req.query?.tutorId != null ? String(req.query.tutorId) : null;
+      const qTutorId = req.query?.tutorId != null ? String(req.query.tutorId) : null;
 
       let rows = [];
       if (qTutorId) {
@@ -581,10 +562,7 @@ async function listTutorReservationsController(req, res) {
       return res.json({ reservations: rows });
     }
 
-    let reservations = await reservationModel.listTutorReservations(
-      String(user.id)
-    );
-
+    let reservations = await reservationModel.listTutorReservations(String(user.id));
     reservations = await attachMyReviewFields(reservations, user.id);
 
     return res.json({ reservations });
@@ -597,27 +575,22 @@ async function listTutorReservationsController(req, res) {
   }
 }
 
-// -----------------------------------------------------------------------------
 // LIST - caregiver
-// -----------------------------------------------------------------------------
+
 async function listCaregiverReservationsController(req, res) {
   try {
     const user = req.user;
-    if (!user?.id)
-      return res
-        .status(401)
-        .json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
+    if (!user?.id) {
+      return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
+    }
 
-    // admin: permite listar tudo (MVP operacional)
     if (String(user.role) === "admin") {
       const qCaregiverId =
         req.query?.caregiverId != null ? String(req.query.caregiverId) : null;
 
       let rows = [];
       if (qCaregiverId) {
-        rows = await reservationModel.listCaregiverReservations(
-          String(qCaregiverId)
-        );
+        rows = await reservationModel.listCaregiverReservations(String(qCaregiverId));
       } else if (typeof reservationModel.listAllReservations === "function") {
         rows = await reservationModel.listAllReservations();
       } else {
@@ -630,10 +603,7 @@ async function listCaregiverReservationsController(req, res) {
       return res.json({ reservations: rows });
     }
 
-    let reservations = await reservationModel.listCaregiverReservations(
-      String(user.id)
-    );
-
+    let reservations = await reservationModel.listCaregiverReservations(String(user.id));
     reservations = await attachMyReviewFields(reservations, user.id);
 
     return res.json({ reservations });
@@ -646,20 +616,17 @@ async function listCaregiverReservationsController(req, res) {
   }
 }
 
-// -----------------------------------------------------------------------------
 // DETAIL
-// -----------------------------------------------------------------------------
+
 async function getReservationDetailController(req, res) {
   try {
     const user = req.user;
-    if (!user?.id)
-      return res
-        .status(401)
-        .json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
+    if (!user?.id) {
+      return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
+    }
 
     const { id } = req.params;
 
-    // ✅ SEMPRE busca completo do banco no DETAIL (evita req.reservation "capado")
     let reservation = await reservationModel.getReservationById(id);
 
     if (!reservation) {
@@ -679,12 +646,10 @@ async function getReservationDetailController(req, res) {
     const enrichedArr = await attachMyReviewFields([reservation], user.id);
     reservation = enrichedArr?.[0] || reservation;
 
-    // ✅ hardening: garante campos essenciais (evita detail com 0/undefined)
     reservation = {
       ...reservation,
       service: reservation?.service ?? null,
-      price_per_day:
-        reservation?.price_per_day != null ? Number(reservation.price_per_day) : null,
+      price_per_day: reservation?.price_per_day != null ? Number(reservation.price_per_day) : null,
       total: reservation?.total != null ? Number(reservation.total) : null,
     };
 
@@ -697,16 +662,14 @@ async function getReservationDetailController(req, res) {
   }
 }
 
-// -----------------------------------------------------------------------------
 // UPDATE STATUS (+ NOTIF)
-// -----------------------------------------------------------------------------
+
 async function updateReservationStatusController(req, res) {
   try {
     const user = req.user;
-    if (!user?.id)
-      return res
-        .status(401)
-        .json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
+    if (!user?.id) {
+      return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
+    }
 
     const { id } = req.params;
 
@@ -716,19 +679,18 @@ async function updateReservationStatusController(req, res) {
 
     const nextStatus = typeof rawStatus === "string" ? rawStatus.trim() : "";
     if (!nextStatus) {
-      return res
-        .status(400)
-        .json({ error: "Status é obrigatório.", code: "MISSING_STATUS" });
+      return res.status(400).json({ error: "Status é obrigatório.", code: "MISSING_STATUS" });
     }
 
     let reservation = req.reservation || null;
     if (!reservation) reservation = await reservationModel.getReservationById(id);
 
-    if (!reservation)
+    if (!reservation) {
       return res.status(404).json({
         error: "Reserva não encontrada.",
         code: "RESERVATION_NOT_FOUND",
       });
+    }
 
     const prevStatus = getResStatus(reservation);
 
@@ -748,10 +710,7 @@ async function updateReservationStatusController(req, res) {
     }
 
     const currentStatus = getResStatus(reservation);
-    const { start: startKey, end: endKey } = getStartEndSafe(
-      reservation,
-      reservation
-    );
+    const { start: startKey, end: endKey } = getStartEndSafe(reservation, reservation);
 
     if (!startKey || !endKey) {
       return res.status(400).json({
@@ -760,7 +719,6 @@ async function updateReservationStatusController(req, res) {
       });
     }
 
-    // Tutor cancelando
     if (!isAdmin && role === "tutor") {
       if (!isOwnerTutor) {
         return res.status(403).json({
@@ -781,34 +739,24 @@ async function updateReservationStatusController(req, res) {
         });
       }
 
-      const updated = await reservationModel.updateReservationStatus(
-        id,
-        "Cancelada",
-        null
-      );
+      const updated = await reservationModel.updateReservationStatus(id, "Cancelada", null);
 
       await notifyReservationEventSafe({
         reservation: updated,
         actorUser: user,
         type: "status",
-        payload: {
-          reservationId: updated?.id,
-          prevStatus,
-          nextStatus: "Cancelada",
-        },
+        payload: { reservationId: updated?.id, prevStatus, nextStatus: "Cancelada" },
       });
 
       return res.json({
         reservation: {
           ...updated,
-          price_per_day:
-            updated?.price_per_day != null ? Number(updated.price_per_day) : null,
+          price_per_day: updated?.price_per_day != null ? Number(updated.price_per_day) : null,
           total: updated?.total != null ? Number(updated.total) : null,
         },
       });
     }
 
-    // Caregiver alterando
     if (!isAdmin && role === "caregiver") {
       if (!isOwnerCaregiver) {
         return res.status(403).json({
@@ -817,17 +765,12 @@ async function updateReservationStatusController(req, res) {
         });
       }
 
-      const allowed = new Set([
-        "Aceita",
-        "Recusada",
-        "Concluida",
-        "Concluída",
-        "Finalizada",
-      ]);
+      const allowed = new Set(["Aceita", "Recusada", "Concluida", "Concluída", "Finalizada"]);
       if (!allowed.has(nextStatus)) {
-        return res
-          .status(400)
-          .json({ error: "Status inválido para cuidador.", code: "INVALID_STATUS" });
+        return res.status(400).json({
+          error: "Status inválido para cuidador.",
+          code: "INVALID_STATUS",
+        });
       }
 
       if (nextStatus === "Aceita") {
@@ -838,11 +781,7 @@ async function updateReservationStatusController(req, res) {
           });
         }
 
-        const availCheck = await assertRangeIsFullyAvailableOrThrow(
-          caregiverId,
-          startKey,
-          endKey
-        );
+        const availCheck = await assertRangeIsFullyAvailableOrThrow(caregiverId, startKey, endKey);
         if (!availCheck.ok) {
           return res.status(409).json({
             code: availCheck.code || "NOT_AVAILABLE",
@@ -850,12 +789,7 @@ async function updateReservationStatusController(req, res) {
           });
         }
 
-        const capCheck = await assertCapacityOrThrow(
-          caregiverId,
-          startKey,
-          endKey,
-          id
-        );
+        const capCheck = await assertCapacityOrThrow(caregiverId, startKey, endKey, id);
         if (!capCheck.ok) {
           return res.status(409).json({
             code: capCheck.code,
@@ -881,22 +815,15 @@ async function updateReservationStatusController(req, res) {
       return res.json({
         reservation: {
           ...updated,
-          price_per_day:
-            updated?.price_per_day != null ? Number(updated.price_per_day) : null,
+          price_per_day: updated?.price_per_day != null ? Number(updated.price_per_day) : null,
           total: updated?.total != null ? Number(updated.total) : null,
         },
       });
-
     }
 
-    // Admin
     if (isAdmin) {
       if (nextStatus === "Aceita") {
-        const availCheck = await assertRangeIsFullyAvailableOrThrow(
-          caregiverId,
-          startKey,
-          endKey
-        );
+        const availCheck = await assertRangeIsFullyAvailableOrThrow(caregiverId, startKey, endKey);
         if (!availCheck.ok) {
           return res.status(409).json({
             code: availCheck.code || "NOT_AVAILABLE",
@@ -904,12 +831,7 @@ async function updateReservationStatusController(req, res) {
           });
         }
 
-        const capCheck = await assertCapacityOrThrow(
-          caregiverId,
-          startKey,
-          endKey,
-          id
-        );
+        const capCheck = await assertCapacityOrThrow(caregiverId, startKey, endKey, id);
         if (!capCheck.ok) {
           return res.status(409).json({
             code: capCheck.code,
@@ -935,16 +857,13 @@ async function updateReservationStatusController(req, res) {
       return res.json({
         reservation: {
           ...updated,
-          price_per_day:
-            updated?.price_per_day != null ? Number(updated.price_per_day) : null,
+          price_per_day: updated?.price_per_day != null ? Number(updated.price_per_day) : null,
           total: updated?.total != null ? Number(updated.total) : null,
         },
       });
     }
 
-    return res
-      .status(403)
-      .json({ error: "Sem permissão para alterar o status.", code: "FORBIDDEN" });
+    return res.status(403).json({ error: "Sem permissão para alterar o status.", code: "FORBIDDEN" });
   } catch (err) {
     console.error("Erro em PATCH /reservations/:id/status:", err);
     return res.status(500).json({
@@ -954,16 +873,14 @@ async function updateReservationStatusController(req, res) {
   }
 }
 
-// -----------------------------------------------------------------------------
-// UPDATE RATING (+ NOTIF) [LEGADO]
-// -----------------------------------------------------------------------------
+// UPDATE RATING [LEGADO]
+
 async function updateReservationRatingController(req, res) {
   try {
     const user = req.user;
-    if (!user?.id)
-      return res
-        .status(401)
-        .json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
+    if (!user?.id) {
+      return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
+    }
 
     const { id } = req.params;
 
@@ -973,19 +890,18 @@ async function updateReservationRatingController(req, res) {
 
     const r = toNum(rating);
     if (r == null || r < 1 || r > 5) {
-      return res
-        .status(400)
-        .json({ error: "Nota inválida. Use 1 a 5.", code: "INVALID_RATING" });
+      return res.status(400).json({ error: "Nota inválida. Use 1 a 5.", code: "INVALID_RATING" });
     }
 
     let reservation = req.reservation || null;
     if (!reservation) reservation = await reservationModel.getReservationById(id);
 
-    if (!reservation)
+    if (!reservation) {
       return res.status(404).json({
         error: "Reserva não encontrada.",
         code: "RESERVATION_NOT_FOUND",
       });
+    }
 
     if (!canAccessReservation(user, reservation)) {
       return res.status(403).json({
@@ -1020,11 +936,7 @@ async function updateReservationRatingController(req, res) {
       reservation: updated,
       actorUser: user,
       type: "rating",
-      payload: {
-        reservationId: updated?.id,
-        fromRole: user.role,
-        rating: r,
-      },
+      payload: { reservationId: updated?.id, fromRole: user.role, rating: r },
     });
 
     return res.json({ reservation: updated });
@@ -1037,17 +949,14 @@ async function updateReservationRatingController(req, res) {
   }
 }
 
-// -----------------------------------------------------------------------------
 // GET /reservations/my-evaluations
-// (Avaliações RECEBIDAS pelo usuário logado)
-// -----------------------------------------------------------------------------
+
 async function listMyEvaluationsController(req, res) {
   try {
     const user = req.user;
-    if (!user?.id)
-      return res
-        .status(401)
-        .json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
+    if (!user?.id) {
+      return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
+    }
 
     const isAdmin = String(user.role || "").toLowerCase() === "admin";
     const idStr = String(user.id);
@@ -1089,9 +998,7 @@ async function listMyEvaluationsController(req, res) {
     return res.json({ evaluations: result.rows || [] });
   } catch (err) {
     console.error("Erro em GET /reservations/my-evaluations:", err);
-    return res
-      .status(500)
-      .json({ error: "Erro ao buscar avaliações.", code: "LIST_EVAL_FAILED" });
+    return res.status(500).json({ error: "Erro ao buscar avaliações.", code: "LIST_EVAL_FAILED" });
   }
 }
 
