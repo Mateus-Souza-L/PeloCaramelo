@@ -310,6 +310,24 @@ async function updateDailyCapacityByUserId(userId, dailyCapacity) {
 }
 
 /* ============================================================
+   Atualizar senha do usuário
+   ============================================================ */
+async function updateUserPassword(userId, passwordHash) {
+  const result = await pool.query(
+    `
+      UPDATE users
+      SET password_hash = $2,
+          updated_at = NOW()
+      WHERE id = $1
+      RETURNING id;
+    `,
+    [userId, passwordHash]
+  );
+
+  return result.rows[0] || null;
+}
+
+/* ============================================================
    EXPORTS
    ============================================================ */
 module.exports = {
@@ -319,6 +337,9 @@ module.exports = {
   updateUserProfile,
   listAllUsers,
   setUserBlockedStatus,
+
+   // 🔐 senha
+  updateUserPassword,
 
   // legado (não quebra caso ainda use)
   getUserAvailability,

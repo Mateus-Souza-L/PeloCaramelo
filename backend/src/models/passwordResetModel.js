@@ -1,4 +1,3 @@
-// backend/src/models/passwordResetModel.js
 const pool = require("../config/db");
 
 function getDb(db) {
@@ -6,112 +5,78 @@ function getDb(db) {
 }
 
 /**
- * Limpa tokens:
- * - expirados (expires_at <= NOW())
- * - usados (used = true)
- * - muito antigos (created_at <= NOW() - 7 dias)  [higiene extra]
- *
- * Retorna a quantidade removida (best-effort).
+ * Cria um reset de senha (salva SOMENTE o hash do token)
  */
-async function cleanupPasswordResets(db) {
-  const conn = getDb(db);
-
-  const result = await conn.query(`
-    DELETE FROM password_resets
-    WHERE
-      COALESCE(used, false) = true
-      OR (expires_at IS NOT NULL AND expires_at <= NOW())
-      OR (created_at IS NOT NULL AND created_at <= NOW() - INTERVAL '7 days')
-  `);
-
-  return Number(result?.rowCount ?? 0);
-}
-
-/**
- * Cria um token de reset
- * Obs: mantém compatível com sua tabela (token em texto).
- */
-async function createPasswordReset({ userId, token, expiresAt }, db) {
+async function createPasswordReset({ userId, tokenHash, expiresAt }, db) {
   const conn = getDb(db);
 
   const result = await conn.query(
     `
-    INSERT INTO password_resets (user_id, token, expires_at, used, created_at)
-    VALUES ($1, $2, $3, false, NOW())
-    RETURNING id, user_id, token, expires_at, used, created_at
+      INSERT INTO password_resets (
+        user_id,
+        token_hash,
+        expires_at,
+        created_at
+      )
+      VALUES ($1, $2, $3, NOW())
+      RETURNING id, user_id, expires_at
     `,
-    [userId, token, expiresAt]
+    [Number(userId), tokenHash, expiresAt]
   );
 
-  return result.rows?.[0] || null;
+  return result.rows[0] || null;
 }
 
 /**
- * Busca token (ainda não usado e não expirado)
+ * Busca reset válido (não usado e não expirado)
  */
-async function findValidPasswordResetByToken(token, db) {
+async function findValidByTokenHash(tokenHash, db) {
   const conn = getDb(db);
 
   const result = await conn.query(
     `
-    SELECT *
-    FROM password_resets
-    WHERE token = $1
-      AND COALESCE(used, false) = false
-      AND (expires_at IS NULL OR expires_at > NOW())
-    LIMIT 1
+      SELECT *
+      FROM password_resets
+      WHERE token_hash = $1
+        AND used_at IS NULL
+        AND expires_at > NOW()
+      ORDER BY id DESC
+      LIMIT 1
     `,
-    [String(token)]
+    [tokenHash]
   );
 
-  return result.rows?.[0] || null;
+  return result.rows[0] || null;
 }
 
 /**
  * Marca token como usado
  */
-async function markPasswordResetUsed(id, db) {
+async function markUsed(id, db) {
   const conn = getDb(db);
 
-  const result = await conn.query(
+  await conn.query(
     `
-    UPDATE password_resets
-    SET used = true
-    WHERE id = $1
-    RETURNING id, used
+      UPDATE password_resets
+      SET used_at = NOW()
+      WHERE id = $1
     `,
     [Number(id)]
   );
-
-  return result.rows?.[0] || null;
 }
 
 /**
- * Invalida todos tokens ativos do usuário (exceto opcionalmente um id)
+ * Invalida todos os tokens ativos de um usuário
  */
-async function invalidateAllActiveByUserId(userId, exceptId = null, db) {
+async function invalidateAllByUserId(userId, db) {
   const conn = getDb(db);
-
-  if (exceptId) {
-    const result = await conn.query(
-      `
-      UPDATE password_resets
-      SET used = true
-      WHERE user_id = $1
-        AND COALESCE(used, false) = false
-        AND id <> $2
-      `,
-      [Number(userId), Number(exceptId)]
-    );
-    return Number(result?.rowCount ?? 0);
-  }
 
   const result = await conn.query(
     `
-    UPDATE password_resets
-    SET used = true
-    WHERE user_id = $1
-      AND COALESCE(used, false) = false
+      UPDATE password_resets
+      SET used_at = NOW()
+      WHERE user_id = $1
+        AND used_at IS NULL
     `,
     [Number(userId)]
   );
@@ -119,10 +84,28 @@ async function invalidateAllActiveByUserId(userId, exceptId = null, db) {
   return Number(result?.rowCount ?? 0);
 }
 
+/**
+ * Limpeza de segurança (opcional)
+ */
+async function cleanupExpired(db) {
+  const conn = getDb(db);
+
+  const result = await conn.query(
+    `
+      DELETE FROM password_resets
+      WHERE
+        expires_at <= NOW()
+        OR (created_at <= NOW() - INTERVAL '7 days')
+    `
+  );
+
+  return Number(result?.rowCount ?? 0);
+}
+
 module.exports = {
-  cleanupPasswordResets,
   createPasswordReset,
-  findValidPasswordResetByToken,
-  markPasswordResetUsed,
-  invalidateAllActiveByUserId,
+  findValidByTokenHash,
+  markUsed,
+  invalidateAllByUserId,
+  cleanupExpired,
 };
