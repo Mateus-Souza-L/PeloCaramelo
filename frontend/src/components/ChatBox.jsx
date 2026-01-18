@@ -45,7 +45,12 @@ export default function ChatBox({
 
   // Fallback polling control
   const pollingTimerRef = useRef(null);
-  const allowPollingRef = useRef(true); // habilita no início; desabilita quando socket estiver OK
+  const allowPollingRef = useRef(true);
+
+  // ✅ anti-spam de "mark read"
+  const lastMarkReadAtRef = useRef(0);
+  const markReadInFlightRef = useRef(false);
+  const MARK_READ_COOLDOWN_MS = 2000;
 
   // ---------------------------
   // Helpers de autor da mensagem
@@ -94,39 +99,67 @@ export default function ChatBox({
     }
   }, [token]);
 
-  const markReadServer = useCallback(async () => {
-    if (!reservationId || !token) return;
-    try {
-      await markChatAsRead(reservationId, token);
-    } catch {
-      // silencioso
-    } finally {
-      refreshUnread();
-      setHasNewWhileAway(false);
+  // ✅ marca como lido com throttle e só chama /chat/unread quando mudou algo
+  const markReadServer = useCallback(
+    async ({ force = false } = {}) => {
+      if (!reservationId || !token) return;
 
-      // ✅ emite "read" via socket (redundante com controller, mas útil se backend não emitir por algum motivo)
-      const s = socketRef.current;
-      if (s && joinedRef.current) {
-        try {
-          s.emit("chat:read", { reservationId });
-        } catch {}
+      // Se a aba não está visível, não vale a pena spammar read
+      if (!force && document.visibilityState !== "visible") return;
+
+      // Só faz sentido quando está no bottom (a menos que force)
+      if (!force && !isAtBottomRef.current) return;
+
+      // cooldown
+      const now = Date.now();
+      if (!force && now - lastMarkReadAtRef.current < MARK_READ_COOLDOWN_MS) return;
+
+      // evita concorrência
+      if (markReadInFlightRef.current) return;
+
+      markReadInFlightRef.current = true;
+      lastMarkReadAtRef.current = now;
+
+      try {
+        const resp = await markChatAsRead(reservationId, token);
+        const updated = Number(resp?.updated || 0);
+
+        // ✅ só atualiza unread se realmente marcou algo como lido
+        if (updated > 0) {
+          await refreshUnread();
+        }
+
+        setHasNewWhileAway(false);
+
+        // ✅ emite "read" via socket (útil para tempo real)
+        const s = socketRef.current;
+        if (s && joinedRef.current) {
+          try {
+            s.emit("chat:read", { reservationId });
+          } catch {}
+        }
+      } catch {
+        // silencioso
+      } finally {
+        markReadInFlightRef.current = false;
       }
-    }
-  }, [reservationId, token, refreshUnread]);
+    },
+    [reservationId, token, refreshUnread]
+  );
   /** -------------------------------------------------------------- **/
 
   const handleScroll = () => {
     const el = containerRef.current;
     if (!el) return;
+
     const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     isAtBottomRef.current = distanceToBottom < 40;
 
-    if (isAtBottomRef.current && document.visibilityState === "visible") {
-      markReadServer();
-    }
-
     if (isAtBottomRef.current) {
       setHasNewWhileAway(false);
+
+      // ✅ throttle interno evita spam
+      markReadServer();
     }
   };
 
@@ -158,9 +191,8 @@ export default function ChatBox({
       scrollToBottom();
       isAtBottomRef.current = true;
 
-      if (document.visibilityState === "visible") {
-        markReadServer();
-      }
+      // ✅ força 1x (mas com throttle/cooldown)
+      markReadServer({ force: true });
     };
 
     window.addEventListener("chat-scroll-bottom", onScrollBottom);
@@ -299,7 +331,7 @@ export default function ChatBox({
         return next;
       });
 
-      // ✅ ACK delivered (somente quando eu sou o destinatário / não é minha msg)
+      // ✅ ACK delivered
       const fromOther = !isMineMsg(msg);
       if (fromOther && s && joinedRef.current && msgId != null) {
         try {
@@ -307,7 +339,6 @@ export default function ChatBox({
         } catch {}
       }
 
-      // se veio do outro -> dispara "nova"
       if (!fromOther) return;
 
       if (msgId != null && String(lastNewEventIdRef.current) === String(msgId)) return;
@@ -339,12 +370,13 @@ export default function ChatBox({
         scrollToBottom();
         markReadServer();
       } else {
-        refreshUnread();
+        // ✅ evita spam: aqui não chama refreshUnread direto, só marca flag
         setHasNewWhileAway(true);
+        // e opcionalmente pode atualizar unread 1x com cooldown:
+        refreshUnread();
       }
     };
 
-    // ✅ entrega/lida em tempo real (eventos do server)
     const onDelivered = (payload) => {
       const rid = payload?.reservationId;
       const mid = payload?.messageId;
@@ -352,8 +384,6 @@ export default function ChatBox({
 
       if (!rid || String(rid) !== String(reservationId)) return;
       if (!mid) return;
-
-      // só marca delivered nas MINHAS mensagens, quando outro usuário confirmou recebimento
       if (String(by) === String(currentUserId)) return;
 
       setMessages((prev) =>
@@ -371,8 +401,6 @@ export default function ChatBox({
       const by = payload?.byUserId;
 
       if (!rid || String(rid) !== String(reservationId)) return;
-
-      // só faz sentido marcar "read" quando o OUTRO leu as MINHAS mensagens
       if (String(by) === String(currentUserId)) return;
 
       setMessages((prev) =>
@@ -428,7 +456,8 @@ export default function ChatBox({
     setHasNewWhileAway(false);
     lastNewEventIdRef.current = null;
 
-    markReadServer();
+    // ✅ 1 chamada inicial (controlada)
+    markReadServer({ force: true });
 
     async function loadMessages({ isPolling = false } = {}) {
       try {
@@ -468,8 +497,6 @@ export default function ChatBox({
           initialLoadRef.current = false;
           return;
         }
-
-        // sem notificação aqui; socket já cobre
       } catch (err) {
         console.error("Erro ao carregar mensagens:", err);
         if (!cancelled && !isPolling) {
@@ -559,8 +586,9 @@ export default function ChatBox({
 
       lastMessageIdRef.current = saved?.id ?? lastMessageIdRef.current;
       scrollToBottom();
-      // ✅ não marca como lido aqui automaticamente (é minha msg), mas pode manter:
-      markReadServer();
+
+      // ✅ não precisa marcar read no envio (era uma das fontes do spam)
+      // markReadServer();
     } catch (err) {
       console.error("Erro ao enviar mensagem:", err);
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
@@ -679,7 +707,7 @@ export default function ChatBox({
           onClick={() => {
             scrollToBottom();
             isAtBottomRef.current = true;
-            markReadServer();
+            markReadServer({ force: true });
           }}
           className="absolute bottom-[72px] left-1/2 -translate-x-1/2 px-4 py-2 rounded-full text-xs font-semibold bg-[#FFD700] text-[#5A3A22] shadow-md hover:opacity-90 transition"
         >
