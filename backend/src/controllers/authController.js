@@ -3,12 +3,26 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const pool = require("../config/db");
-const { createUser, findUserByEmail, findUserById } = require("../models/userModel");
+const {
+  createUser,
+  findUserByEmail,
+  findUserById,
+} = require("../models/userModel");
+
+const {
+  cleanupPasswordResets,
+  createPasswordReset,
+  findValidPasswordResetByToken,
+  markPasswordResetUsed,
+  invalidateAllActiveByUserId,
+} = require("../models/passwordResetModel");
 
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-trocar-em-producao";
 
 function generateToken(user) {
-  return jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: "7d" });
+  return jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, {
+    expiresIn: "7d",
+  });
 }
 
 function safeJsonParse(raw) {
@@ -37,19 +51,15 @@ function readBody(req) {
 function pickBlockInfo(user) {
   if (!user) return null;
 
-  const blocked = Boolean(user.blocked ?? user.is_blocked ?? user.isBlocked ?? false);
+  const blocked = Boolean(
+    user.blocked ?? user.is_blocked ?? user.isBlocked ?? false
+  );
 
   const blockedReason =
-    user.blocked_reason ??
-    user.block_reason ??
-    user.blockReason ??
-    null;
+    user.blocked_reason ?? user.block_reason ?? user.blockReason ?? null;
 
   const blockedUntil =
-    user.blocked_until ??
-    user.block_until ??
-    user.blockedUntil ??
-    null;
+    user.blocked_until ?? user.block_until ?? user.blockedUntil ?? null;
 
   return {
     blocked,
@@ -65,7 +75,6 @@ function isUntilActive(blockedUntil) {
   return dt.getTime() > Date.now();
 }
 
-// best-effort: se colunas existirem e prazo expirou, desbloqueia
 async function tryAutoUnblockIfExpired(userId) {
   try {
     await pool.query(
@@ -84,7 +93,6 @@ async function tryAutoUnblockIfExpired(userId) {
     );
     return true;
   } catch (err) {
-    // colunas não existem
     if (err?.code === "42703") return false;
     return false;
   }
@@ -112,7 +120,9 @@ async function register(req, res) {
     } = body;
 
     if (!name || !email || !password) {
-      return res.status(400).json({ error: "Nome, e-mail e senha são obrigatórios." });
+      return res
+        .status(400)
+        .json({ error: "Nome, e-mail e senha são obrigatórios." });
     }
 
     const normalizedEmail = String(email).trim().toLowerCase();
@@ -173,14 +183,17 @@ async function login(req, res) {
 
     if (!body) {
       return res.status(400).json({
-        error: "Body inválido. Envie JSON com { email, password } e Content-Type: application/json.",
+        error:
+          "Body inválido. Envie JSON com { email, password } e Content-Type: application/json.",
       });
     }
 
     const { email, password } = body;
 
     if (!email || !password) {
-      return res.status(400).json({ error: "E-mail e senha são obrigatórios." });
+      return res
+        .status(400)
+        .json({ error: "E-mail e senha são obrigatórios." });
     }
 
     const normalizedEmail = String(email).trim().toLowerCase();
@@ -190,14 +203,11 @@ async function login(req, res) {
       return res.status(401).json({ error: "Credenciais inválidas." });
     }
 
-    // ✅ Checa bloqueio antes de validar senha (melhor UX e menos custo)
     const bi = pickBlockInfo(user);
     if (bi?.blocked) {
-      // se tem prazo e já expirou, tenta desbloquear e segue
       if (bi.blockedUntil && !isUntilActive(bi.blockedUntil)) {
         await tryAutoUnblockIfExpired(user.id);
 
-        // reconsulta para garantir estado atual
         const refreshed = await findUserById(user.id);
         const bi2 = pickBlockInfo(refreshed);
 
@@ -210,7 +220,6 @@ async function login(req, res) {
           });
         }
       } else {
-        // bloqueio ativo (indefinido ou dentro do prazo)
         return res.status(403).json({
           error: "Seu acesso está bloqueado.",
           code: "USER_BLOCKED",
@@ -272,7 +281,6 @@ async function forgotPassword(req, res) {
     const body = readBody(req) || req.body || {};
     const email = String(body.email || "").trim().toLowerCase();
 
-    // Resposta sempre igual (não revela se o e-mail existe)
     const genericOk = () =>
       res.json({
         ok: true,
@@ -284,40 +292,45 @@ async function forgotPassword(req, res) {
     const user = await findUserByEmail(email);
     if (!user) return genericOk();
 
-    // Se estiver bloqueado (qualquer variação), não envia (mas responde igual)
     const bi = pickBlockInfo ? pickBlockInfo(user) : { blocked: !!user.blocked };
     if (bi?.blocked) return genericOk();
 
+    // ✅ limpeza best-effort antes de criar um novo token
+    try {
+      await cleanupPasswordResets();
+    } catch {}
+
     const token = crypto.randomBytes(32).toString("hex");
 
-    const expiresMinutesRaw = Number(process.env.PASSWORD_RESET_EXPIRES_MINUTES || 60);
-    const expiresMinutes =
-      Number.isFinite(expiresMinutesRaw) && expiresMinutesRaw >= 5 ? expiresMinutesRaw : 60;
-
-    await pool.query(
-      `
-      INSERT INTO password_resets (user_id, token, expires_at, used)
-      VALUES ($1, $2, NOW() + ($3::text || ' minutes')::interval, false)
-      `,
-      [user.id, token, String(expiresMinutes)]
+    const expiresMinutesRaw = Number(
+      process.env.PASSWORD_RESET_EXPIRES_MINUTES || 60
     );
+    const expiresMinutes =
+      Number.isFinite(expiresMinutesRaw) && expiresMinutesRaw >= 5
+        ? expiresMinutesRaw
+        : 60;
 
-    // Monta URL pro front (preferência: FRONTEND_URL; fallback: origin)
+    const expiresAt = new Date(Date.now() + expiresMinutes * 60 * 1000);
+
+    await createPasswordReset({ userId: user.id, token, expiresAt });
+
     const baseUrl =
-      String(process.env.FRONTEND_URL || "").trim().replace(/\/+$/, "") ||
-      String(req.get("origin") || "").trim().replace(/\/+$/, "");
+      String(process.env.FRONTEND_URL || "")
+        .trim()
+        .replace(/\/+$/, "") ||
+      String(req.get("origin") || "")
+        .trim()
+        .replace(/\/+$/, "");
 
     const resetUrl = baseUrl
       ? `${baseUrl}/reset-password?token=${encodeURIComponent(token)}`
       : `RESET_TOKEN=${token}`;
 
-    // Por enquanto: log. (Depois ligamos Resend/SMTP)
     console.log(`[PeloCaramelo] Reset de senha para ${email}: ${resetUrl}`);
 
     return genericOk();
   } catch (err) {
     console.error("Erro em /auth/forgot-password:", err);
-    // Continua retornando genérico por segurança
     return res.json({
       ok: true,
       message: "Se o e-mail existir, enviaremos um link de recuperação.",
@@ -334,41 +347,32 @@ async function resetPassword(req, res) {
     const password = String(body.password || "");
 
     if (!token || !password) {
-      return res.status(400).json({ error: "Token e nova senha são obrigatórios." });
+      return res
+        .status(400)
+        .json({ error: "Token e nova senha são obrigatórios." });
     }
 
     if (password.length < 6) {
-      return res.status(400).json({ error: "Senha deve ter pelo menos 6 caracteres." });
+      return res
+        .status(400)
+        .json({ error: "Senha deve ter pelo menos 6 caracteres." });
     }
 
     await client.query("BEGIN");
 
-    const { rows } = await client.query(
-      `
-      SELECT id, user_id, expires_at, used
-      FROM password_resets
-      WHERE token = $1
-      LIMIT 1
-      `,
-      [token]
-    );
+    // ✅ limpeza dentro da transação
+    await cleanupPasswordResets(client);
 
-    const resetRow = rows[0];
+    const resetRow = await findValidPasswordResetByToken(token, client);
     if (!resetRow) {
       await client.query("ROLLBACK");
       return res.status(400).json({ error: "Token inválido." });
     }
 
-    const expired = new Date(resetRow.expires_at).getTime() < Date.now();
-    if (resetRow.used || expired) {
-      await client.query("ROLLBACK");
-      return res.status(400).json({ error: "Token expirado ou já utilizado." });
-    }
-
-    // (opcional) revalida usuário
-    const { rows: userRows } = await client.query(`SELECT * FROM users WHERE id = $1 LIMIT 1`, [
-      resetRow.user_id,
-    ]);
+    const { rows: userRows } = await client.query(
+      `SELECT * FROM users WHERE id = $1 LIMIT 1`,
+      [resetRow.user_id]
+    );
     const user = userRows[0];
     if (!user) {
       await client.query("ROLLBACK");
@@ -393,25 +397,10 @@ async function resetPassword(req, res) {
       [resetRow.user_id, passwordHash]
     );
 
-    // Marca token como usado
-    await client.query(
-      `
-      UPDATE password_resets
-      SET used = true
-      WHERE id = $1
-      `,
-      [resetRow.id]
-    );
+    await markPasswordResetUsed(resetRow.id, client);
 
-    // Invalida quaisquer outros tokens ainda ativos do mesmo usuário
-    await client.query(
-      `
-      UPDATE password_resets
-      SET used = true
-      WHERE user_id = $1 AND used = false
-      `,
-      [resetRow.user_id]
-    );
+    // invalida quaisquer outros tokens ativos do mesmo usuário
+    await invalidateAllActiveByUserId(resetRow.user_id, resetRow.id, client);
 
     await client.query("COMMIT");
     return res.json({ ok: true, message: "Senha atualizada com sucesso." });
