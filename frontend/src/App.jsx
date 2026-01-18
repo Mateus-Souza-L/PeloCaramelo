@@ -23,6 +23,10 @@ const Profile = lazy(() => import("./pages/Profile"));
 const ReviewHistory = lazy(() => import("./pages/ReviewHistory"));
 const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
 
+// ✅ Password reset pages
+const ForgotPassword = lazy(() => import("./pages/ForgotPassword"));
+const ResetPassword = lazy(() => import("./pages/ResetPassword"));
+
 // Helper de título
 const withTitle = (t, children) => <Title title={t}>{children}</Title>;
 
@@ -72,6 +76,17 @@ export default function App() {
               <Route path="/" element={withTitle("PeloCaramelo | Início", <Home />)} />
               <Route path="/login" element={withTitle("PeloCaramelo | Login", <Login />)} />
               <Route path="/register" element={withTitle("PeloCaramelo | Cadastro", <Register />)} />
+
+              {/* ✅ Recuperação de senha (públicas) */}
+              <Route
+                path="/forgot-password"
+                element={withTitle("PeloCaramelo | Recuperar Senha", <ForgotPassword />)}
+              />
+              <Route
+                path="/reset-password"
+                element={withTitle("PeloCaramelo | Redefinir Senha", <ResetPassword />)}
+              />
+
               <Route path="/buscar" element={withTitle("PeloCaramelo | Buscar", <Search />)} />
               <Route
                 path="/caregiver/:id"

@@ -122,6 +122,16 @@ export default function Login() {
             />
           </div>
 
+          {/* ✅ Link "Esqueci minha senha" */}
+          <div className="flex items-center justify-end">
+            <Link
+              to="/forgot-password"
+              className="text-sm text-[#95301F] underline hover:opacity-80"
+            >
+              Esqueci minha senha
+            </Link>
+          </div>
+
           <button
             type="submit"
             disabled={loading}
