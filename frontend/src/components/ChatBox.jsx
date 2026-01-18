@@ -41,6 +41,11 @@ export default function ChatBox({
   // Socket refs
   const socketRef = useRef(null);
   const joinedRef = useRef(false);
+  const connectedRef = useRef(false);
+
+  // Fallback polling control
+  const pollingTimerRef = useRef(null);
+  const allowPollingRef = useRef(true); // habilita no início; desabilita quando socket estiver OK
 
   // ---------------------------
   // Helpers de autor da mensagem
@@ -196,8 +201,26 @@ export default function ChatBox({
   // Socket.IO: conecta e entra na sala da reserva
   // --------------------------------------------
   const canUseSocket = useMemo(() => {
+    // NOTE: canChat aqui é "chat disponível" (UI). Mesmo assim, pode querer socket só quando canChat=true.
     return !!(token && reservationId && canChat);
   }, [token, reservationId, canChat]);
+
+  const stopPolling = useCallback(() => {
+    if (pollingTimerRef.current) {
+      clearInterval(pollingTimerRef.current);
+      pollingTimerRef.current = null;
+    }
+  }, []);
+
+  const startPolling = useCallback(
+    (fn) => {
+      stopPolling();
+      pollingTimerRef.current = setInterval(() => {
+        fn?.();
+      }, 8000);
+    },
+    [stopPolling]
+  );
 
   useEffect(() => {
     if (!canUseSocket) return;
@@ -205,14 +228,32 @@ export default function ChatBox({
     // cria conexão uma vez (por token)
     if (!socketRef.current) {
       socketRef.current = io(API_BASE_URL, {
-        transports: ["websocket"],
+        // importante: permitir polling->websocket (Render e alguns proxies precisam)
+        transports: ["websocket", "polling"],
         auth: { token },
         autoConnect: true,
+        reconnection: true,
+        reconnectionAttempts: 6,
+        reconnectionDelay: 800,
+      });
+
+      socketRef.current.on("connect", () => {
+        connectedRef.current = true;
+      });
+
+      socketRef.current.on("disconnect", () => {
+        connectedRef.current = false;
+        joinedRef.current = false;
+        // se cair, volta a permitir polling como fallback
+        allowPollingRef.current = true;
       });
 
       // se der erro de auth, não quebra o chat (polling continua)
       socketRef.current.on("connect_error", (err) => {
         console.warn("[socket] connect_error:", err?.message || err);
+        connectedRef.current = false;
+        joinedRef.current = false;
+        allowPollingRef.current = true;
       });
     }
 
@@ -220,11 +261,16 @@ export default function ChatBox({
 
     // entra na sala desta reserva
     joinedRef.current = false;
+
+    // socket.io enfileira emits mesmo se ainda não conectou
     s.emit("join:reservation", { reservationId });
 
     const onJoined = (payload) => {
       if (String(payload?.reservationId) === String(reservationId)) {
         joinedRef.current = true;
+        // socket ok -> desabilita polling
+        allowPollingRef.current = false;
+        stopPolling();
       }
     };
 
@@ -232,6 +278,7 @@ export default function ChatBox({
       if (String(payload?.reservationId) === String(reservationId)) {
         console.warn("[socket] join forbidden:", payload);
         joinedRef.current = false;
+        allowPollingRef.current = true; // mantém fallback
       }
     };
 
@@ -243,28 +290,26 @@ export default function ChatBox({
       if (!rid || String(rid) !== String(reservationId)) return;
       if (!msg) return;
 
-      // evita duplicar caso o polling já trouxe (ou se chegarem eventos repetidos)
       const msgId = msg?.id;
-      if (msgId && String(lastMessageIdRef.current) === String(msgId)) return;
 
       setMessages((prev) => {
-        const exists = msgId
-          ? prev.some((m) => String(m?.id) === String(msgId))
-          : false;
-        if (exists) return prev;
+        // evita duplicar por id
+        if (msgId && prev.some((m) => String(m?.id) === String(msgId))) {
+          return prev;
+        }
 
         const next = [...prev, msg];
-        lastMessageIdRef.current = msgId ?? lastMessageIdRef.current;
+        // guarda last id (se for num/uuid)
+        if (msgId != null) lastMessageIdRef.current = msgId;
         return next;
       });
 
-      // só trata como "nova" se veio do OUTRO usuário
+      // se chegou uma msg nova, atualiza "unread" e afins
       const fromOther = !isMineMsg(msg);
       if (!fromOther) return;
 
-      if (msgId != null && String(lastNewEventIdRef.current) === String(msgId))
-        return;
-      lastNewEventIdRef.current = msgId ?? lastNewEventIdRef.current;
+      if (msgId != null && String(lastNewEventIdRef.current) === String(msgId)) return;
+      if (msgId != null) lastNewEventIdRef.current = msgId;
 
       try {
         onNewMessage?.({ reservationId });
@@ -308,6 +353,7 @@ export default function ChatBox({
       try {
         s.emit("leave:reservation", { reservationId });
       } catch {}
+
       s.off("joined:reservation", onJoined);
       s.off("join:reservation:error", onJoinError);
       s.off("chat:message", onSocketMessage);
@@ -321,16 +367,8 @@ export default function ChatBox({
     scrollToBottom,
     markReadServer,
     refreshUnread,
+    stopPolling,
   ]);
-
-  // Opcional: desconectar socket quando ChatBox some totalmente
-  // (não é obrigatório; pode deixar conexão viva pro app inteiro)
-  useEffect(() => {
-    return () => {
-      // não desconecta aqui para não "piscar" se a tela re-renderizar
-      // se quiser desligar no logout, faça isso no AuthContext
-    };
-  }, []);
 
   // --------------------------------------------
   // Carregar mensagens + polling (fallback)
@@ -349,10 +387,8 @@ export default function ChatBox({
     markReadServer();
 
     const notifyNewMessage = (msgId) => {
-      if (msgId != null && String(lastNewEventIdRef.current) === String(msgId))
-        return;
-
-      lastNewEventIdRef.current = msgId ?? lastNewEventIdRef.current;
+      if (msgId != null && String(lastNewEventIdRef.current) === String(msgId)) return;
+      if (msgId != null) lastNewEventIdRef.current = msgId;
 
       try {
         onNewMessage?.({ reservationId });
@@ -376,20 +412,22 @@ export default function ChatBox({
 
         const list = normalizeList(data);
 
-        // ✅ se socket estiver entregando, ainda assim manter list ordenada:
+        // sempre atualiza a lista quando vem do servidor (fonte da verdade)
         setMessages((prev) => {
-          // se ainda não tem nada, usa list direto
           if (!prev.length) return list;
 
-          // se o polling trouxe algo novo, substitui pelo list (fonte da verdade)
           const prevLast = prev[prev.length - 1];
           const listLast = list[list.length - 1];
           const prevLastId = prevLast?.id;
           const listLastId = listLast?.id;
 
-          if (listLastId && String(listLastId) !== String(prevLastId)) {
+          // se a lista do servidor tem último diferente, substitui
+          if (listLastId != null && String(listLastId) !== String(prevLastId)) {
             return list;
           }
+
+          // se não tem id, mas veio lista maior, substitui
+          if (list.length > prev.length) return list;
 
           return prev;
         });
@@ -403,7 +441,7 @@ export default function ChatBox({
 
         // primeiro carregamento
         if (initialLoadRef.current) {
-          lastMessageIdRef.current = lastMsg.id;
+          lastMessageIdRef.current = lastMsg.id ?? null;
           initialLoadRef.current = false;
 
           if (document.visibilityState === "visible" && isAtBottomRef.current) {
@@ -413,16 +451,21 @@ export default function ChatBox({
         }
 
         const prevId = lastMessageIdRef.current;
-        const isNew = lastMsg && String(lastMsg.id) !== String(prevId);
+        const lastId = lastMsg?.id;
+
+        // sem id não dá pra comparar, então não notifica
+        if (lastId == null) return;
+
+        const isNew = String(lastId) !== String(prevId);
         if (!isNew) return;
 
-        lastMessageIdRef.current = lastMsg.id;
+        lastMessageIdRef.current = lastId;
 
         // Só trata como "nova" se veio do OUTRO usuário
         const fromOther = !isMineMsg(lastMsg);
         if (!fromOther) return;
 
-        notifyNewMessage(lastMsg.id);
+        notifyNewMessage(lastId);
 
         const isVisibleTab = document.visibilityState === "visible";
         const chatOnScreen = isInViewportRef.current;
@@ -453,15 +496,24 @@ export default function ChatBox({
       }
     }
 
+    // sempre faz load inicial
     loadMessages({ isPolling: false });
 
-    const intervalId = setInterval(() => {
+    // inicia polling apenas se ainda permitido (fallback)
+    const tick = () => {
+      if (!allowPollingRef.current) return;
       loadMessages({ isPolling: true });
-    }, 8000);
+    };
+
+    if (allowPollingRef.current) {
+      startPolling(tick);
+    } else {
+      stopPolling();
+    }
 
     return () => {
       cancelled = true;
-      clearInterval(intervalId);
+      stopPolling();
     };
   }, [
     reservationId,
@@ -475,6 +527,8 @@ export default function ChatBox({
     scrollToBottom,
     normalizeList,
     isMineMsg,
+    startPolling,
+    stopPolling,
   ]);
 
   async function handleSend(e) {
@@ -507,11 +561,28 @@ export default function ChatBox({
       setSending(true);
       const saved = await sendChatMessage(reservationId, text, token);
 
-      setMessages((prev) =>
-        prev.map((m) => (m.id === tempId ? { ...saved } : m))
-      );
+      setMessages((prev) => {
+        // substitui o temp pelo saved
+        const replaced = prev.map((m) => (m.id === tempId ? { ...saved } : m));
 
-      lastMessageIdRef.current = saved.id;
+        // se o socket já chegou com a msg salva (mesmo id), remove duplicata
+        const sid = saved?.id;
+        if (sid != null) {
+          const seen = new Set();
+          return replaced.filter((m) => {
+            const id = m?.id;
+            if (id == null) return true;
+            const key = String(id);
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+        }
+
+        return replaced;
+      });
+
+      lastMessageIdRef.current = saved?.id ?? lastMessageIdRef.current;
       scrollToBottom();
       markReadServer();
     } catch (err) {
@@ -543,7 +614,7 @@ export default function ChatBox({
     return <span className="text-[10px] opacity-70">✓ enviada</span>;
   };
 
-  // ✅ Debug (mantém hook sempre no mesmo lugar — sem quebrar hooks quando canChat muda)
+  // ✅ Debug
   const DEBUG_CHAT = false;
   useEffect(() => {
     if (!DEBUG_CHAT) return;
