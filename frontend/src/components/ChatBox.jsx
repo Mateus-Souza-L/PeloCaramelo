@@ -103,6 +103,14 @@ export default function ChatBox({
     } finally {
       refreshUnread();
       setHasNewWhileAway(false);
+
+      // ✅ emite "read" via socket (redundante com controller, mas útil se backend não emitir por algum motivo)
+      const s = socketRef.current;
+      if (s && joinedRef.current) {
+        try {
+          s.emit("chat:read", { reservationId });
+        } catch {}
+      }
     }
   }, [reservationId, token, refreshUnread]);
   /** -------------------------------------------------------------- **/
@@ -201,7 +209,6 @@ export default function ChatBox({
   // Socket.IO: conecta e entra na sala da reserva
   // --------------------------------------------
   const canUseSocket = useMemo(() => {
-    // NOTE: canChat aqui é "chat disponível" (UI). Mesmo assim, pode querer socket só quando canChat=true.
     return !!(token && reservationId && canChat);
   }, [token, reservationId, canChat]);
 
@@ -225,10 +232,8 @@ export default function ChatBox({
   useEffect(() => {
     if (!canUseSocket) return;
 
-    // cria conexão uma vez (por token)
     if (!socketRef.current) {
       socketRef.current = io(API_BASE_URL, {
-        // importante: permitir polling->websocket (Render e alguns proxies precisam)
         transports: ["websocket", "polling"],
         auth: { token },
         autoConnect: true,
@@ -244,11 +249,9 @@ export default function ChatBox({
       socketRef.current.on("disconnect", () => {
         connectedRef.current = false;
         joinedRef.current = false;
-        // se cair, volta a permitir polling como fallback
         allowPollingRef.current = true;
       });
 
-      // se der erro de auth, não quebra o chat (polling continua)
       socketRef.current.on("connect_error", (err) => {
         console.warn("[socket] connect_error:", err?.message || err);
         connectedRef.current = false;
@@ -259,16 +262,12 @@ export default function ChatBox({
 
     const s = socketRef.current;
 
-    // entra na sala desta reserva
     joinedRef.current = false;
-
-    // socket.io enfileira emits mesmo se ainda não conectou
     s.emit("join:reservation", { reservationId });
 
     const onJoined = (payload) => {
       if (String(payload?.reservationId) === String(reservationId)) {
         joinedRef.current = true;
-        // socket ok -> desabilita polling
         allowPollingRef.current = false;
         stopPolling();
       }
@@ -278,11 +277,10 @@ export default function ChatBox({
       if (String(payload?.reservationId) === String(reservationId)) {
         console.warn("[socket] join forbidden:", payload);
         joinedRef.current = false;
-        allowPollingRef.current = true; // mantém fallback
+        allowPollingRef.current = true;
       }
     };
 
-    // evento emitido pelo backend no chatController: "chat:message"
     const onSocketMessage = (payload) => {
       const rid = payload?.reservationId;
       const msg = payload?.message;
@@ -293,19 +291,23 @@ export default function ChatBox({
       const msgId = msg?.id;
 
       setMessages((prev) => {
-        // evita duplicar por id
         if (msgId && prev.some((m) => String(m?.id) === String(msgId))) {
           return prev;
         }
-
         const next = [...prev, msg];
-        // guarda last id (se for num/uuid)
         if (msgId != null) lastMessageIdRef.current = msgId;
         return next;
       });
 
-      // se chegou uma msg nova, atualiza "unread" e afins
+      // ✅ ACK delivered (somente quando eu sou o destinatário / não é minha msg)
       const fromOther = !isMineMsg(msg);
+      if (fromOther && s && joinedRef.current && msgId != null) {
+        try {
+          s.emit("chat:delivered", { reservationId, messageId: msgId });
+        } catch {}
+      }
+
+      // se veio do outro -> dispara "nova"
       if (!fromOther) return;
 
       if (msgId != null && String(lastNewEventIdRef.current) === String(msgId)) return;
@@ -313,9 +315,7 @@ export default function ChatBox({
 
       try {
         onNewMessage?.({ reservationId });
-      } catch {
-        // ignore
-      }
+      } catch {}
 
       window.dispatchEvent(
         new CustomEvent("chat-new-message", {
@@ -344,12 +344,54 @@ export default function ChatBox({
       }
     };
 
+    // ✅ entrega/lida em tempo real (eventos do server)
+    const onDelivered = (payload) => {
+      const rid = payload?.reservationId;
+      const mid = payload?.messageId;
+      const by = payload?.byUserId;
+
+      if (!rid || String(rid) !== String(reservationId)) return;
+      if (!mid) return;
+
+      // só marca delivered nas MINHAS mensagens, quando outro usuário confirmou recebimento
+      if (String(by) === String(currentUserId)) return;
+
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (String(m?.id) === String(mid) && isMineMsg(m)) {
+            return { ...m, status: "delivered" };
+          }
+          return m;
+        })
+      );
+    };
+
+    const onRead = (payload) => {
+      const rid = payload?.reservationId;
+      const by = payload?.byUserId;
+
+      if (!rid || String(rid) !== String(reservationId)) return;
+
+      // só faz sentido marcar "read" quando o OUTRO leu as MINHAS mensagens
+      if (String(by) === String(currentUserId)) return;
+
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (isMineMsg(m)) {
+            return { ...m, status: "read", read_at: payload?.at || m.read_at };
+          }
+          return m;
+        })
+      );
+    };
+
     s.on("joined:reservation", onJoined);
     s.on("join:reservation:error", onJoinError);
     s.on("chat:message", onSocketMessage);
+    s.on("chat:delivered", onDelivered);
+    s.on("chat:read", onRead);
 
     return () => {
-      // sai da sala ao trocar reserva/desmontar
       try {
         s.emit("leave:reservation", { reservationId });
       } catch {}
@@ -357,12 +399,15 @@ export default function ChatBox({
       s.off("joined:reservation", onJoined);
       s.off("join:reservation:error", onJoinError);
       s.off("chat:message", onSocketMessage);
+      s.off("chat:delivered", onDelivered);
+      s.off("chat:read", onRead);
     };
   }, [
     canUseSocket,
     reservationId,
     token,
     isMineMsg,
+    currentUserId,
     onNewMessage,
     scrollToBottom,
     markReadServer,
@@ -383,25 +428,7 @@ export default function ChatBox({
     setHasNewWhileAway(false);
     lastNewEventIdRef.current = null;
 
-    // abriu o chat → marca como lido no servidor
     markReadServer();
-
-    const notifyNewMessage = (msgId) => {
-      if (msgId != null && String(lastNewEventIdRef.current) === String(msgId)) return;
-      if (msgId != null) lastNewEventIdRef.current = msgId;
-
-      try {
-        onNewMessage?.({ reservationId });
-      } catch {
-        // ignore
-      }
-
-      window.dispatchEvent(
-        new CustomEvent("chat-new-message", {
-          detail: { reservationId },
-        })
-      );
-    };
 
     async function loadMessages({ isPolling = false } = {}) {
       try {
@@ -412,7 +439,6 @@ export default function ChatBox({
 
         const list = normalizeList(data);
 
-        // sempre atualiza a lista quando vem do servidor (fonte da verdade)
         setMessages((prev) => {
           if (!prev.length) return list;
 
@@ -421,12 +447,10 @@ export default function ChatBox({
           const prevLastId = prevLast?.id;
           const listLastId = listLast?.id;
 
-          // se a lista do servidor tem último diferente, substitui
           if (listLastId != null && String(listLastId) !== String(prevLastId)) {
             return list;
           }
 
-          // se não tem id, mas veio lista maior, substitui
           if (list.length > prev.length) return list;
 
           return prev;
@@ -439,53 +463,13 @@ export default function ChatBox({
 
         const lastMsg = list[list.length - 1];
 
-        // primeiro carregamento
         if (initialLoadRef.current) {
           lastMessageIdRef.current = lastMsg.id ?? null;
           initialLoadRef.current = false;
-
-          if (document.visibilityState === "visible" && isAtBottomRef.current) {
-            markReadServer();
-          }
           return;
         }
 
-        const prevId = lastMessageIdRef.current;
-        const lastId = lastMsg?.id;
-
-        // sem id não dá pra comparar, então não notifica
-        if (lastId == null) return;
-
-        const isNew = String(lastId) !== String(prevId);
-        if (!isNew) return;
-
-        lastMessageIdRef.current = lastId;
-
-        // Só trata como "nova" se veio do OUTRO usuário
-        const fromOther = !isMineMsg(lastMsg);
-        if (!fromOther) return;
-
-        notifyNewMessage(lastId);
-
-        const isVisibleTab = document.visibilityState === "visible";
-        const chatOnScreen = isInViewportRef.current;
-        const shouldAutoRead = isVisibleTab && isAtBottomRef.current;
-
-        if (isVisibleTab && !chatOnScreen) {
-          window.dispatchEvent(
-            new CustomEvent("chat-scroll-to-chat", {
-              detail: { reservationId },
-            })
-          );
-        }
-
-        if (shouldAutoRead) {
-          scrollToBottom();
-          markReadServer();
-        } else {
-          refreshUnread();
-          setHasNewWhileAway(true);
-        }
+        // sem notificação aqui; socket já cobre
       } catch (err) {
         console.error("Erro ao carregar mensagens:", err);
         if (!cancelled && !isPolling) {
@@ -496,10 +480,8 @@ export default function ChatBox({
       }
     }
 
-    // sempre faz load inicial
     loadMessages({ isPolling: false });
 
-    // inicia polling apenas se ainda permitido (fallback)
     const tick = () => {
       if (!allowPollingRef.current) return;
       loadMessages({ isPolling: true });
@@ -521,12 +503,8 @@ export default function ChatBox({
     canChat,
     currentUserId,
     markReadServer,
-    refreshUnread,
     showToast,
-    onNewMessage,
-    scrollToBottom,
     normalizeList,
-    isMineMsg,
     startPolling,
     stopPolling,
   ]);
@@ -562,10 +540,8 @@ export default function ChatBox({
       const saved = await sendChatMessage(reservationId, text, token);
 
       setMessages((prev) => {
-        // substitui o temp pelo saved
         const replaced = prev.map((m) => (m.id === tempId ? { ...saved } : m));
 
-        // se o socket já chegou com a msg salva (mesmo id), remove duplicata
         const sid = saved?.id;
         if (sid != null) {
           const seen = new Set();
@@ -578,12 +554,12 @@ export default function ChatBox({
             return true;
           });
         }
-
         return replaced;
       });
 
       lastMessageIdRef.current = saved?.id ?? lastMessageIdRef.current;
       scrollToBottom();
+      // ✅ não marca como lido aqui automaticamente (é minha msg), mas pode manter:
       markReadServer();
     } catch (err) {
       console.error("Erro ao enviar mensagem:", err);
@@ -614,18 +590,6 @@ export default function ChatBox({
     return <span className="text-[10px] opacity-70">✓ enviada</span>;
   };
 
-  // ✅ Debug
-  const DEBUG_CHAT = false;
-  useEffect(() => {
-    if (!DEBUG_CHAT) return;
-    console.log("currentUserId:", currentUserId);
-    console.log(
-      "messages:",
-      messages.map((m) => ({ id: m.id, sender: getSenderId(m) }))
-    );
-  }, [DEBUG_CHAT, currentUserId, messages, getSenderId]);
-
-  // ✅ Agora pode retornar condicional sem quebrar hooks
   if (!canChat) {
     return (
       <div className="mt-6 p-4 rounded-2xl bg-[#FFF7E0] border border-[#EBCBA9] text-sm text-[#5A3A22]">
@@ -676,8 +640,7 @@ export default function ChatBox({
 
           const previous = messages[index - 1];
           const previousSender = previous ? getSenderId(previous) : null;
-          const isGrouped =
-            previous && String(previousSender) === String(senderId);
+          const isGrouped = previous && String(previousSender) === String(senderId);
 
           return (
             <div
