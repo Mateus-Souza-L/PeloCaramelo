@@ -1,5 +1,6 @@
 // frontend/src/components/ChatBox.jsx
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo } from "react";
+import { io } from "socket.io-client";
 import {
   getChatMessages,
   sendChatMessage,
@@ -7,6 +8,8 @@ import {
   markChatAsRead,
 } from "../api/chatApi";
 import { useToast } from "./ToastProvider";
+
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:4000";
 
 export default function ChatBox({
   reservationId,
@@ -34,6 +37,10 @@ export default function ChatBox({
 
   const lastNewEventIdRef = useRef(null);
   const isInViewportRef = useRef(true);
+
+  // Socket refs
+  const socketRef = useRef(null);
+  const joinedRef = useRef(false);
 
   // ---------------------------
   // Helpers de autor da mensagem
@@ -185,7 +192,149 @@ export default function ChatBox({
     return list;
   }, []);
 
-  // Carregar mensagens + polling
+  // --------------------------------------------
+  // Socket.IO: conecta e entra na sala da reserva
+  // --------------------------------------------
+  const canUseSocket = useMemo(() => {
+    return !!(token && reservationId && canChat);
+  }, [token, reservationId, canChat]);
+
+  useEffect(() => {
+    if (!canUseSocket) return;
+
+    // cria conexão uma vez (por token)
+    if (!socketRef.current) {
+      socketRef.current = io(API_BASE_URL, {
+        transports: ["websocket"],
+        auth: { token },
+        autoConnect: true,
+      });
+
+      // se der erro de auth, não quebra o chat (polling continua)
+      socketRef.current.on("connect_error", (err) => {
+        console.warn("[socket] connect_error:", err?.message || err);
+      });
+    }
+
+    const s = socketRef.current;
+
+    // entra na sala desta reserva
+    joinedRef.current = false;
+    s.emit("join:reservation", { reservationId });
+
+    const onJoined = (payload) => {
+      if (String(payload?.reservationId) === String(reservationId)) {
+        joinedRef.current = true;
+      }
+    };
+
+    const onJoinError = (payload) => {
+      if (String(payload?.reservationId) === String(reservationId)) {
+        console.warn("[socket] join forbidden:", payload);
+        joinedRef.current = false;
+      }
+    };
+
+    // evento emitido pelo backend no chatController: "chat:message"
+    const onSocketMessage = (payload) => {
+      const rid = payload?.reservationId;
+      const msg = payload?.message;
+
+      if (!rid || String(rid) !== String(reservationId)) return;
+      if (!msg) return;
+
+      // evita duplicar caso o polling já trouxe (ou se chegarem eventos repetidos)
+      const msgId = msg?.id;
+      if (msgId && String(lastMessageIdRef.current) === String(msgId)) return;
+
+      setMessages((prev) => {
+        const exists = msgId
+          ? prev.some((m) => String(m?.id) === String(msgId))
+          : false;
+        if (exists) return prev;
+
+        const next = [...prev, msg];
+        lastMessageIdRef.current = msgId ?? lastMessageIdRef.current;
+        return next;
+      });
+
+      // só trata como "nova" se veio do OUTRO usuário
+      const fromOther = !isMineMsg(msg);
+      if (!fromOther) return;
+
+      if (msgId != null && String(lastNewEventIdRef.current) === String(msgId))
+        return;
+      lastNewEventIdRef.current = msgId ?? lastNewEventIdRef.current;
+
+      try {
+        onNewMessage?.({ reservationId });
+      } catch {
+        // ignore
+      }
+
+      window.dispatchEvent(
+        new CustomEvent("chat-new-message", {
+          detail: { reservationId },
+        })
+      );
+
+      const isVisibleTab = document.visibilityState === "visible";
+      const chatOnScreen = isInViewportRef.current;
+      const shouldAutoRead = isVisibleTab && isAtBottomRef.current;
+
+      if (isVisibleTab && !chatOnScreen) {
+        window.dispatchEvent(
+          new CustomEvent("chat-scroll-to-chat", {
+            detail: { reservationId },
+          })
+        );
+      }
+
+      if (shouldAutoRead) {
+        scrollToBottom();
+        markReadServer();
+      } else {
+        refreshUnread();
+        setHasNewWhileAway(true);
+      }
+    };
+
+    s.on("joined:reservation", onJoined);
+    s.on("join:reservation:error", onJoinError);
+    s.on("chat:message", onSocketMessage);
+
+    return () => {
+      // sai da sala ao trocar reserva/desmontar
+      try {
+        s.emit("leave:reservation", { reservationId });
+      } catch {}
+      s.off("joined:reservation", onJoined);
+      s.off("join:reservation:error", onJoinError);
+      s.off("chat:message", onSocketMessage);
+    };
+  }, [
+    canUseSocket,
+    reservationId,
+    token,
+    isMineMsg,
+    onNewMessage,
+    scrollToBottom,
+    markReadServer,
+    refreshUnread,
+  ]);
+
+  // Opcional: desconectar socket quando ChatBox some totalmente
+  // (não é obrigatório; pode deixar conexão viva pro app inteiro)
+  useEffect(() => {
+    return () => {
+      // não desconecta aqui para não "piscar" se a tela re-renderizar
+      // se quiser desligar no logout, faça isso no AuthContext
+    };
+  }, []);
+
+  // --------------------------------------------
+  // Carregar mensagens + polling (fallback)
+  // --------------------------------------------
   useEffect(() => {
     if (!canChat || !reservationId || !token || !currentUserId) return;
 
@@ -226,7 +375,24 @@ export default function ChatBox({
         if (cancelled) return;
 
         const list = normalizeList(data);
-        setMessages(list);
+
+        // ✅ se socket estiver entregando, ainda assim manter list ordenada:
+        setMessages((prev) => {
+          // se ainda não tem nada, usa list direto
+          if (!prev.length) return list;
+
+          // se o polling trouxe algo novo, substitui pelo list (fonte da verdade)
+          const prevLast = prev[prev.length - 1];
+          const listLast = list[list.length - 1];
+          const prevLastId = prevLast?.id;
+          const listLastId = listLast?.id;
+
+          if (listLastId && String(listLastId) !== String(prevLastId)) {
+            return list;
+          }
+
+          return prev;
+        });
 
         if (!list.length) {
           initialLoadRef.current = false;
