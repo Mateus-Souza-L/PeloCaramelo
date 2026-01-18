@@ -44,8 +44,7 @@ function canAccessChat(reservation, userId) {
   const { tutorId, caregiverId } = getResIds(reservation);
 
   const isTutor = tutorId != null && String(tutorId) === String(userId);
-  const isCaregiver =
-    caregiverId != null && String(caregiverId) === String(userId);
+  const isCaregiver = caregiverId != null && String(caregiverId) === String(userId);
 
   return { ok: isTutor || isCaregiver, isTutor, isCaregiver };
 }
@@ -78,10 +77,11 @@ function ensureChatReadable(reservation, res) {
   const st = normalizeStatus(reservation?.status);
 
   if (!CHAT_READABLE_STATUSES.has(st)) {
-    return res.status(403).json({
+    res.status(403).json({
       error: "O chat só é liberado após a reserva ser aceita.",
       status: reservation?.status,
     });
+    return false;
   }
   return true;
 }
@@ -90,16 +90,16 @@ function ensureChatWritable(reservation, res) {
   const st = normalizeStatus(reservation?.status);
 
   if (!CHAT_WRITABLE_STATUSES.has(st)) {
-    return res.status(403).json({
-      error:
-        "O chat só permite envio de mensagens quando a reserva está aceita.",
+    res.status(403).json({
+      error: "O chat só permite envio de mensagens quando a reserva está aceita.",
       status: reservation?.status,
     });
+    return false;
   }
   return true;
 }
 
-// ✅ nome da sala por reserva
+// ✅ nome da sala por reserva (padronizado com socket.js e ChatBox.jsx)
 function reservationRoom(reservationId) {
   return `reservation:${String(reservationId)}`;
 }
@@ -113,8 +113,8 @@ async function sendChatMessageController(req, res) {
     if (!userId) return;
 
     const { reservationId } = req.params;
-    const rawMessage = req.body?.message;
 
+    const rawMessage = req.body?.message;
     const message = typeof rawMessage === "string" ? rawMessage.trim() : "";
     if (!message) {
       return res.status(400).json({ error: "Mensagem obrigatória." });
@@ -137,9 +137,9 @@ async function sendChatMessageController(req, res) {
     const toUserId = access.isTutor ? caregiverId : tutorId;
 
     if (toUserId == null) {
-      return res
-        .status(500)
-        .json({ error: "Reserva inválida (destinatário ausente)." });
+      return res.status(500).json({
+        error: "Reserva inválida (destinatário ausente).",
+      });
     }
 
     const savedMessage = await createChatMessage({
@@ -149,16 +149,13 @@ async function sendChatMessageController(req, res) {
       message,
     });
 
-    // ✅ Socket.IO: emite para a sala da reserva
+    // ✅ Socket.IO: emite para a sala da reserva (tempo real)
     const io = req.app?.get("io");
     if (io) {
       io.to(reservationRoom(reservation.id)).emit("chat:message", {
         reservationId: reservation.id,
         message: savedMessage,
       });
-
-      // (opcional) ping específico pro destinatário, se você usar sala por usuário
-      // io.to(`user:${String(toUserId)}`).emit("chat:unread", { reservationId: reservation.id });
     }
 
     return res.status(201).json({ message: savedMessage });
@@ -221,7 +218,7 @@ async function markChatAsReadController(req, res) {
       });
     }
 
-    // ✅ NÃO bloquear por status aqui
+    // ✅ NÃO bloquear por status aqui (permite limpar unread mesmo após finalizar)
     const updated = await markMessagesAsRead({
       reservationId: reservation.id,
       userId,
