@@ -20,7 +20,7 @@ export default function Navbar() {
   const isCaregiver = role === "caregiver";
   const isAdminLike = role === "admin" || role === "admin_master";
 
-  const canUseBell = isTutor || isCaregiver; // admin tem acesso ao painel, mas não usa contadores
+  const canUseBell = isTutor || isCaregiver; // admin não usa contadores
 
   const [chatUnreadIds, setChatUnreadIds] = useState([]);
   const [reservationUnreadCount, setReservationUnreadCount] = useState(0);
@@ -40,6 +40,7 @@ export default function Navbar() {
 
   /* ================= CHAT (backend-driven) ================= */
 
+  // ✅ 1 fetch inicial (login/reload) — depois o estado vem via eventos (ChatBox / socket)
   const loadUnreadChatFromServer = useCallback(async () => {
     if (!user || !token || isAdminLike) {
       setChatUnreadIds([]);
@@ -54,6 +55,7 @@ export default function Navbar() {
 
       setChatUnreadIds(ids);
 
+      // mantém compat com o resto do app (Navbar/ChatBox/Dashboard)
       window.dispatchEvent(
         new CustomEvent("chat-unread-changed", {
           detail: { list: ids },
@@ -78,9 +80,7 @@ export default function Navbar() {
     }
 
     try {
-      const endpoint = isCaregiver
-        ? "/reservations/caregiver"
-        : "/reservations/tutor";
+      const endpoint = isCaregiver ? "/reservations/caregiver" : "/reservations/tutor";
 
       const data = await authRequest(endpoint, token);
       const apiRes = Array.isArray(data?.reservations) ? data.reservations : [];
@@ -90,17 +90,13 @@ export default function Navbar() {
         if (r?.id == null) continue;
         const idStr = String(r.id);
 
-        const tutorRating =
-          r.tutor_rating == null ? null : Number(r.tutor_rating);
-        const caregiverRating =
-          r.caregiver_rating == null ? null : Number(r.caregiver_rating);
+        const tutorRating = r.tutor_rating == null ? null : Number(r.tutor_rating);
+        const caregiverRating = r.caregiver_rating == null ? null : Number(r.caregiver_rating);
 
         currentMap[idStr] = {
           status: r.status ?? "Pendente",
           tutorRating: Number.isFinite(tutorRating) ? tutorRating : null,
-          caregiverRating: Number.isFinite(caregiverRating)
-            ? caregiverRating
-            : null,
+          caregiverRating: Number.isFinite(caregiverRating) ? caregiverRating : null,
         };
       }
 
@@ -240,7 +236,7 @@ export default function Navbar() {
         setReservationUnreadCount(0);
       }
     }
-  }, [user, token, isAdminLike, isTutor, isCaregiver, isCaregiver, role]);
+  }, [user, token, isAdminLike, isTutor, isCaregiver, role]);
 
   /* ================= LISTENERS ================= */
 
@@ -260,10 +256,7 @@ export default function Navbar() {
     };
 
     window.addEventListener("chat-unread-changed", handleChatUnreadChanged);
-    window.addEventListener(
-      "reservation-notifications-changed",
-      handleReservationNotifChanged
-    );
+    window.addEventListener("reservation-notifications-changed", handleReservationNotifChanged);
 
     return () => {
       window.removeEventListener("chat-unread-changed", handleChatUnreadChanged);
@@ -274,37 +267,33 @@ export default function Navbar() {
     };
   }, [user?.id]);
 
-  /* ================= POLLING ================= */
+  /* ================= FETCH INIT (SEM polling de chat) ================= */
 
   useEffect(() => {
-    if (!user || !token) {
+    if (!user || !token || isAdminLike) {
       setChatUnreadIds([]);
       setReservationUnreadCount(0);
       return;
     }
 
-    if (isAdminLike) {
-      setChatUnreadIds([]);
-      setReservationUnreadCount(0);
-      return;
-    }
+    // ✅ faz uma vez ao entrar (ou trocar usuário)
+    loadUnreadChatFromServer();
+    loadReservationEventsFromServer();
+  }, [user?.id, token, isAdminLike, loadUnreadChatFromServer, loadReservationEventsFromServer]);
 
-    const fetchAll = async () => {
-      await loadUnreadChatFromServer();
-      await loadReservationEventsFromServer();
-    };
+  /* ================= POLLING APENAS RESERVAS ================= */
 
-    fetchAll();
-    const intervalId = setInterval(fetchAll, 15000);
+  useEffect(() => {
+    if (!user || !token || isAdminLike) return;
+    if (!isTutor && !isCaregiver) return;
+
+    // ✅ mantém seu polling existente SOMENTE para reservas (snapshot/compare)
+    const intervalId = setInterval(() => {
+      loadReservationEventsFromServer();
+    }, 15000);
+
     return () => clearInterval(intervalId);
-  }, [
-    user?.id,
-    role,
-    token,
-    isAdminLike,
-    loadUnreadChatFromServer,
-    loadReservationEventsFromServer,
-  ]);
+  }, [user?.id, token, isAdminLike, isTutor, isCaregiver, loadReservationEventsFromServer]);
 
   // Sino: admin vai pro /admin/users; tutor/caregiver vai pro /dashboard?tab=reservas
   const handleBellClick = () => {
@@ -392,10 +381,7 @@ export default function Navbar() {
         )}
 
         {!user ? (
-          <Link
-            to="/login"
-            className="bg-[#95301F] px-4 py-2 rounded-lg font-semibold"
-          >
+          <Link to="/login" className="bg-[#95301F] px-4 py-2 rounded-lg font-semibold">
             Login
           </Link>
         ) : (
