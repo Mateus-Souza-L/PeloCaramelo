@@ -8,7 +8,7 @@ const http = require("http");
 const app = express();
 
 /* ===========================================================
-   CORS
+   ✅ CORS
    =========================================================== */
 const allowedOrigins = (process.env.CORS_ORIGIN || "http://localhost:5173")
   .split(",")
@@ -23,6 +23,7 @@ function isAllowedVercelPreview(origin) {
 
 const corsOptions = {
   origin: function (origin, callback) {
+    // requests server-to-server / curl / health check
     if (!origin) return callback(null, true);
 
     if (allowedOrigins.includes(origin) || isAllowedVercelPreview(origin)) {
@@ -40,18 +41,18 @@ app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
 
 /* ===========================================================
-   Body parsers
+   ✅ Body parsers
    =========================================================== */
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 /* ===========================================================
-   DB
+   ✅ DB
    =========================================================== */
 const pool = require("./config/db");
 
 /* ===========================================================
-   HEALTHCHECKS
+   ✅ HEALTHCHECKS
    =========================================================== */
 app.get("/health", (req, res) => {
   res.status(200).json({ ok: true, status: "up" });
@@ -67,12 +68,12 @@ app.get("/health/db", async (req, res) => {
 });
 
 /* ===========================================================
-   Logs
+   ✅ Logs
    =========================================================== */
 app.use(morgan("dev"));
 
 /* ===========================================================
-   Rotas
+   ✅ Rotas
    =========================================================== */
 const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes");
@@ -86,7 +87,7 @@ const availabilityRoutes = require("./routes/availabilityRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
 
 /* ===========================================================
-   Middlewares
+   ✅ Middlewares
    =========================================================== */
 const authMiddleware = require("./middleware/authMiddleware");
 
@@ -183,19 +184,19 @@ async function blockedGuard(req, res, next) {
 }
 
 /* ===========================================================
-   Rotas públicas
+   ✅ Rotas públicas
    =========================================================== */
 app.use("/auth", authRoutes);
 app.use("/caregivers", caregiverRoutes);
 
 /* ===========================================================
-   Rotas mistas
+   ✅ Rotas mistas
    =========================================================== */
 app.use("/availability", availabilityRoutes);
 app.use("/notifications", notificationRoutes);
 
 /* ===========================================================
-   Rotas protegidas (com guard de bloqueio)
+   ✅ Rotas protegidas (com guard de bloqueio)
    =========================================================== */
 app.use("/users", authMiddleware, blockedGuard, userRoutes);
 app.use("/reservations", authMiddleware, blockedGuard, reservationRoutes);
@@ -203,17 +204,17 @@ app.use("/chat", authMiddleware, blockedGuard, chatRoutes);
 app.use("/pets", authMiddleware, blockedGuard, petRoutes);
 
 /* ===========================================================
-   Rotas admin
+   ✅ Rotas admin
    =========================================================== */
 app.use("/admin", adminRoutes);
 
 /* ===========================================================
-   Reviews
+   ✅ Reviews
    =========================================================== */
 app.use("/reviews", reviewRoutes);
 
 /* ===========================================================
-   Root (assinatura de build)
+   ✅ Root (assinatura de build)
    =========================================================== */
 app.get("/", (req, res) => {
   res.json({
@@ -225,7 +226,7 @@ app.get("/", (req, res) => {
 });
 
 /* ===========================================================
-   Tratamento de erros
+   ✅ Tratamento de erros
    =========================================================== */
 app.use((err, req, res, next) => {
   const isJsonSyntaxError =
@@ -264,7 +265,7 @@ app.use((err, req, res, next) => {
 });
 
 /* ===========================================================
-   Start (HTTP server + Socket.IO)
+   ✅ Start (HTTP server + Socket.IO)
    =========================================================== */
 const PORT = process.env.PORT || 4000;
 

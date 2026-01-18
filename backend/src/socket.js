@@ -33,7 +33,7 @@ function corsOriginChecker(allowedOrigins) {
 }
 
 /* ===========================================================
-   Room helper (padronizado)
+   Room helper
    =========================================================== */
 function reservationRoom(reservationId) {
   return `reservation:${String(reservationId)}`;
@@ -72,9 +72,7 @@ async function canJoinReservationRoom(userId, reservationId) {
 }
 
 /* ===========================================================
-   Anti-abuse (rate limits in-memory)
-   - Observação: em múltiplas instâncias, isso é por-instância.
-   - Ainda assim já corta abuso comum e reconexões frenéticas.
+   Anti-abuse
    =========================================================== */
 function nowMs() {
   return Date.now();
@@ -90,7 +88,6 @@ function getClientIp(socket) {
 }
 
 function makeWindowLimiter({ maxHits, windowMs, blockMs }) {
-  // key -> { hits: number[], blockedUntil: number }
   const store = new Map();
 
   function pruneOld(hits, cutoff) {
@@ -136,26 +133,24 @@ function makeWindowLimiter({ maxHits, windowMs, blockMs }) {
   return { hit, gc };
 }
 
-// Limites (ajuste se quiser)
 const connectLimiter = makeWindowLimiter({
-  maxHits: 12, // conexões/reconexões por minuto
+  maxHits: 12,
   windowMs: 60 * 1000,
   blockMs: 2 * 60 * 1000,
 });
 
 const joinLimiter = makeWindowLimiter({
-  maxHits: 30, // joins por minuto
+  maxHits: 30,
   windowMs: 60 * 1000,
   blockMs: 60 * 1000,
 });
 
 const ackLimiter = makeWindowLimiter({
-  maxHits: 120, // acks (delivered/read) por minuto
+  maxHits: 120,
   windowMs: 60 * 1000,
   blockMs: 60 * 1000,
 });
 
-// GC periódico
 setInterval(() => {
   try {
     connectLimiter.gc();
@@ -163,6 +158,65 @@ setInterval(() => {
     ackLimiter.gc();
   } catch {}
 }, 60 * 1000).unref?.();
+
+/* ===========================================================
+   DB helpers (persistência de status)
+   IMPORTANTE: UPDATE sempre na TABELA REAL: chat_messages_table
+   =========================================================== */
+async function persistDelivered({ reservationId, messageId, userId }) {
+  try {
+    const rid = Number(reservationId);
+    const mid = Number(messageId);
+    const uid = Number(userId);
+    if (!Number.isFinite(rid) || !Number.isFinite(mid) || !Number.isFinite(uid)) return 0;
+
+    const r = await pool.query(
+      `
+      UPDATE public.chat_messages_table
+      SET delivered_at = COALESCE(delivered_at, NOW())
+      WHERE id = $1
+        AND reservation_id = $2
+        AND receiver_id = $3
+        AND delivered_at IS NULL
+      `,
+      [mid, rid, uid]
+    );
+
+    return r.rowCount || 0;
+  } catch (e) {
+    console.error("[socket] persistDelivered error:", e);
+    return 0;
+  }
+}
+
+async function persistReadAll({ reservationId, userId }) {
+  try {
+    const rid = Number(reservationId);
+    const uid = Number(userId);
+    if (!Number.isFinite(rid) || !Number.isFinite(uid)) return 0;
+
+    const r = await pool.query(
+      `
+      UPDATE public.chat_messages_table
+      SET
+        is_read = TRUE,
+        read_at = COALESCE(read_at, NOW())
+      WHERE reservation_id = $1
+        AND receiver_id = $2
+        AND (
+          (read_at IS NULL)
+          OR (is_read IS NULL OR is_read = FALSE)
+        )
+      `,
+      [rid, uid]
+    );
+
+    return r.rowCount || 0;
+  } catch (e) {
+    console.error("[socket] persistReadAll error:", e);
+    return 0;
+  }
+}
 
 /* ===========================================================
    Init
@@ -176,12 +230,10 @@ function initSocket(httpServer) {
       credentials: true,
       methods: ["GET", "POST"],
     },
-    // ajuda em redes instáveis
     pingInterval: 25000,
     pingTimeout: 20000,
   });
 
-  // ✅ auth + anti-reconexão no handshake
   io.use((socket, next) => {
     try {
       const token =
@@ -197,16 +249,13 @@ function initSocket(httpServer) {
       const role = String(decoded.role || "");
       socket.user = { id: userId, role };
 
-      // estado por conexão
       socket.data.allowedReservationIds = new Set();
 
       const ip = getClientIp(socket);
       const key = `${ip}:${userId}`;
 
       const r = connectLimiter.hit(key);
-      if (!r.ok) {
-        return next(new Error("RATE_LIMITED"));
-      }
+      if (!r.ok) return next(new Error("RATE_LIMITED"));
 
       return next();
     } catch {
@@ -226,32 +275,24 @@ function initSocket(httpServer) {
         ? socket.data.allowedReservationIds
         : new Set();
 
-    // ✅ Join na sala da reserva
     socket.on("join:reservation", async ({ reservationId } = {}) => {
       const rid = String(reservationId || "").trim();
       if (!rid) return;
 
       const jr = joinLimiter.hit(`${baseKey}:join`);
       if (!jr.ok) {
-        socket.emit("join:reservation:error", {
-          reservationId: rid,
-          error: "RATE_LIMITED",
-        });
+        socket.emit("join:reservation:error", { reservationId: rid, error: "RATE_LIMITED" });
         return;
       }
 
       if (!isAdminLike) {
         const ok = await canJoinReservationRoom(userId, rid);
         if (!ok) {
-          socket.emit("join:reservation:error", {
-            reservationId: rid,
-            error: "FORBIDDEN",
-          });
+          socket.emit("join:reservation:error", { reservationId: rid, error: "FORBIDDEN" });
           return;
         }
       }
 
-      // ✅ whitelista reserva nesta conexão
       allowedSet.add(String(rid));
       socket.data.allowedReservationIds = allowedSet;
 
@@ -275,14 +316,9 @@ function initSocket(httpServer) {
       } catch {}
     });
 
-    /* ===========================================================
-       ✅ Status em tempo real (entregue / lida)
-
-       Regras:
-       - ACK só vale se a conexão está whitelisted naquela reserva
-       - ACK rate-limited
-       =========================================================== */
-
+    // =========================
+    // ✅ delivered (persist + emit)
+    // =========================
     socket.on("chat:delivered", async ({ reservationId, messageId } = {}) => {
       const rid = String(reservationId || "").trim();
       const mid = messageId != null ? String(messageId).trim() : "";
@@ -291,13 +327,14 @@ function initSocket(httpServer) {
       const ar = ackLimiter.hit(`${baseKey}:ack`);
       if (!ar.ok) return;
 
-      // ✅ precisa ter feito join válido antes (whitelist)
       if (!isAdminLike && !allowedSet.has(String(rid))) return;
 
-      // ✅ e precisa estar na sala (redundância segura)
       const room = reservationRoom(rid);
       const isInRoom = socket.rooms?.has?.(room);
       if (!isInRoom) return;
+
+      // ✅ persiste no banco (tabela real)
+      await persistDelivered({ reservationId: rid, messageId: mid, userId });
 
       io.to(room).emit("chat:delivered", {
         reservationId: rid,
@@ -307,6 +344,9 @@ function initSocket(httpServer) {
       });
     });
 
+    // =========================
+    // ✅ read (persist + emit)
+    // =========================
     socket.on("chat:read", async ({ reservationId } = {}) => {
       const rid = String(reservationId || "").trim();
       if (!rid) return;
@@ -320,10 +360,13 @@ function initSocket(httpServer) {
       const isInRoom = socket.rooms?.has?.(room);
       if (!isInRoom) return;
 
+      const updated = await persistReadAll({ reservationId: rid, userId });
+
       io.to(room).emit("chat:read", {
         reservationId: rid,
         byUserId: userId,
         at: new Date().toISOString(),
+        updated: Number(updated) || 0,
       });
     });
   });
