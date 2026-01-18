@@ -46,6 +46,15 @@ export default function ChatBox({
   // Fallback polling control
   const pollingTimerRef = useRef(null);
   const allowPollingRef = useRef(true);
+  const pollingTickRef = useRef(null);
+
+  // ✅ cooldown local se o backend rate-limitou conexão
+  const socketCooldownUntilRef = useRef(0);
+  const SOCKET_COOLDOWN_MS = 60_000;
+
+  // ✅ anti-spam de refresh unread
+  const lastUnreadRefreshAtRef = useRef(0);
+  const UNREAD_REFRESH_COOLDOWN_MS = 4000;
 
   // ✅ anti-spam de "mark read"
   const lastMarkReadAtRef = useRef(0);
@@ -87,34 +96,66 @@ export default function ChatBox({
   }, []);
 
   /** --------- NOTIFICAÇÃO GLOBAL (Navbar/Dashboard) VIA BACKEND --------- **/
-  const refreshUnread = useCallback(async () => {
-    if (!token) return;
-    try {
-      const ids = await getUnreadChats(token); // string[]
-      window.dispatchEvent(
-        new CustomEvent("chat-unread-changed", { detail: { list: ids } })
-      );
-    } catch {
-      // silencioso
+  const refreshUnread = useCallback(
+    async ({ force = false } = {}) => {
+      if (!token) return;
+
+      const now = Date.now();
+      if (!force && now - lastUnreadRefreshAtRef.current < UNREAD_REFRESH_COOLDOWN_MS) {
+        return;
+      }
+      lastUnreadRefreshAtRef.current = now;
+
+      try {
+        const ids = await getUnreadChats(token); // string[]
+        window.dispatchEvent(
+          new CustomEvent("chat-unread-changed", { detail: { list: ids } })
+        );
+      } catch {
+        // silencioso
+      }
+    },
+    [token]
+  );
+
+  // ✅ liga/desliga polling de forma determinística
+  const stopPolling = useCallback(() => {
+    if (pollingTimerRef.current) {
+      clearInterval(pollingTimerRef.current);
+      pollingTimerRef.current = null;
     }
-  }, [token]);
+  }, []);
+
+  const setPollingEnabled = useCallback(
+    (enabled) => {
+      allowPollingRef.current = !!enabled;
+
+      if (!enabled) {
+        stopPolling();
+        return;
+      }
+
+      // se for habilitar: só liga se já tiver tick
+      if (pollingTickRef.current) {
+        stopPolling();
+        pollingTimerRef.current = setInterval(() => {
+          pollingTickRef.current?.();
+        }, 8000);
+      }
+    },
+    [stopPolling]
+  );
 
   // ✅ marca como lido com throttle e só chama /chat/unread quando mudou algo
   const markReadServer = useCallback(
     async ({ force = false } = {}) => {
       if (!reservationId || !token) return;
 
-      // Se a aba não está visível, não vale a pena spammar read
       if (!force && document.visibilityState !== "visible") return;
-
-      // Só faz sentido quando está no bottom (a menos que force)
       if (!force && !isAtBottomRef.current) return;
 
-      // cooldown
       const now = Date.now();
       if (!force && now - lastMarkReadAtRef.current < MARK_READ_COOLDOWN_MS) return;
-
-      // evita concorrência
       if (markReadInFlightRef.current) return;
 
       markReadInFlightRef.current = true;
@@ -124,14 +165,13 @@ export default function ChatBox({
         const resp = await markChatAsRead(reservationId, token);
         const updated = Number(resp?.updated || 0);
 
-        // ✅ só atualiza unread se realmente marcou algo como lido
         if (updated > 0) {
-          await refreshUnread();
+          await refreshUnread({ force: true });
         }
 
         setHasNewWhileAway(false);
 
-        // ✅ emite "read" via socket (útil para tempo real)
+        // ✅ emite "read" via socket (tempo real)
         const s = socketRef.current;
         if (s && joinedRef.current) {
           try {
@@ -157,9 +197,7 @@ export default function ChatBox({
 
     if (isAtBottomRef.current) {
       setHasNewWhileAway(false);
-
-      // ✅ throttle interno evita spam
-      markReadServer();
+      markReadServer(); // throttle interno
     }
   };
 
@@ -190,8 +228,6 @@ export default function ChatBox({
 
       scrollToBottom();
       isAtBottomRef.current = true;
-
-      // ✅ força 1x (mas com throttle/cooldown)
       markReadServer({ force: true });
     };
 
@@ -244,25 +280,16 @@ export default function ChatBox({
     return !!(token && reservationId && canChat);
   }, [token, reservationId, canChat]);
 
-  const stopPolling = useCallback(() => {
-    if (pollingTimerRef.current) {
-      clearInterval(pollingTimerRef.current);
-      pollingTimerRef.current = null;
-    }
-  }, []);
-
-  const startPolling = useCallback(
-    (fn) => {
-      stopPolling();
-      pollingTimerRef.current = setInterval(() => {
-        fn?.();
-      }, 8000);
-    },
-    [stopPolling]
-  );
-
   useEffect(() => {
     if (!canUseSocket) return;
+
+    // cooldown local: evita reconectar em loop se backend rate limitou
+    const now = Date.now();
+    if (socketCooldownUntilRef.current > now) {
+      // durante cooldown, mantém polling ligado
+      setPollingEnabled(true);
+      return;
+    }
 
     if (!socketRef.current) {
       socketRef.current = io(API_BASE_URL, {
@@ -272,44 +299,65 @@ export default function ChatBox({
         reconnection: true,
         reconnectionAttempts: 6,
         reconnectionDelay: 800,
+        reconnectionDelayMax: 5000,
       });
 
       socketRef.current.on("connect", () => {
         connectedRef.current = true;
+        // conectado não significa joined ainda, então não desliga polling aqui
       });
 
-      socketRef.current.on("disconnect", () => {
+      socketRef.current.on("disconnect", (reason) => {
         connectedRef.current = false;
         joinedRef.current = false;
-        allowPollingRef.current = true;
+        setPollingEnabled(true);
+
+        // se cair por transporte, deixa tentar; se cair por "io server disconnect", ainda tenta
+        // (controle real fica no connect_error)
+        // console.log("[socket] disconnect:", reason);
       });
 
       socketRef.current.on("connect_error", (err) => {
-        console.warn("[socket] connect_error:", err?.message || err);
+        const msg = String(err?.message || "");
+        console.warn("[socket] connect_error:", msg || err);
+
         connectedRef.current = false;
         joinedRef.current = false;
-        allowPollingRef.current = true;
+        setPollingEnabled(true);
+
+        // ✅ se foi rate-limited: entra em cooldown local
+        if (msg.includes("RATE_LIMITED")) {
+          socketCooldownUntilRef.current = Date.now() + SOCKET_COOLDOWN_MS;
+          try {
+            socketRef.current?.disconnect();
+          } catch {}
+        }
       });
     }
 
     const s = socketRef.current;
 
+    // entra na sala desta reserva
     joinedRef.current = false;
     s.emit("join:reservation", { reservationId });
 
     const onJoined = (payload) => {
       if (String(payload?.reservationId) === String(reservationId)) {
         joinedRef.current = true;
-        allowPollingRef.current = false;
-        stopPolling();
+        setPollingEnabled(false); // ✅ desliga polling de forma definitiva enquanto joined
       }
     };
 
     const onJoinError = (payload) => {
       if (String(payload?.reservationId) === String(reservationId)) {
-        console.warn("[socket] join forbidden:", payload);
+        console.warn("[socket] join error:", payload);
         joinedRef.current = false;
-        allowPollingRef.current = true;
+        setPollingEnabled(true);
+
+        // se o backend limitou join, entra em cooldown local (menos agressivo)
+        if (String(payload?.error || "") === "RATE_LIMITED") {
+          socketCooldownUntilRef.current = Date.now() + 30_000;
+        }
       }
     };
 
@@ -333,7 +381,7 @@ export default function ChatBox({
 
       // ✅ ACK delivered
       const fromOther = !isMineMsg(msg);
-      if (fromOther && s && joinedRef.current && msgId != null) {
+      if (fromOther && joinedRef.current && msgId != null) {
         try {
           s.emit("chat:delivered", { reservationId, messageId: msgId });
         } catch {}
@@ -349,9 +397,7 @@ export default function ChatBox({
       } catch {}
 
       window.dispatchEvent(
-        new CustomEvent("chat-new-message", {
-          detail: { reservationId },
-        })
+        new CustomEvent("chat-new-message", { detail: { reservationId } })
       );
 
       const isVisibleTab = document.visibilityState === "visible";
@@ -360,9 +406,7 @@ export default function ChatBox({
 
       if (isVisibleTab && !chatOnScreen) {
         window.dispatchEvent(
-          new CustomEvent("chat-scroll-to-chat", {
-            detail: { reservationId },
-          })
+          new CustomEvent("chat-scroll-to-chat", { detail: { reservationId } })
         );
       }
 
@@ -370,10 +414,8 @@ export default function ChatBox({
         scrollToBottom();
         markReadServer();
       } else {
-        // ✅ evita spam: aqui não chama refreshUnread direto, só marca flag
         setHasNewWhileAway(true);
-        // e opcionalmente pode atualizar unread 1x com cooldown:
-        refreshUnread();
+        refreshUnread(); // com cooldown
       }
     };
 
@@ -424,6 +466,9 @@ export default function ChatBox({
         s.emit("leave:reservation", { reservationId });
       } catch {}
 
+      joinedRef.current = false;
+      setPollingEnabled(true);
+
       s.off("joined:reservation", onJoined);
       s.off("join:reservation:error", onJoinError);
       s.off("chat:message", onSocketMessage);
@@ -434,13 +479,13 @@ export default function ChatBox({
     canUseSocket,
     reservationId,
     token,
-    isMineMsg,
     currentUserId,
+    isMineMsg,
     onNewMessage,
     scrollToBottom,
     markReadServer,
     refreshUnread,
-    stopPolling,
+    setPollingEnabled,
   ]);
 
   // --------------------------------------------
@@ -476,10 +521,12 @@ export default function ChatBox({
           const prevLastId = prevLast?.id;
           const listLastId = listLast?.id;
 
+          // se mudou o último id, troca pela fonte da verdade
           if (listLastId != null && String(listLastId) !== String(prevLastId)) {
             return list;
           }
 
+          // se polling trouxe mais msgs, troca
           if (list.length > prev.length) return list;
 
           return prev;
@@ -507,21 +554,24 @@ export default function ChatBox({
       }
     }
 
-    loadMessages({ isPolling: false });
-
-    const tick = () => {
+    // tick do polling fica “registrado” num ref (pra setPollingEnabled saber o que rodar)
+    pollingTickRef.current = () => {
       if (!allowPollingRef.current) return;
       loadMessages({ isPolling: true });
     };
 
-    if (allowPollingRef.current) {
-      startPolling(tick);
+    loadMessages({ isPolling: false });
+
+    // ✅ regra: se ainda NÃO joined, polling pode ficar ligado; se joined, fica off
+    if (joinedRef.current) {
+      setPollingEnabled(false);
     } else {
-      stopPolling();
+      setPollingEnabled(true);
     }
 
     return () => {
       cancelled = true;
+      pollingTickRef.current = null;
       stopPolling();
     };
   }, [
@@ -532,7 +582,7 @@ export default function ChatBox({
     markReadServer,
     showToast,
     normalizeList,
-    startPolling,
+    setPollingEnabled,
     stopPolling,
   ]);
 
@@ -587,8 +637,7 @@ export default function ChatBox({
       lastMessageIdRef.current = saved?.id ?? lastMessageIdRef.current;
       scrollToBottom();
 
-      // ✅ não precisa marcar read no envio (era uma das fontes do spam)
-      // markReadServer();
+      // ✅ não marca read no envio
     } catch (err) {
       console.error("Erro ao enviar mensagem:", err);
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
@@ -608,9 +657,7 @@ export default function ChatBox({
       return <span className="text-[10px] opacity-70">Enviando…</span>;
     }
     if (status === "read") {
-      return (
-        <span className="text-[10px] text-blue-500 font-semibold">✓✓ lida</span>
-      );
+      return <span className="text-[10px] text-blue-500 font-semibold">✓✓ lida</span>;
     }
     if (status === "delivered") {
       return <span className="text-[10px] opacity-70">✓✓ entregue</span>;
@@ -652,9 +699,7 @@ export default function ChatBox({
         onScroll={handleScroll}
         className="flex-1 overflow-y-auto px-4 py-3 space-y-2 text-sm bg-gradient-to-b from-white to-[#FFF8EC]"
       >
-        {loading && (
-          <p className="text-xs text-gray-500">Carregando mensagens...</p>
-        )}
+        {loading && <p className="text-xs text-gray-500">Carregando mensagens...</p>}
 
         {!loading && messages.length === 0 && (
           <p className="text-xs text-gray-500">
@@ -686,10 +731,10 @@ export default function ChatBox({
                 <div className="mt-1 flex items-center justify-end gap-2">
                   <span className="text-[10px] opacity-80">
                     {msg.created_at || msg.createdAt
-                      ? new Date(msg.created_at || msg.createdAt).toLocaleString(
-                          "pt-BR",
-                          { hour: "2-digit", minute: "2-digit" }
-                        )
+                      ? new Date(msg.created_at || msg.createdAt).toLocaleString("pt-BR", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })
                       : ""}
                   </span>
                   {renderStatus(msg)}
