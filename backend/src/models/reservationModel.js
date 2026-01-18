@@ -30,9 +30,15 @@ function assertSafeIdentifier(name, label = "identifier") {
 }
 
 const SAFE_AVAIL_TABLE = assertSafeIdentifier(AVAIL_TABLE, "table");
-const SAFE_AVAIL_COL_CAREGIVER = assertSafeIdentifier(AVAIL_COL_CAREGIVER, "column");
+const SAFE_AVAIL_COL_CAREGIVER = assertSafeIdentifier(
+  AVAIL_COL_CAREGIVER,
+  "column"
+);
 const SAFE_AVAIL_COL_DATEKEY = assertSafeIdentifier(AVAIL_COL_DATEKEY, "column");
-const SAFE_AVAIL_COL_AVAILABLE = assertSafeIdentifier(AVAIL_COL_AVAILABLE, "column");
+const SAFE_AVAIL_COL_AVAILABLE = assertSafeIdentifier(
+  AVAIL_COL_AVAILABLE,
+  "column"
+);
 
 function toNum(v) {
   if (v == null || v === "") return null;
@@ -151,6 +157,26 @@ async function getCaregiverCapacity(caregiverId) {
   return finalCap;
 }
 
+function cleanName(v) {
+  const s = typeof v === "string" ? v.trim() : "";
+  return s ? s : null;
+}
+
+async function getUserNameById(userId) {
+  if (userId == null) return null;
+
+  const sql = `
+    SELECT name
+    FROM users
+    WHERE id::text = $1::text
+    LIMIT 1
+  `;
+
+  const { rows } = await pool.query(sql, [String(userId)]);
+  const name = rows?.[0]?.name;
+  return cleanName(name);
+}
+
 async function createReservation({
   tutorId,
   caregiverId,
@@ -168,10 +194,18 @@ async function createReservation({
   petsNames,
   petsSnapshot,
 }) {
+  if (tutorId == null || caregiverId == null) {
+    const err = new Error("tutorId e caregiverId são obrigatórios.");
+    err.code = "MISSING_FIELDS";
+    throw err;
+  }
+
   let petsIdsIntArray = normalizePetsIds(petsIds);
 
   if (!petsIdsIntArray.length && Array.isArray(petsSnapshot)) {
-    const fromSnap = petsSnapshot.map((p) => toInt(p?.id)).filter((n) => n != null);
+    const fromSnap = petsSnapshot
+      .map((p) => toInt(p?.id))
+      .filter((n) => n != null);
     petsIdsIntArray = Array.from(new Set(fromSnap));
   }
 
@@ -182,6 +216,22 @@ async function createReservation({
   }
 
   const petsSnapshotJson = toJsonbArray(petsSnapshot);
+
+  // ✅ GARANTE tutor_name e caregiver_name (evita 500 por NOT NULL no banco)
+  let finalTutorName = cleanName(tutorName);
+  let finalCaregiverName = cleanName(caregiverName);
+
+  if (!finalTutorName || !finalCaregiverName) {
+    const [dbTutorName, dbCaregiverName] = await Promise.all([
+      finalTutorName ? Promise.resolve(finalTutorName) : getUserNameById(tutorId),
+      finalCaregiverName
+        ? Promise.resolve(finalCaregiverName)
+        : getUserNameById(caregiverId),
+    ]);
+
+    finalTutorName = finalTutorName || dbTutorName || "Tutor";
+    finalCaregiverName = finalCaregiverName || dbCaregiverName || "Cuidador";
+  }
 
   const sql = `
     INSERT INTO reservations (
@@ -212,8 +262,8 @@ async function createReservation({
   const values = [
     tutorId,
     caregiverId,
-    tutorName,
-    caregiverName,
+    finalTutorName,
+    finalCaregiverName,
     city || null,
     neighborhood || null,
     service,
@@ -330,7 +380,9 @@ async function getReservationById(id) {
 
 async function updateReservationStatus(id, status, rejectReason = null) {
   const cleanedReason =
-    typeof rejectReason === "string" && rejectReason.trim() ? rejectReason.trim() : null;
+    typeof rejectReason === "string" && rejectReason.trim()
+      ? rejectReason.trim()
+      : null;
 
   const sql = `
     UPDATE reservations
@@ -401,7 +453,12 @@ async function isCaregiverAvailableForRange(caregiverId, startDate, endDate) {
   return totalDays > 0 && availableDays === totalDays;
 }
 
-async function getMaxOverlappingByDay(caregiverId, startDate, endDate, excludeReservationId = null) {
+async function getMaxOverlappingByDay(
+  caregiverId,
+  startDate,
+  endDate,
+  excludeReservationId = null
+) {
   const sql = `
     WITH days AS (
       SELECT generate_series($2::date, $3::date, interval '1 day')::date AS day
@@ -435,7 +492,12 @@ async function getMaxOverlappingByDay(caregiverId, startDate, endDate, excludeRe
   return Number(rows?.[0]?.max_overlapping || 0);
 }
 
-async function assertCaregiverCanBeBooked(caregiverId, startDate, endDate, excludeReservationId = null) {
+async function assertCaregiverCanBeBooked(
+  caregiverId,
+  startDate,
+  endDate,
+  excludeReservationId = null
+) {
   const [available, capacity, maxOverlapping] = await Promise.all([
     isCaregiverAvailableForRange(caregiverId, startDate, endDate),
     getCaregiverCapacity(caregiverId),
