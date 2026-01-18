@@ -11,7 +11,7 @@ function toInt(v) {
   const n = Number(v);
   if (!Number.isFinite(n)) return null;
   const i = Math.trunc(n);
-  if (i <= 0) return null; // ids válidos começam em 1
+  if (i <= 0) return null;
   return i;
 }
 
@@ -41,7 +41,7 @@ async function getReservationParticipants(reservationId) {
 }
 
 /**
- * ✅ Ownership middleware:
+ * Ownership middleware:
  * - admin sempre passa
  * - tutor/caregiver só se forem participantes da reserva
  * - 404 se não existe
@@ -53,7 +53,8 @@ async function getReservationParticipants(reservationId) {
 async function mustBeReservationParticipant(req, res, next) {
   try {
     const userId = toStr(req.user?.id);
-    const role = toStr(req.user?.role);
+    const roleRaw = toStr(req.user?.role);
+    const role = roleRaw.trim().toLowerCase();
 
     if (!userId || !role) {
       return res.status(401).json({
@@ -64,8 +65,6 @@ async function mustBeReservationParticipant(req, res, next) {
 
     const reservationId = req.params?.id ?? req.params?.reservationId;
 
-    // ✅ carrega a reserva sempre (inclusive para admin)
-    // isso não muda regra, só padroniza req.reservation e permite 404 aqui mesmo
     const row = await getReservationParticipants(reservationId);
 
     if (!row) {
@@ -75,8 +74,8 @@ async function mustBeReservationParticipant(req, res, next) {
       });
     }
 
-    // admin pode tudo aqui (as regras de negócio ficam no controller)
-    if (role === "admin") {
+    const isAdmin = role === "admin" || role === "admin_master";
+    if (isAdmin) {
       req.reservation = row;
       req.reservationOwnership = { isTutor: false, isCaregiver: false, isAdmin: true };
       return next();
@@ -95,7 +94,6 @@ async function mustBeReservationParticipant(req, res, next) {
       });
     }
 
-    // ✅ ajuda controllers sem buscar de novo
     req.reservation = row;
     req.reservationOwnership = { isTutor, isCaregiver, isAdmin: false };
 
@@ -111,6 +109,5 @@ async function mustBeReservationParticipant(req, res, next) {
 
 module.exports = {
   mustBeReservationParticipant,
-  // exporto também pra uso futuro (se quiser)
   getReservationParticipants,
 };

@@ -4,7 +4,9 @@ const availabilityModel = require("../models/availabilityModel");
 const pool = require("../config/db");
 const { createReservationNotification } = require("../models/notificationModel");
 
-// Helpers
+/* ===========================================================
+   HELPERS (ids, datas, body)
+   =========================================================== */
 
 function toNum(v) {
   if (v == null || v === "") return null;
@@ -16,7 +18,14 @@ function toInt(v) {
   const n = toNum(v);
   if (n == null) return null;
   const i = Math.trunc(n);
-  return Number.isFinite(i) ? i : null;
+  if (!Number.isFinite(i)) return null;
+  return i;
+}
+
+function toPosInt(v) {
+  const i = toInt(v);
+  if (i == null || i <= 0) return null;
+  return i;
 }
 
 function isValidISODate(d) {
@@ -38,6 +47,7 @@ function toDateKey(v) {
     const s = v.trim();
     if (!s) return null;
 
+    // já vem YYYY-MM-DD...
     if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
 
     const d = new Date(s);
@@ -69,33 +79,87 @@ function normalizeDateRange(startDate, endDate) {
   return { startDate: sKey, endDate: eKey };
 }
 
+function safeJsonParse(raw) {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
 function parseBodySafe(raw) {
   if (!raw) return {};
-  if (typeof raw === "object") return raw;
+  if (raw && typeof raw === "object") return raw;
 
   if (typeof raw === "string") {
     const s = raw.trim();
-    if (!s) return {};
-    try {
-      const parsed = JSON.parse(s);
-      return parsed && typeof parsed === "object" ? parsed : {};
-    } catch {
-      return {};
-    }
+    if (!s || s === "[object Object]") return {};
+    const parsed = safeJsonParse(s);
+    return parsed && typeof parsed === "object" ? parsed : {};
   }
+
   return {};
 }
+
+function cleanNonEmptyString(v) {
+  const s = typeof v === "string" ? v.trim() : "";
+  return s ? s : null;
+}
+
+/* ===========================================================
+   STATUS NORMALIZATION + RULES
+   =========================================================== */
+
+function stripAccentsLower(s) {
+  return String(s || "")
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function normalizeStatusInput(raw) {
+  const s = stripAccentsLower(raw);
+
+  // canon: Pendente | Aceita | Recusada | Cancelada | Concluída
+  if (!s) return "";
+
+  if (s === "pendente" || s === "pending") return "Pendente";
+  if (s === "aceita" || s === "aceito" || s === "accepted") return "Aceita";
+
+  if (s === "recusada" || s === "recusado" || s === "rejeitada" || s === "rejeitado")
+    return "Recusada";
+
+  if (s === "cancelada" || s === "cancelado" || s === "canceled" || s === "cancelled")
+    return "Cancelada";
+
+  if (s === "concluida" || s === "finalizada" || s === "finalizado") return "Concluída";
+
+  // se vier já certinho:
+  if (String(raw || "").trim() === "Concluída") return "Concluída";
+
+  return String(raw || "").trim();
+}
+
+function isConcludedStatus(status) {
+  const s = stripAccentsLower(status);
+  return s === "concluida" || s === "finalizada";
+}
+
+function getResStatus(reservation) {
+  const s = reservation?.status;
+  return typeof s === "string" ? s.trim() : "";
+}
+
+/* ===========================================================
+   RESERVATION OWNERSHIP
+   =========================================================== */
 
 function getResIds(reservation) {
   return {
     tutorId: reservation?.tutorId ?? reservation?.tutor_id ?? null,
     caregiverId: reservation?.caregiverId ?? reservation?.caregiver_id ?? null,
   };
-}
-
-function getResStatus(reservation) {
-  const s = reservation?.status;
-  return typeof s === "string" ? s.trim() : "";
 }
 
 function canAccessReservation(user, reservation) {
@@ -109,11 +173,6 @@ function canAccessReservation(user, reservation) {
     (tutorId != null && String(tutorId) === uid) ||
     (caregiverId != null && String(caregiverId) === uid)
   );
-}
-
-function isConcludedStatus(status) {
-  const s = String(status || "").trim().toLowerCase();
-  return s === "concluida" || s === "concluída" || s === "finalizada";
 }
 
 function getStartEndSafe(obj, fallbackReservation) {
@@ -131,6 +190,10 @@ function getStartEndSafe(obj, fallbackReservation) {
   );
   return { start, end };
 }
+
+/* ===========================================================
+   NOTIFICATIONS
+   =========================================================== */
 
 async function notifyReservationEventSafe({ reservation, actorUser, type, payload }) {
   try {
@@ -156,6 +219,10 @@ async function notifyReservationEventSafe({ reservation, actorUser, type, payloa
   }
 }
 
+/* ===========================================================
+   REVIEWS HELPERS (para “minha avaliação” na reserva)
+   =========================================================== */
+
 async function attachMyReviewFields(reservations, reviewerId) {
   try {
     if (!Array.isArray(reservations) || reservations.length === 0) return reservations;
@@ -164,7 +231,7 @@ async function attachMyReviewFields(reservations, reviewerId) {
     if (!rid) return reservations;
 
     const ids = reservations
-      .map((r) => toInt(r?.id ?? r?.reservation_id))
+      .map((r) => toPosInt(r?.id ?? r?.reservation_id))
       .filter((x) => x != null);
 
     if (ids.length === 0) return reservations;
@@ -197,7 +264,7 @@ async function attachMyReviewFields(reservations, reviewerId) {
     }
 
     return reservations.map((r) => {
-      const k = String(toInt(r?.id ?? r?.reservation_id) ?? "");
+      const k = String(toPosInt(r?.id ?? r?.reservation_id) ?? "");
       const extra =
         map.get(k) || {
           my_rating: null,
@@ -214,6 +281,10 @@ async function attachMyReviewFields(reservations, reviewerId) {
   }
 }
 
+/* ===========================================================
+   DISPONIBILIDADE / CAPACIDADE
+   =========================================================== */
+
 async function assertRangeIsFullyAvailableOrThrow(caregiverId, startKey, endKey) {
   const caregiverIdStr = caregiverId == null ? "" : String(caregiverId);
   const s = toDateKey(startKey);
@@ -227,14 +298,14 @@ async function assertRangeIsFullyAvailableOrThrow(caregiverId, startKey, endKey)
     };
   }
 
+  // Preferir model (se existir)
   if (availabilityModel && typeof availabilityModel.isRangeAvailable === "function") {
     const ok = await availabilityModel.isRangeAvailable(caregiverIdStr, s, e);
-    if (!ok) {
-      return { ok: false, code: "NOT_AVAILABLE", message: "Período sem disponibilidade." };
-    }
+    if (!ok) return { ok: false, code: "NOT_AVAILABLE", message: "Período sem disponibilidade." };
     return { ok: true };
   }
 
+  // Fallback SQL simples
   try {
     const sql = `
       WITH days AS (
@@ -277,9 +348,7 @@ async function assertCapacityOrThrow(caregiverId, startKey, endKey, excludeReser
 
   const s = toDateKey(startKey);
   const e = toDateKey(endKey);
-  if (!s || !e) {
-    return { ok: false, code: "INVALID_RANGE", message: "Intervalo inválido." };
-  }
+  if (!s || !e) return { ok: false, code: "INVALID_RANGE", message: "Intervalo inválido." };
 
   const check = await reservationModel.assertCaregiverCanBeBooked(
     String(caregiverId),
@@ -304,6 +373,10 @@ async function assertCapacityOrThrow(caregiverId, startKey, endKey, excludeReser
   return { ok: true };
 }
 
+/* ===========================================================
+   PETS / TOTAL
+   =========================================================== */
+
 function normalizeIntIds(input) {
   if (input == null) return [];
 
@@ -323,7 +396,7 @@ function normalizeIntIds(input) {
 
   const out = arr
     .map((x) => Number(x))
-    .filter((n) => Number.isFinite(n) && Number.isInteger(n));
+    .filter((n) => Number.isFinite(n) && Number.isInteger(n) && n > 0);
 
   return Array.from(new Set(out));
 }
@@ -365,12 +438,35 @@ async function getUserDisplayNameById(id) {
   }
 }
 
-function cleanNonEmptyString(v) {
-  const s = typeof v === "string" ? v.trim() : "";
-  return s ? s : null;
+/* ===========================================================
+   DB FALLBACKS (se model não tiver)
+   =========================================================== */
+
+async function updateReservationStatusDb(id, status, rejectReason = null) {
+  // prefer model
+  if (typeof reservationModel.updateReservationStatus === "function") {
+    return reservationModel.updateReservationStatus(id, status, rejectReason);
+  }
+
+  // fallback SQL
+  const rid = toPosInt(id);
+  if (!rid) return null;
+
+  const sql = `
+    UPDATE reservations
+      SET status = $2,
+          reject_reason = $3,
+          updated_at = NOW()
+    WHERE id = $1
+    RETURNING *
+  `;
+  const { rows } = await pool.query(sql, [rid, status, rejectReason]);
+  return rows?.[0] || null;
 }
 
-// CREATE (tutor)
+/* ===========================================================
+   CREATE (tutor)
+   =========================================================== */
 
 async function createReservationController(req, res) {
   try {
@@ -406,9 +502,7 @@ async function createReservationController(req, res) {
     const tutorId = String(user.id);
 
     const tutorName =
-      cleanNonEmptyString(user?.name) ||
-      cleanNonEmptyString(user?.email) ||
-      "Tutor";
+      cleanNonEmptyString(user?.name) || cleanNonEmptyString(user?.email) || "Tutor";
 
     const missing = [];
     if (!caregiverId) missing.push("caregiverId/caregiver_id");
@@ -535,14 +629,14 @@ async function createReservationController(req, res) {
   }
 }
 
-// LIST - tutor
+/* ===========================================================
+   LIST - tutor
+   =========================================================== */
 
 async function listTutorReservationsController(req, res) {
   try {
     const user = req.user;
-    if (!user?.id) {
-      return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
-    }
+    if (!user?.id) return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
 
     if (String(user.role) === "admin") {
       const qTutorId = req.query?.tutorId != null ? String(req.query.tutorId) : null;
@@ -575,18 +669,17 @@ async function listTutorReservationsController(req, res) {
   }
 }
 
-// LIST - caregiver
+/* ===========================================================
+   LIST - caregiver
+   =========================================================== */
 
 async function listCaregiverReservationsController(req, res) {
   try {
     const user = req.user;
-    if (!user?.id) {
-      return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
-    }
+    if (!user?.id) return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
 
     if (String(user.role) === "admin") {
-      const qCaregiverId =
-        req.query?.caregiverId != null ? String(req.query.caregiverId) : null;
+      const qCaregiverId = req.query?.caregiverId != null ? String(req.query.caregiverId) : null;
 
       let rows = [];
       if (qCaregiverId) {
@@ -616,18 +709,19 @@ async function listCaregiverReservationsController(req, res) {
   }
 }
 
-// DETAIL
+/* ===========================================================
+   DETAIL
+   =========================================================== */
 
 async function getReservationDetailController(req, res) {
   try {
     const user = req.user;
-    if (!user?.id) {
-      return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
-    }
+    if (!user?.id) return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
 
     const { id } = req.params;
 
-    let reservation = await reservationModel.getReservationById(id);
+    let reservation = req.reservation || null;
+    if (!reservation) reservation = await reservationModel.getReservationById(id);
 
     if (!reservation) {
       return res.status(404).json({
@@ -662,22 +756,22 @@ async function getReservationDetailController(req, res) {
   }
 }
 
-// UPDATE STATUS (+ NOTIF)
+/* ===========================================================
+   UPDATE STATUS (+ NOTIF) — com normalização e transições
+   =========================================================== */
 
 async function updateReservationStatusController(req, res) {
   try {
     const user = req.user;
-    if (!user?.id) {
-      return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
-    }
+    if (!user?.id) return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
 
     const { id } = req.params;
 
     const body = parseBodySafe(req.body);
-    const rawStatus = body.status;
-    const rejectReason = body.rejectReason ?? body.reject_reason ?? null;
+    const nextStatus = normalizeStatusInput(body.status);
+    const rejectReasonRaw = body.rejectReason ?? body.reject_reason ?? null;
+    const rejectReason = cleanNonEmptyString(rejectReasonRaw);
 
-    const nextStatus = typeof rawStatus === "string" ? rawStatus.trim() : "";
     if (!nextStatus) {
       return res.status(400).json({ error: "Status é obrigatório.", code: "MISSING_STATUS" });
     }
@@ -692,9 +786,7 @@ async function updateReservationStatusController(req, res) {
       });
     }
 
-    const prevStatus = getResStatus(reservation);
-
-    const role = user.role;
+    const role = String(user.role || "").toLowerCase();
     const uid = String(user.id);
     const { tutorId, caregiverId } = getResIds(reservation);
 
@@ -709,9 +801,10 @@ async function updateReservationStatusController(req, res) {
       });
     }
 
-    const currentStatus = getResStatus(reservation);
-    const { start: startKey, end: endKey } = getStartEndSafe(reservation, reservation);
+    const prevStatus = getResStatus(reservation);
+    const currentStatus = normalizeStatusInput(prevStatus);
 
+    const { start: startKey, end: endKey } = getStartEndSafe(reservation, reservation);
     if (!startKey || !endKey) {
       return res.status(400).json({
         error: "Reserva com datas inválidas. Verifique start/end.",
@@ -719,6 +812,11 @@ async function updateReservationStatusController(req, res) {
       });
     }
 
+    // =======================================================
+    // REGRAS POR ROLE
+    // =======================================================
+
+    // Tutor: só pode Cancelar quando Pendente/Aceita
     if (!isAdmin && role === "tutor") {
       if (!isOwnerTutor) {
         return res.status(403).json({
@@ -739,13 +837,13 @@ async function updateReservationStatusController(req, res) {
         });
       }
 
-      const updated = await reservationModel.updateReservationStatus(id, "Cancelada", null);
+      const updated = await updateReservationStatusDb(id, "Cancelada", null);
 
       await notifyReservationEventSafe({
         reservation: updated,
         actorUser: user,
         type: "status",
-        payload: { reservationId: updated?.id, prevStatus, nextStatus: "Cancelada" },
+        payload: { reservationId: updated?.id, prevStatus: currentStatus, nextStatus: "Cancelada" },
       });
 
       return res.json({
@@ -757,6 +855,7 @@ async function updateReservationStatusController(req, res) {
       });
     }
 
+    // Caregiver: Aceita/Recusada (somente se Pendente), Concluída (somente se Aceita)
     if (!isAdmin && role === "caregiver") {
       if (!isOwnerCaregiver) {
         return res.status(403).json({
@@ -765,7 +864,7 @@ async function updateReservationStatusController(req, res) {
         });
       }
 
-      const allowed = new Set(["Aceita", "Recusada", "Concluida", "Concluída", "Finalizada"]);
+      const allowed = new Set(["Aceita", "Recusada", "Concluída"]);
       if (!allowed.has(nextStatus)) {
         return res.status(400).json({
           error: "Status inválido para cuidador.",
@@ -799,17 +898,41 @@ async function updateReservationStatusController(req, res) {
         }
       }
 
-      const updated = await reservationModel.updateReservationStatus(
+      if (nextStatus === "Recusada") {
+        if (currentStatus !== "Pendente") {
+          return res.status(409).json({
+            code: "INVALID_STATUS",
+            message: "Só é possível recusar reservas no status Pendente.",
+          });
+        }
+        if (!rejectReason) {
+          return res.status(400).json({
+            error: "Motivo da recusa é obrigatório.",
+            code: "MISSING_REJECT_REASON",
+          });
+        }
+      }
+
+      if (nextStatus === "Concluída") {
+        if (currentStatus !== "Aceita") {
+          return res.status(409).json({
+            code: "INVALID_STATUS",
+            message: "Só é possível concluir reservas no status Aceita.",
+          });
+        }
+      }
+
+      const updated = await updateReservationStatusDb(
         id,
         nextStatus,
-        nextStatus === "Recusada" ? (rejectReason || null) : null
+        nextStatus === "Recusada" ? rejectReason : null
       );
 
       await notifyReservationEventSafe({
         reservation: updated,
         actorUser: user,
         type: "status",
-        payload: { reservationId: updated?.id, prevStatus, nextStatus },
+        payload: { reservationId: updated?.id, prevStatus: currentStatus, nextStatus },
       });
 
       return res.json({
@@ -821,6 +944,7 @@ async function updateReservationStatusController(req, res) {
       });
     }
 
+    // Admin: pode alterar (com validações quando Aceita / Concluída)
     if (isAdmin) {
       if (nextStatus === "Aceita") {
         const availCheck = await assertRangeIsFullyAvailableOrThrow(caregiverId, startKey, endKey);
@@ -841,17 +965,32 @@ async function updateReservationStatusController(req, res) {
         }
       }
 
-      const updated = await reservationModel.updateReservationStatus(
+      if (nextStatus === "Recusada" && !rejectReason) {
+        return res.status(400).json({
+          error: "Motivo da recusa é obrigatório.",
+          code: "MISSING_REJECT_REASON",
+        });
+      }
+
+      // opcional: só concluir se Aceita (mantém consistência)
+      if (nextStatus === "Concluída" && currentStatus !== "Aceita") {
+        return res.status(409).json({
+          code: "INVALID_STATUS",
+          message: "Só é possível concluir reservas no status Aceita.",
+        });
+      }
+
+      const updated = await updateReservationStatusDb(
         id,
         nextStatus,
-        nextStatus === "Recusada" ? (rejectReason || null) : null
+        nextStatus === "Recusada" ? rejectReason : null
       );
 
       await notifyReservationEventSafe({
         reservation: updated,
         actorUser: user,
         type: "status",
-        payload: { reservationId: updated?.id, prevStatus, nextStatus },
+        payload: { reservationId: updated?.id, prevStatus: currentStatus, nextStatus },
       });
 
       return res.json({
@@ -873,14 +1012,14 @@ async function updateReservationStatusController(req, res) {
   }
 }
 
-// UPDATE RATING [LEGADO]
+/* ===========================================================
+   UPDATE RATING [LEGADO]
+   =========================================================== */
 
 async function updateReservationRatingController(req, res) {
   try {
     const user = req.user;
-    if (!user?.id) {
-      return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
-    }
+    if (!user?.id) return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
 
     const { id } = req.params;
 
@@ -918,7 +1057,7 @@ async function updateReservationRatingController(req, res) {
       });
     }
 
-    if (!["tutor", "caregiver"].includes(user.role)) {
+    if (!["tutor", "caregiver"].includes(String(user.role || "").toLowerCase())) {
       return res.status(403).json({
         error: "Apenas tutor ou cuidador podem avaliar.",
         code: "FORBIDDEN_ROLE",
@@ -949,14 +1088,14 @@ async function updateReservationRatingController(req, res) {
   }
 }
 
-// GET /reservations/my-evaluations
+/* ===========================================================
+   GET /reservations/my-evaluations
+   =========================================================== */
 
 async function listMyEvaluationsController(req, res) {
   try {
     const user = req.user;
-    if (!user?.id) {
-      return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
-    }
+    if (!user?.id) return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
 
     const isAdmin = String(user.role || "").toLowerCase() === "admin";
     const idStr = String(user.id);
