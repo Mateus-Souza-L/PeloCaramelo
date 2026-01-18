@@ -3,6 +3,7 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const morgan = require("morgan");
+const http = require("http");
 
 const app = express();
 
@@ -114,8 +115,7 @@ async function checkBlockColumnsOnce() {
     const set = new Set((rows || []).map((r) => String(r.column_name)));
     _hasBlockedReason = set.has("blocked_reason");
     _hasBlockedUntil = set.has("blocked_until");
-  } catch (err) {
-    // fail-open: não derruba o servidor se information_schema falhar
+  } catch {
     _hasBlockedReason = false;
     _hasBlockedUntil = false;
   }
@@ -130,16 +130,14 @@ function normalizeISO(v) {
 
 async function blockedGuard(req, res, next) {
   try {
-    // precisa estar autenticado antes
     const userId = req.user?.id ? String(req.user.id) : null;
     const role = req.user?.role ? String(req.user.role).toLowerCase() : null;
 
     if (!userId) return next();
-    if (role === "admin") return next(); // admin não é barrado aqui
+    if (role === "admin" || role === "admin_master") return next();
 
     await checkBlockColumnsOnce();
 
-    // monta SELECT compatível
     const cols = [
       "blocked",
       _hasBlockedReason ? "blocked_reason" : "NULL::text AS blocked_reason",
@@ -157,7 +155,7 @@ async function blockedGuard(req, res, next) {
     );
 
     const u = rows?.[0];
-    if (!u) return next(); // usuário não encontrado aqui não é responsabilidade do guard
+    if (!u) return next();
 
     const isBlocked = Boolean(u.blocked);
     if (!isBlocked) return next();
@@ -165,7 +163,6 @@ async function blockedGuard(req, res, next) {
     const reason = u.blocked_reason ? String(u.blocked_reason) : null;
     const blockedUntil = normalizeISO(u.blocked_until);
 
-    // se tiver blockedUntil e já passou, deixa passar (não “auto-desbloqueia” aqui)
     if (blockedUntil) {
       const now = Date.now();
       const untilMs = new Date(blockedUntil).getTime();
@@ -177,10 +174,9 @@ async function blockedGuard(req, res, next) {
       code: "USER_BLOCKED",
       error: "Sua conta está bloqueada no momento.",
       reason: reason || "Bloqueio administrativo",
-      blockedUntil, // pode ser null (bloqueio sem prazo)
+      blockedUntil,
     });
   } catch (err) {
-    // fail-closed suave: se o guard falhar, não derruba request — mas registra
     console.error("[BLOCKED GUARD ERROR]", err);
     return next();
   }
@@ -208,7 +204,6 @@ app.use("/pets", authMiddleware, blockedGuard, petRoutes);
 
 /* ===========================================================
    Rotas admin
-   - IMPORTANTÍSSIMO: adminRoutes já aplica auth+admin internamente
    =========================================================== */
 app.use("/admin", adminRoutes);
 
@@ -223,7 +218,7 @@ app.use("/reviews", reviewRoutes);
 app.get("/", (req, res) => {
   res.json({
     ok: true,
-    message: "PeloCaramelo API rodando 🐾 (BUILD: health-v1)",
+    message: "PeloCaramelo API rodando 🐾 (BUILD: health-v1 + socket)",
     allowedOrigins,
     allowVercelPreview: true,
   });
@@ -269,14 +264,25 @@ app.use((err, req, res, next) => {
 });
 
 /* ===========================================================
-   Start
+   Start (HTTP server + Socket.IO)
    =========================================================== */
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => {
+
+const httpServer = http.createServer(app);
+
+// Socket.IO
+const { initSocket } = require("./socket");
+const io = initSocket(httpServer);
+
+// deixa o io acessível nos controllers: req.app.get("io")
+app.set("io", io);
+
+httpServer.listen(PORT, () => {
   console.log(`🚀 API ouvindo na porta ${PORT}`);
   console.log("🌐 CORS_ORIGIN =", process.env.CORS_ORIGIN || "(default localhost)");
   console.log("🌐 Vercel preview liberado: https://pelo-caramelo-*.vercel.app");
   console.log("🩺 Health endpoints ativos: /health e /health/db");
+  console.log("🔌 Socket.IO ativo");
 });
 
 module.exports = app;

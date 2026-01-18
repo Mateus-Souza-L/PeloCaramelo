@@ -44,7 +44,8 @@ function canAccessChat(reservation, userId) {
   const { tutorId, caregiverId } = getResIds(reservation);
 
   const isTutor = tutorId != null && String(tutorId) === String(userId);
-  const isCaregiver = caregiverId != null && String(caregiverId) === String(userId);
+  const isCaregiver =
+    caregiverId != null && String(caregiverId) === String(userId);
 
   return { ok: isTutor || isCaregiver, isTutor, isCaregiver };
 }
@@ -53,9 +54,7 @@ function canAccessChat(reservation, userId) {
  * Normaliza status (trim + lower) para evitar 403 por variação de texto
  */
 function normalizeStatus(status) {
-  return String(status || "")
-    .trim()
-    .toLowerCase();
+  return String(status || "").trim().toLowerCase();
 }
 
 /**
@@ -73,21 +72,15 @@ const CHAT_READABLE_STATUSES = new Set([
   "finalizada",
 ]);
 
-const CHAT_WRITABLE_STATUSES = new Set([
-  "aceita",
-  "em andamento",
-]);
+const CHAT_WRITABLE_STATUSES = new Set(["aceita", "em andamento"]);
 
 function ensureChatReadable(reservation, res) {
-  // Se você quiser manter “chat só depois de aceita”, use a lista.
-  // Se quiser permitir ver histórico mesmo em status diferentes, deixe passar.
   const st = normalizeStatus(reservation?.status);
 
-  // ✅ Recomendo permitir leitura também em concluída/finalizada.
   if (!CHAT_READABLE_STATUSES.has(st)) {
     return res.status(403).json({
       error: "O chat só é liberado após a reserva ser aceita.",
-      status: reservation?.status, // ajuda debug
+      status: reservation?.status,
     });
   }
   return true;
@@ -98,11 +91,17 @@ function ensureChatWritable(reservation, res) {
 
   if (!CHAT_WRITABLE_STATUSES.has(st)) {
     return res.status(403).json({
-      error: "O chat só permite envio de mensagens quando a reserva está aceita.",
-      status: reservation?.status, // ajuda debug
+      error:
+        "O chat só permite envio de mensagens quando a reserva está aceita.",
+      status: reservation?.status,
     });
   }
   return true;
+}
+
+// ✅ nome da sala por reserva
+function reservationRoom(reservationId) {
+  return `reservation:${String(reservationId)}`;
 }
 
 /**
@@ -138,7 +137,9 @@ async function sendChatMessageController(req, res) {
     const toUserId = access.isTutor ? caregiverId : tutorId;
 
     if (toUserId == null) {
-      return res.status(500).json({ error: "Reserva inválida (destinatário ausente)." });
+      return res
+        .status(500)
+        .json({ error: "Reserva inválida (destinatário ausente)." });
     }
 
     const savedMessage = await createChatMessage({
@@ -147,6 +148,18 @@ async function sendChatMessageController(req, res) {
       toUserId: String(toUserId),
       message,
     });
+
+    // ✅ Socket.IO: emite para a sala da reserva
+    const io = req.app?.get("io");
+    if (io) {
+      io.to(reservationRoom(reservation.id)).emit("chat:message", {
+        reservationId: reservation.id,
+        message: savedMessage,
+      });
+
+      // (opcional) ping específico pro destinatário, se você usar sala por usuário
+      // io.to(`user:${String(toUserId)}`).emit("chat:unread", { reservationId: reservation.id });
+    }
 
     return res.status(201).json({ message: savedMessage });
   } catch (err) {
@@ -190,9 +203,6 @@ async function getChatMessagesController(req, res) {
 /**
  * POST /chat/:reservationId/read -> marca como lidas as mensagens dessa reserva
  * destinadas ao usuário autenticado.
- *
- * ✅ IMPORTANTE: aqui NÃO faz sentido bloquear por status.
- * Mesmo se a reserva foi concluída/cancelada, o usuário deve poder "limpar" unread.
  */
 async function markChatAsReadController(req, res) {
   try {
@@ -211,7 +221,7 @@ async function markChatAsReadController(req, res) {
       });
     }
 
-    // ✅ NÃO bloquear por status aqui (remove o 403 do seu log)
+    // ✅ NÃO bloquear por status aqui
     const updated = await markMessagesAsRead({
       reservationId: reservation.id,
       userId,
