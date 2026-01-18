@@ -99,7 +99,7 @@ function ensureChatWritable(reservation, res) {
   return true;
 }
 
-// ✅ nome da sala por reserva (padronizado com socket.js e ChatBox.jsx)
+// ✅ nome da sala por reserva
 function reservationRoom(reservationId) {
   return `reservation:${String(reservationId)}`;
 }
@@ -149,7 +149,7 @@ async function sendChatMessageController(req, res) {
       message,
     });
 
-    // ✅ Socket.IO: emite para a sala da reserva (tempo real)
+    // ✅ Socket.IO: emite mensagem em tempo real
     const io = req.app?.get("io");
     if (io) {
       io.to(reservationRoom(reservation.id)).emit("chat:message", {
@@ -200,6 +200,8 @@ async function getChatMessagesController(req, res) {
 /**
  * POST /chat/:reservationId/read -> marca como lidas as mensagens dessa reserva
  * destinadas ao usuário autenticado.
+ *
+ * ✅ Agora também emite `chat:read` em tempo real para a sala.
  */
 async function markChatAsReadController(req, res) {
   try {
@@ -223,6 +225,17 @@ async function markChatAsReadController(req, res) {
       reservationId: reservation.id,
       userId,
     });
+
+    // ✅ Socket.IO: avisa o outro lado que esse chat foi lido
+    const io = req.app?.get("io");
+    if (io) {
+      io.to(reservationRoom(reservation.id)).emit("chat:read", {
+        reservationId: reservation.id,
+        byUserId: userId,
+        at: new Date().toISOString(),
+        updated: Number(updated) || 0,
+      });
+    }
 
     return res.json({ ok: true, updated: Number(updated) || 0 });
   } catch (err) {
