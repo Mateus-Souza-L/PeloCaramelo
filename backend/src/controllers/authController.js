@@ -2,6 +2,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const pool = require("../config/db");
+const { sendEmail } = require("../services/emailService");
 
 const {
   createUser,
@@ -11,14 +12,12 @@ const {
 } = require("../models/userModel");
 
 const {
+  cleanupPasswordResets,
   createPasswordReset,
-  findValidByTokenHash,
-  markUsed,
-  invalidateAllByUserId,
-  cleanupExpired,
+  findValidPasswordResetByToken,
+  markPasswordResetUsed,
+  invalidateAllActiveByUserId,
 } = require("../models/passwordResetModel");
-
-const { sendEmail } = require("../services/emailService");
 
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-trocar-em-producao";
 
@@ -38,12 +37,10 @@ function readBody(req) {
 }
 
 function pickBlockInfo(user) {
-  if (!user) return { blocked: false };
-
   return {
-    blocked: Boolean(user.blocked),
-    blockedReason: user.blocked_reason ?? null,
-    blockedUntil: user.blocked_until ?? null,
+    blocked: Boolean(user?.blocked),
+    blockedReason: user?.blocked_reason ?? null,
+    blockedUntil: user?.blocked_until ?? null,
   };
 }
 
@@ -52,8 +49,7 @@ function pickBlockInfo(user) {
    ============================================================ */
 async function register(req, res) {
   try {
-    const body = readBody(req);
-    const { name, email, password, role = "tutor" } = body;
+    const { name, email, password, role = "tutor" } = readBody(req);
 
     if (!name || !email || !password) {
       return res
@@ -89,8 +85,7 @@ async function register(req, res) {
    ============================================================ */
 async function login(req, res) {
   try {
-    const body = readBody(req);
-    const { email, password } = body;
+    const { email, password } = readBody(req);
 
     if (!email || !password) {
       return res
@@ -143,63 +138,53 @@ async function me(req, res) {
    FORGOT PASSWORD
    ============================================================ */
 async function forgotPassword(req, res) {
+  const safeResponse = {
+    ok: true,
+    message: "Se o e-mail existir, enviaremos um link de recuperação.",
+  };
+
   try {
-    const body = readBody(req);
-    const email = String(body.email || "").trim().toLowerCase();
+    const { email } = readBody(req);
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+    if (!normalizedEmail) return res.json(safeResponse);
 
-    const safeResponse = {
-      ok: true,
-      message: "Se o e-mail existir, enviaremos um link de recuperação.",
-    };
-
-    if (!email) return res.json(safeResponse);
-
-    const user = await findUserByEmail(email);
+    const user = await findUserByEmail(normalizedEmail);
     if (!user) return res.json(safeResponse);
 
-    const bi = pickBlockInfo(user);
-    if (bi.blocked) return res.json(safeResponse);
+    if (pickBlockInfo(user).blocked) return res.json(safeResponse);
 
-    // limpeza best-effort
     try {
-      await cleanupExpired();
+      await cleanupPasswordResets();
     } catch {}
 
     const token = crypto.randomBytes(32).toString("hex");
-    const tokenHash = crypto
-      .createHash("sha256")
-      .update(token)
-      .digest("hex");
 
     const minutes = Number(process.env.PASSWORD_RESET_EXPIRES_MINUTES || 60);
     const expiresAt = new Date(Date.now() + minutes * 60 * 1000);
 
-    await invalidateAllByUserId(user.id);
-    await createPasswordReset({ userId: user.id, tokenHash, expiresAt });
+    await invalidateAllActiveByUserId(user.id);
+    await createPasswordReset({ userId: user.id, token, expiresAt });
 
     const base =
       String(process.env.FRONTEND_URL || "").replace(/\/$/, "") ||
       String(req.get("origin") || "").replace(/\/$/, "");
 
-    const link = `${base}/resetar-senha?token=${token}`;
+    const link = `${base}/reset-password?token=${encodeURIComponent(token)}`;
 
     await sendEmail({
       to: user.email,
-      subject: "Recuperação de senha — PeloCaramelo",
+      subject: "Recuperação de senha – PeloCaramelo",
       html: `
-        <p>Você solicitou a recuperação de senha.</p>
+        <p>Você solicitou a redefinição de senha.</p>
         <p><a href="${link}">Clique aqui para redefinir sua senha</a></p>
-        <p>Esse link expira em ${minutes} minutos.</p>
+        <p>Este link expira em ${minutes} minutos.</p>
       `,
     });
 
     return res.json(safeResponse);
   } catch (err) {
     console.error("forgotPassword:", err);
-    return res.json({
-      ok: true,
-      message: "Se o e-mail existir, enviaremos um link de recuperação.",
-    });
+    return res.json(safeResponse);
   }
 }
 
@@ -208,29 +193,22 @@ async function forgotPassword(req, res) {
    ============================================================ */
 async function resetPassword(req, res) {
   try {
-    const body = readBody(req);
-    const token = String(body.token || "").trim();
-    const newPassword = String(body.newPassword || "");
+    const { token, newPassword } = readBody(req);
 
-    if (!token || newPassword.length < 6) {
+    if (!token || !newPassword || newPassword.length < 6) {
       return res.status(400).json({
         error: "Token inválido ou senha muito curta.",
       });
     }
 
-    const tokenHash = crypto
-      .createHash("sha256")
-      .update(token)
-      .digest("hex");
-
-    const reset = await findValidByTokenHash(tokenHash);
+    const reset = await findValidPasswordResetByToken(token);
     if (!reset) {
       return res.status(400).json({ error: "Token inválido ou expirado." });
     }
 
     const passwordHash = await bcrypt.hash(newPassword, 10);
     await updateUserPassword(reset.user_id, passwordHash);
-    await markUsed(reset.id);
+    await markPasswordResetUsed(reset.id);
 
     return res.json({ ok: true, message: "Senha atualizada com sucesso." });
   } catch (err) {
