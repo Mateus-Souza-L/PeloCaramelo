@@ -30,20 +30,24 @@ function assertSafeIdentifier(name, label = "identifier") {
 }
 
 const SAFE_AVAIL_TABLE = assertSafeIdentifier(AVAIL_TABLE, "table");
-const SAFE_AVAIL_COL_CAREGIVER = assertSafeIdentifier(
-  AVAIL_COL_CAREGIVER,
-  "column"
-);
+const SAFE_AVAIL_COL_CAREGIVER = assertSafeIdentifier(AVAIL_COL_CAREGIVER, "column");
 const SAFE_AVAIL_COL_DATEKEY = assertSafeIdentifier(AVAIL_COL_DATEKEY, "column");
-const SAFE_AVAIL_COL_AVAILABLE = assertSafeIdentifier(
-  AVAIL_COL_AVAILABLE,
-  "column"
-);
+const SAFE_AVAIL_COL_AVAILABLE = assertSafeIdentifier(AVAIL_COL_AVAILABLE, "column");
 
 function toNum(v) {
   if (v == null || v === "") return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
+}
+
+function toInt(v) {
+  const n = Number(v);
+  return Number.isFinite(n) && Number.isInteger(n) ? n : null;
+}
+
+function cleanStr(v) {
+  const s = typeof v === "string" ? v.trim() : "";
+  return s ? s : null;
 }
 
 function mapReservationRow(row) {
@@ -104,11 +108,6 @@ function toJsonbArray(value) {
   return JSON.stringify([value]);
 }
 
-function toInt(v) {
-  const n = Number(v);
-  return Number.isFinite(n) && Number.isInteger(n) ? n : null;
-}
-
 function normalizePetsIds(input) {
   if (input == null) return [];
 
@@ -128,6 +127,30 @@ function normalizePetsIds(input) {
 
   const ids = arr.map((x) => toInt(x)).filter((n) => n != null);
   return Array.from(new Set(ids));
+}
+
+function parseISODateOrThrow(d, label) {
+  const s = String(d || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const err = new Error(`${label} inválida (use YYYY-MM-DD).`);
+    err.code = "INVALID_DATE";
+    throw err;
+  }
+  const dt = new Date(`${s}T00:00:00.000Z`);
+  if (Number.isNaN(dt.getTime())) {
+    const err = new Error(`${label} inválida.`);
+    err.code = "INVALID_DATE";
+    throw err;
+  }
+  return dt;
+}
+
+function daysInclusive(startISO, endISO) {
+  const a = parseISODateOrThrow(startISO, "startDate");
+  const b = parseISODateOrThrow(endISO, "endDate");
+  const diff = Math.floor((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24));
+  const days = diff + 1;
+  return days;
 }
 
 function getDefaultCap() {
@@ -157,24 +180,40 @@ async function getCaregiverCapacity(caregiverId) {
   return finalCap;
 }
 
-function cleanName(v) {
-  const s = typeof v === "string" ? v.trim() : "";
-  return s ? s : null;
+async function getUserNameById(userId) {
+  const { rows } = await pool.query(
+    `SELECT name FROM users WHERE id::text = $1::text LIMIT 1`,
+    [String(userId)]
+  );
+  return cleanStr(rows?.[0]?.name);
 }
 
-async function getUserNameById(userId) {
-  if (userId == null) return null;
+async function buildPetsSnapshotFromIds(tutorId, petsIdsIntArray) {
+  if (!petsIdsIntArray?.length) return [];
 
-  const sql = `
-    SELECT name
-    FROM users
-    WHERE id::text = $1::text
-    LIMIT 1
-  `;
+  // garante que esses pets são do tutor
+  const { rows } = await pool.query(
+    `
+    SELECT id, name, species, breed, size, age, temperament, notes, image
+    FROM pets
+    WHERE tutor_id::text = $1::text
+      AND id = ANY($2::int[])
+    ORDER BY id ASC
+    `,
+    [String(tutorId), petsIdsIntArray]
+  );
 
-  const { rows } = await pool.query(sql, [String(userId)]);
-  const name = rows?.[0]?.name;
-  return cleanName(name);
+  return rows.map((p) => ({
+    id: p.id,
+    name: p.name ?? "",
+    species: p.species ?? "",
+    breed: p.breed ?? "",
+    size: p.size ?? "",
+    age: p.age ?? "",
+    temperament: Array.isArray(p.temperament) ? p.temperament : [],
+    notes: p.notes ?? "",
+    image: p.image ?? "",
+  }));
 }
 
 async function createReservation({
@@ -194,18 +233,41 @@ async function createReservation({
   petsNames,
   petsSnapshot,
 }) {
-  if (tutorId == null || caregiverId == null) {
+  const tid = String(tutorId ?? "").trim();
+  const cid = String(caregiverId ?? "").trim();
+
+  if (!tid || !cid) {
     const err = new Error("tutorId e caregiverId são obrigatórios.");
     err.code = "MISSING_FIELDS";
+    throw err;
+  }
+
+  const svc = cleanStr(service);
+  if (!svc) {
+    const err = new Error("service é obrigatório.");
+    err.code = "MISSING_FIELDS";
+    throw err;
+  }
+
+  // valida datas (e impede range invertido)
+  const d = daysInclusive(startDate, endDate);
+  if (d < 1) {
+    const err = new Error("Intervalo de datas inválido.");
+    err.code = "INVALID_DATE_RANGE";
+    throw err;
+  }
+
+  const ppd = toNum(pricePerDay);
+  if (!ppd || ppd <= 0) {
+    const err = new Error("pricePerDay deve ser > 0.");
+    err.code = "INVALID_PRICE";
     throw err;
   }
 
   let petsIdsIntArray = normalizePetsIds(petsIds);
 
   if (!petsIdsIntArray.length && Array.isArray(petsSnapshot)) {
-    const fromSnap = petsSnapshot
-      .map((p) => toInt(p?.id))
-      .filter((n) => n != null);
+    const fromSnap = petsSnapshot.map((p) => toInt(p?.id)).filter((n) => n != null);
     petsIdsIntArray = Array.from(new Set(fromSnap));
   }
 
@@ -215,23 +277,38 @@ async function createReservation({
     throw err;
   }
 
-  const petsSnapshotJson = toJsonbArray(petsSnapshot);
+  // nomes obrigatórios por causa dos NOT NULL da sua tabela
+  let finalTutorName = cleanStr(tutorName);
+  let finalCaregiverName = cleanStr(caregiverName);
 
-  // ✅ GARANTE tutor_name e caregiver_name (evita 500 por NOT NULL no banco)
-  let finalTutorName = cleanName(tutorName);
-  let finalCaregiverName = cleanName(caregiverName);
+  if (!finalTutorName) finalTutorName = await getUserNameById(tid);
+  if (!finalCaregiverName) finalCaregiverName = await getUserNameById(cid);
 
   if (!finalTutorName || !finalCaregiverName) {
-    const [dbTutorName, dbCaregiverName] = await Promise.all([
-      finalTutorName ? Promise.resolve(finalTutorName) : getUserNameById(tutorId),
-      finalCaregiverName
-        ? Promise.resolve(finalCaregiverName)
-        : getUserNameById(caregiverId),
-    ]);
-
-    finalTutorName = finalTutorName || dbTutorName || "Tutor";
-    finalCaregiverName = finalCaregiverName || dbCaregiverName || "Cuidador";
+    const err = new Error("Não foi possível resolver tutor_name/caregiver_name.");
+    err.code = "MISSING_USER_NAME";
+    throw err;
   }
+
+  // total NOT NULL -> calcula se não vier
+  let finalTotal = toNum(total);
+  if (finalTotal == null) {
+    finalTotal = Number((d * ppd).toFixed(2));
+  }
+  if (!Number.isFinite(finalTotal) || finalTotal <= 0) {
+    const err = new Error("total inválido.");
+    err.code = "INVALID_TOTAL";
+    throw err;
+  }
+
+  // snapshot (recomendado para histórico)
+  let finalPetsSnapshot = Array.isArray(petsSnapshot) ? petsSnapshot : null;
+  if (!finalPetsSnapshot) {
+    finalPetsSnapshot = await buildPetsSnapshotFromIds(tid, petsIdsIntArray);
+  }
+  if (!Array.isArray(finalPetsSnapshot)) finalPetsSnapshot = [];
+
+  const petsSnapshotJson = toJsonbArray(finalPetsSnapshot);
 
   const sql = `
     INSERT INTO reservations (
@@ -260,20 +337,20 @@ async function createReservation({
   `;
 
   const values = [
-    tutorId,
-    caregiverId,
+    tid,
+    cid,
     finalTutorName,
     finalCaregiverName,
-    city || null,
-    neighborhood || null,
-    service,
-    toNum(pricePerDay),
-    startDate,
-    endDate,
-    toNum(total),
-    status || "Pendente",
+    cleanStr(city),
+    cleanStr(neighborhood),
+    svc,
+    ppd,
+    String(startDate),
+    String(endDate),
+    finalTotal,
+    cleanStr(status) || "Pendente",
     petsIdsIntArray,
-    petsNames || null,
+    cleanStr(petsNames),
     petsSnapshotJson,
     null,
   ];
@@ -380,9 +457,7 @@ async function getReservationById(id) {
 
 async function updateReservationStatus(id, status, rejectReason = null) {
   const cleanedReason =
-    typeof rejectReason === "string" && rejectReason.trim()
-      ? rejectReason.trim()
-      : null;
+    typeof rejectReason === "string" && rejectReason.trim() ? rejectReason.trim() : null;
 
   const sql = `
     UPDATE reservations
@@ -453,12 +528,7 @@ async function isCaregiverAvailableForRange(caregiverId, startDate, endDate) {
   return totalDays > 0 && availableDays === totalDays;
 }
 
-async function getMaxOverlappingByDay(
-  caregiverId,
-  startDate,
-  endDate,
-  excludeReservationId = null
-) {
+async function getMaxOverlappingByDay(caregiverId, startDate, endDate, excludeReservationId = null) {
   const sql = `
     WITH days AS (
       SELECT generate_series($2::date, $3::date, interval '1 day')::date AS day
@@ -492,12 +562,7 @@ async function getMaxOverlappingByDay(
   return Number(rows?.[0]?.max_overlapping || 0);
 }
 
-async function assertCaregiverCanBeBooked(
-  caregiverId,
-  startDate,
-  endDate,
-  excludeReservationId = null
-) {
+async function assertCaregiverCanBeBooked(caregiverId, startDate, endDate, excludeReservationId = null) {
   const [available, capacity, maxOverlapping] = await Promise.all([
     isCaregiverAvailableForRange(caregiverId, startDate, endDate),
     getCaregiverCapacity(caregiverId),
