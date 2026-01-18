@@ -83,10 +83,8 @@ function nowMs() {
 function getClientIp(socket) {
   const xff = socket.handshake?.headers?.["x-forwarded-for"];
   if (typeof xff === "string" && xff.trim()) {
-    // pega o primeiro IP da lista
     return xff.split(",")[0].trim();
   }
-  // socket.io fornece address
   const addr = socket.handshake?.address;
   return typeof addr === "string" && addr.trim() ? addr.trim() : "unknown";
 }
@@ -96,7 +94,6 @@ function makeWindowLimiter({ maxHits, windowMs, blockMs }) {
   const store = new Map();
 
   function pruneOld(hits, cutoff) {
-    // hits é array de timestamps
     let i = 0;
     while (i < hits.length && hits[i] < cutoff) i++;
     if (i > 0) hits.splice(0, i);
@@ -125,13 +122,13 @@ function makeWindowLimiter({ maxHits, windowMs, blockMs }) {
     return { ok: true };
   }
 
-  // limpeza leve para não crescer infinito
   function gc() {
     const t = nowMs();
     for (const [key, st] of store.entries()) {
       const cutoff = t - windowMs;
       pruneOld(st.hits, cutoff);
-      const idle = st.hits.length === 0 && (!st.blockedUntil || st.blockedUntil <= t);
+      const idle =
+        st.hits.length === 0 && (!st.blockedUntil || st.blockedUntil <= t);
       if (idle) store.delete(key);
     }
   }
@@ -141,19 +138,19 @@ function makeWindowLimiter({ maxHits, windowMs, blockMs }) {
 
 // Limites (ajuste se quiser)
 const connectLimiter = makeWindowLimiter({
-  maxHits: 12, // conexões/reconexões
+  maxHits: 12, // conexões/reconexões por minuto
   windowMs: 60 * 1000,
   blockMs: 2 * 60 * 1000,
 });
 
 const joinLimiter = makeWindowLimiter({
-  maxHits: 30, // join em sala
+  maxHits: 30, // joins por minuto
   windowMs: 60 * 1000,
   blockMs: 60 * 1000,
 });
 
 const ackLimiter = makeWindowLimiter({
-  maxHits: 120, // delivered/read acks
+  maxHits: 120, // acks (delivered/read) por minuto
   windowMs: 60 * 1000,
   blockMs: 60 * 1000,
 });
@@ -200,12 +197,14 @@ function initSocket(httpServer) {
       const role = String(decoded.role || "");
       socket.user = { id: userId, role };
 
+      // estado por conexão
+      socket.data.allowedReservationIds = new Set();
+
       const ip = getClientIp(socket);
       const key = `${ip}:${userId}`;
 
       const r = connectLimiter.hit(key);
       if (!r.ok) {
-        // rejeita handshake (cliente vai parar de tentar após algumas falhas)
         return next(new Error("RATE_LIMITED"));
       }
 
@@ -222,12 +221,16 @@ function initSocket(httpServer) {
     const ip = getClientIp(socket);
     const baseKey = `${ip}:${userId}`;
 
+    const allowedSet =
+      socket.data.allowedReservationIds instanceof Set
+        ? socket.data.allowedReservationIds
+        : new Set();
+
     // ✅ Join na sala da reserva
     socket.on("join:reservation", async ({ reservationId } = {}) => {
       const rid = String(reservationId || "").trim();
       if (!rid) return;
 
-      // rate limit do join
       const jr = joinLimiter.hit(`${baseKey}:join`);
       if (!jr.ok) {
         socket.emit("join:reservation:error", {
@@ -248,6 +251,10 @@ function initSocket(httpServer) {
         }
       }
 
+      // ✅ whitelista reserva nesta conexão
+      allowedSet.add(String(rid));
+      socket.data.allowedReservationIds = allowedSet;
+
       socket.join(reservationRoom(rid));
       socket.emit("joined:reservation", { reservationId: rid });
     });
@@ -255,17 +262,27 @@ function initSocket(httpServer) {
     socket.on("leave:reservation", ({ reservationId } = {}) => {
       const rid = String(reservationId || "").trim();
       if (!rid) return;
+
+      allowedSet.delete(String(rid));
+      socket.data.allowedReservationIds = allowedSet;
+
       socket.leave(reservationRoom(rid));
+    });
+
+    socket.on("disconnect", () => {
+      try {
+        allowedSet.clear();
+      } catch {}
     });
 
     /* ===========================================================
        ✅ Status em tempo real (entregue / lida)
 
-       - delivered: cliente destinatário emite quando RECEBEU o evento
-       - read: cliente emite quando MARCOU COMO LIDO (ou controller também pode emitir)
+       Regras:
+       - ACK só vale se a conexão está whitelisted naquela reserva
+       - ACK rate-limited
        =========================================================== */
 
-    // Cliente -> servidor: "chat:delivered"
     socket.on("chat:delivered", async ({ reservationId, messageId } = {}) => {
       const rid = String(reservationId || "").trim();
       const mid = messageId != null ? String(messageId).trim() : "";
@@ -274,7 +291,10 @@ function initSocket(httpServer) {
       const ar = ackLimiter.hit(`${baseKey}:ack`);
       if (!ar.ok) return;
 
-      // garante que o socket está na sala (e que tem permissão)
+      // ✅ precisa ter feito join válido antes (whitelist)
+      if (!isAdminLike && !allowedSet.has(String(rid))) return;
+
+      // ✅ e precisa estar na sala (redundância segura)
       const room = reservationRoom(rid);
       const isInRoom = socket.rooms?.has?.(room);
       if (!isInRoom) return;
@@ -287,14 +307,14 @@ function initSocket(httpServer) {
       });
     });
 
-    // Cliente -> servidor: "chat:read"
-    // Observação: você também pode emitir isso do controller quando chamar markChatAsRead
     socket.on("chat:read", async ({ reservationId } = {}) => {
       const rid = String(reservationId || "").trim();
       if (!rid) return;
 
       const ar = ackLimiter.hit(`${baseKey}:ack`);
       if (!ar.ok) return;
+
+      if (!isAdminLike && !allowedSet.has(String(rid))) return;
 
       const room = reservationRoom(rid);
       const isInRoom = socket.rooms?.has?.(room);
