@@ -21,7 +21,7 @@ export default function Home() {
         >
           <div className="absolute inset-0 flex items-start justify-center">
             <div className="w-full max-w-6xl px-6 text-center text-white pt-20 sm:pt-24">
-              {/* TÍTULO */}
+              {/* TÍTULO (mantém onde está) */}
               <h1
                 className="text-4xl sm:text-5xl font-bold mb-4"
                 style={{ textShadow: "2px 2px 10px rgba(0,0,0,0.65)" }}
@@ -32,52 +32,68 @@ export default function Home() {
                 pet recebe cuidado com carinho e confiança 🐾
               </h1>
 
-              {/* SUBTÍTULO */}
-              <p
-                className="text-lg sm:text-xl max-w-3xl mx-auto mb-8"
-                style={{ textShadow: "1px 1px 8px rgba(0,0,0,0.6)" }}
-              >
-                Aqui, o foco é simples:
-                <br />
-                garantir que seu pet esteja bem cuidado, seguro e feliz, em qualquer situação.
-              </p>
+              {/* Espaço para “limpar” o centro da imagem */}
+              <div className="mt-10 md:mt-12" />
 
-              {/* BOTÃO (mantido exatamente no lugar) */}
-              <Link
-                to="/buscar"
-                className="bg-secondary hover:bg-[#95301F] text-white px-7 py-3 rounded-lg font-semibold shadow-lg transition inline-block"
-              >
-                Buscar Cuidadores
-              </Link>
-
-              {/* CARDS */}
-              <div className="mt-14 max-w-5xl mx-auto grid grid-cols-1 sm:grid-cols-3 gap-4 text-left">
-                <div className="bg-[#5A3A22]/65 rounded-2xl p-4 backdrop-blur-sm">
-                  <p className="font-semibold text-white">Confiança</p>
-                  <p className="text-white/90 text-sm mt-1">
-                    Escolha com tranquilidade quem vai cuidar do seu pet.
-                  </p>
-                </div>
-
-                <div className="bg-[#5A3A22]/65 rounded-2xl p-4 backdrop-blur-sm">
-                  <p className="font-semibold text-white">Bem-estar</p>
-                  <p className="text-white/90 text-sm mt-1">
-                    O cuidado do seu pet sempre vem antes de qualquer valor.
-                  </p>
-                </div>
-
-                <div className="bg-[#5A3A22]/65 rounded-2xl p-4 backdrop-blur-sm">
-                  <p className="font-semibold text-white">Experiência</p>
-                  <p className="text-white/90 text-sm mt-1">
-                    Um processo simples para você se sentir seguro do início ao fim.
-                  </p>
-                </div>
+              {/* BOTÃO (agora acima do texto “Aqui, o foco…”) */}
+              <div className="flex justify-center">
+                <Link
+                  to="/buscar"
+                  className="bg-secondary hover:bg-[#95301F] text-white px-7 py-3 rounded-lg font-semibold shadow-lg transition inline-block"
+                >
+                  Buscar Cuidadores
+                </Link>
               </div>
 
-              {/* TEXTO SEM TAXAS */}
-              <p className="mt-6 text-sm sm:text-base text-[#5A3A22] font-medium">
-                Não cobramos taxas de tutores ou cuidadores — nosso foco é a experiência e o bem-estar dos pets.
-              </p>
+              {/* “Aqui, o foco…” (logo acima dos cards, com contraste) */}
+              <div className="mt-6 flex justify-center">
+                <p
+                  className="inline-block text-sm sm:text-base text-white px-4 py-2 rounded-xl bg-[#5A3A22]/65 backdrop-blur-sm"
+                  style={{ textShadow: "1px 1px 6px rgba(0,0,0,0.45)" }}
+                >
+                  Aqui, o foco é simples:{" "}
+                  <span className="font-medium">
+                    garantir que seu pet esteja bem cuidado, seguro e feliz, em qualquer situação.
+                  </span>
+                </p>
+              </div>
+
+              {/* CARDS (mais compactos, mais largos, mais baixos) */}
+              <div className="mt-10 md:mt-16 max-w-6xl mx-auto">
+                <div
+                  className="
+                    grid grid-cols-1 sm:grid-cols-3 gap-4
+                    items-stretch
+                    translate-y-10 md:translate-y-12
+                  "
+                >
+                  <div className="bg-[#5A3A22]/65 rounded-2xl px-5 py-3 backdrop-blur-sm">
+                    <p className="font-semibold text-white text-center">Confiança</p>
+                    <p className="text-white/90 text-[13px] mt-1 text-center whitespace-nowrap truncate">
+                      Escolha com tranquilidade quem vai cuidar do seu pet.
+                    </p>
+                  </div>
+
+                  <div className="bg-[#5A3A22]/65 rounded-2xl px-5 py-3 backdrop-blur-sm">
+                    <p className="font-semibold text-white text-center">Bem-estar</p>
+                    <p className="text-white/90 text-[13px] mt-1 text-center whitespace-nowrap truncate">
+                      O cuidado do seu pet sempre vem antes de qualquer valor.
+                    </p>
+                  </div>
+
+                  <div className="bg-[#5A3A22]/65 rounded-2xl px-5 py-3 backdrop-blur-sm">
+                    <p className="font-semibold text-white text-center">Experiência</p>
+                    <p className="text-white/90 text-[13px] mt-1 text-center whitespace-nowrap truncate">
+                      Um processo simples para você se sentir seguro do início ao fim.
+                    </p>
+                  </div>
+                </div>
+
+                {/* TEXTO “Não cobramos...” (na sequência, acompanha os cards) */}
+                <p className="mt-8 md:mt-10 text-sm sm:text-base text-[#5A3A22] font-medium text-center">
+                  Não cobramos taxas de tutores ou cuidadores — nosso foco é a experiência e o bem-estar dos pets.
+                </p>
+              </div>
             </div>
           </div>
         </div>
