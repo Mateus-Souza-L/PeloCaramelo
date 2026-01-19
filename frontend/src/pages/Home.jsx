@@ -17,7 +17,7 @@ export default function Home() {
             min-h-[520px] sm:min-h-[580px] md:min-h-[640px]
           "
           style={{
-            backgroundImage: "url('/images/Cachorro_Home.png')", // troque a extensão se necessário
+            backgroundImage: "url('/images/Gato_e_cachorro_Home.png')", // troque a extensão se necessário
             backgroundSize: "cover",
             backgroundPosition: "center",
             backgroundRepeat: "no-repeat",
