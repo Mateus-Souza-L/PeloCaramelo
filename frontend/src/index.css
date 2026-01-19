@@ -19,6 +19,12 @@
 /* ============================= */
 /* BASE GERAL */
 /* ============================= */
+html,
+body {
+  /* ✅ FIX MOBILE: evita “faixa vazia” e scroll horizontal causado por elementos que estouram largura */
+  overflow-x: hidden;
+}
+
 body {
   font-family: "Lato", sans-serif;
   background: var(--cor-fundo);
