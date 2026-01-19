@@ -6,13 +6,25 @@ export default function Home() {
     document.title = "PeloCaramelo | Início";
   }, []);
 
+  // altura aproximada da navbar (px) — ajusta se necessário
+  const NAVBAR_H = 72;
+
   return (
     <div className="bg-[#EBCBA9] min-h-screen">
       {/* Hero */}
       <section className="relative overflow-hidden">
         <div
-          className="relative w-full aspect-video min-h-[560px] md:min-h-[680px]"
+          className="relative w-full"
           style={{
+            // ✅ desconta a navbar da dobra (primeira tela)
+            height: `calc(100vh - ${NAVBAR_H}px)`,
+
+            // ✅ mantém “sensação” 16:9 sem distorcer:
+            // - em telas bem baixas, segura um mínimo
+            // - em telas grandes, segura um máximo parecido com 16:9 visível
+            minHeight: "540px",
+            maxHeight: "720px",
+
             backgroundImage: "url('/images/Gato_e_cachorro_Home.png')",
             backgroundSize: "cover",
             backgroundPosition: "center",
@@ -20,20 +32,19 @@ export default function Home() {
           }}
         >
           <div className="absolute inset-0 flex items-start justify-center">
-            <div className="w-full max-w-6xl px-6 text-center text-white pt-20 sm:pt-24">
+            <div className="w-full max-w-6xl px-6 text-center text-white pt-16 sm:pt-20">
               {/* TEXTO PRINCIPAL (mantém onde está) */}
               <h1
                 className="text-4xl sm:text-5xl font-bold mb-4"
                 style={{ textShadow: "2px 2px 10px rgba(0,0,0,0.65)" }}
               >
-                Na{" "}
-                <span className="text-white">Pelo</span>
+                Na <span className="text-white">Pelo</span>
                 <span className="text-yellow-400 drop-shadow-md">Caramelo</span>, seu
                 pet recebe cuidado com carinho e confiança 🐾
               </h1>
 
               {/* Botão (mantém) */}
-              <div className="mt-6 sm:mt-8 md:mt-10 flex justify-center">
+              <div className="mt-6 sm:mt-8 flex justify-center">
                 <Link
                   to="/buscar"
                   className="bg-secondary hover:bg-[#95301F] text-white px-7 py-3 rounded-lg font-semibold shadow-lg transition inline-block"
@@ -42,7 +53,7 @@ export default function Home() {
                 </Link>
               </div>
 
-              {/* Texto “Aqui, o foco…” (mantém onde está) */}
+              {/* Texto “Aqui, o foco…” (mantém) */}
               <div className="mt-6 flex justify-center">
                 <div className="max-w-3xl w-full">
                   <p
@@ -64,15 +75,15 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* ✅ BLOCO DE BASE: cards + “não cobramos” descem até o limite */}
+              {/* Cards + “não cobramos” */}
               <div className="max-w-6xl mx-auto mt-6 relative">
-                {/* espaço grande para empurrar cards pro fim do hero */}
-                <div className="h-40 sm:h-48 md:h-56" />
+                {/* ✅ antes era h-40/48/56 — agora sobe discretamente */}
+                <div className="h-28 sm:h-36 md:h-44" />
 
                 <div className="flex flex-col items-center gap-4 pb-6">
-                  {/* Cards (mais transparentes + mais embaixo) */}
+                  {/* Cards */}
                   <div className="w-full grid grid-cols-1 sm:grid-cols-3 gap-4 items-stretch">
-                    <div className="rounded-2xl px-6 py-4 bg-[#5A3A22]/38 backdrop-blur-sm border border-white/10 shadow-md">
+                    <div className="rounded-2xl px-6 py-4 bg-[#5A3A22]/34 backdrop-blur-sm border border-white/10 shadow-md">
                       <p className="font-semibold text-white text-center text-base">
                         Confiança
                       </p>
@@ -81,7 +92,7 @@ export default function Home() {
                       </p>
                     </div>
 
-                    <div className="rounded-2xl px-6 py-4 bg-[#5A3A22]/38 backdrop-blur-sm border border-white/10 shadow-md">
+                    <div className="rounded-2xl px-6 py-4 bg-[#5A3A22]/34 backdrop-blur-sm border border-white/10 shadow-md">
                       <p className="font-semibold text-white text-center text-base">
                         Bem-estar
                       </p>
@@ -90,7 +101,7 @@ export default function Home() {
                       </p>
                     </div>
 
-                    <div className="rounded-2xl px-6 py-4 bg-[#5A3A22]/38 backdrop-blur-sm border border-white/10 shadow-md">
+                    <div className="rounded-2xl px-6 py-4 bg-[#5A3A22]/34 backdrop-blur-sm border border-white/10 shadow-md">
                       <p className="font-semibold text-white text-center text-base">
                         Experiência
                       </p>
@@ -100,7 +111,7 @@ export default function Home() {
                     </div>
                   </div>
 
-                  {/* “Não cobramos…” (mais transparente) */}
+                  {/* “Não cobramos…” (mantém leve/transparente) */}
                   <p
                     className="
                       text-[#5A3A22]
@@ -108,7 +119,7 @@ export default function Home() {
                       font-semibold
                       px-4 py-2
                       rounded-xl
-                      bg-white/35
+                      bg-white/30
                       backdrop-blur-sm
                       border border-[#5A3A22]/10
                     "
@@ -130,8 +141,8 @@ export default function Home() {
           <p className="text-textsub">
             Encontre cuidadores confiáveis na{" "}
             <span className="text-[#5A3A22]">Pelo</span>
-            <span className="text-yellow-400 drop-shadow-md">Caramelo</span> e
-            reserve em poucos cliques.
+            <span className="text-yellow-400 drop-shadow-md">Caramelo</span> e reserve
+            em poucos cliques.
           </p>
         </div>
 
@@ -141,8 +152,8 @@ export default function Home() {
           <p className="text-textsub">
             Cadastre-se na{" "}
             <span className="text-[#5A3A22]">Pelo</span>
-            <span className="text-yellow-400 drop-shadow-md">Caramelo</span>,
-            receba pedidos e aumente sua renda cuidando de pets.
+            <span className="text-yellow-400 drop-shadow-md">Caramelo</span>, receba
+            pedidos e aumente sua renda cuidando de pets.
           </p>
         </div>
 
@@ -150,10 +161,9 @@ export default function Home() {
           <div className="text-5xl mb-4">🛡️</div>
           <h2 className="text-xl font-bold mb-2 text-primary-dark">Segurança</h2>
           <p className="text-textsub">
-            A{" "}
-            <span className="text-[#5A3A22]">Pelo</span>
-            <span className="text-yellow-400 drop-shadow-md">Caramelo</span>{" "}
-            garante transparência, confiança e suporte em todas as reservas.
+            A <span className="text-[#5A3A22]">Pelo</span>
+            <span className="text-yellow-400 drop-shadow-md">Caramelo</span> garante
+            transparência, confiança e suporte em todas as reservas.
           </p>
         </div>
       </section>
