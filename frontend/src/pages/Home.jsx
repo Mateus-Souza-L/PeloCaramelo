@@ -217,7 +217,7 @@ export default function Home() {
                 <img
                   src="/images/Gatil.png"
                   alt="Gatil"
-                  className="w-full aspect-[4/3] object-cover rounded-xl select-none pointer-events-none"
+                  className="w-full object-contain select-none pointer-events-none"
                   style={{ maxHeight: 230 }}
                 />
               </div>
@@ -230,7 +230,7 @@ export default function Home() {
                 <img
                   src="/images/Guia_cachorro.png"
                   alt="Guia do cachorro"
-                  className="w-full aspect-[4/3] object-cover rounded-xl select-none pointer-events-none"
+                  className="w-full object-contain select-none pointer-events-none"
                   style={{ maxHeight: 210 }}
                 />
               </div>
