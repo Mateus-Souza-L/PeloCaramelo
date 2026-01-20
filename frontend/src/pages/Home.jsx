@@ -28,7 +28,7 @@ export default function Home() {
           {/* Conteúdo */}
           <div className="absolute inset-0">
             <div className="relative w-full h-full max-w-6xl mx-auto px-6 text-center text-white">
-              {/* ✅ Título no limite máximo (sem aumentar fonte) */}
+              {/* Título (mantido) */}
               <div className="pt-2 sm:pt-3">
                 <h1
                   className="text-4xl sm:text-5xl font-bold"
@@ -38,9 +38,12 @@ export default function Home() {
                   <span className="text-yellow-400 drop-shadow-md">Caramelo</span>, seu
                   pet recebe cuidado com carinho e confiança 🐾
                 </h1>
+              </div>
 
-                {/* ✅ Botão: exatamente onde está (mantive o mt-8) */}
-                <div className="mt-8 flex justify-center">
+              {/* ✅ Cards no limite máximo inferior do HERO */}
+              <div className="absolute left-6 right-6 bottom-3">
+                {/* ✅ Botão colado no limite dos cards (logo acima) */}
+                <div className="flex justify-center mb-3">
                   <Link
                     to="/buscar"
                     className="bg-secondary hover:bg-[#95301F] text-white px-6 py-3 rounded-lg font-semibold shadow-lg transition inline-block"
@@ -48,10 +51,7 @@ export default function Home() {
                     Buscar Cuidadores
                   </Link>
                 </div>
-              </div>
 
-              {/* ✅ Cards no limite máximo inferior do HERO */}
-              <div className="absolute left-6 right-6 bottom-3">
                 <div className="w-full grid grid-cols-1 sm:grid-cols-3 gap-4 items-stretch">
                   {/* Confiança */}
                   <div className="rounded-2xl px-6 py-4 bg-[#5A3A22]/26 backdrop-blur-sm border border-white/10 shadow-md">
@@ -92,7 +92,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Seção inferior (igual ao seu original) */}
+      {/* Seção inferior (mantida) */}
       <section className="py-16 px-6 max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-8 text-center">
         <div className="bg-white shadow-md rounded-2xl p-6 hover:shadow-lg transition">
           <div className="text-5xl mb-4">👩‍👧‍👦</div>
