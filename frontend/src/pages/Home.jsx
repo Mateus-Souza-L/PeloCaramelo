@@ -35,8 +35,8 @@ export default function Home() {
                 >
                   <span className="block max-w-[22rem] mx-auto sm:max-w-none">
                     Na <span className="text-white">Pelo</span>
-                    <span className="text-yellow-400 drop-shadow-md">Caramelo</span>, seu
-                    pet recebe cuidado com carinho e confiança 🐾
+                    <span className="text-yellow-400 drop-shadow-md">Caramelo</span>,
+                    seu pet recebe cuidado com carinho e confiança 🐾
                   </span>
                 </h1>
               </div>
@@ -155,11 +155,11 @@ export default function Home() {
 
       {/* ✅ REMOVIDO: os 3 cards soltos (Para Tutores / Para Cuidadores / Segurança) */}
 
-      {/* NOVA SEÇÃO 16:9 — COMPORTAMENTO ANIMAL */}
+      {/* NOVA SEÇÃO — COMPORTAMENTO ANIMAL (padrão largo igual Dra. Laíse) */}
       <section className="px-6 py-12">
         <div
           className="
-            max-w-6xl mx-auto
+            max-w-[1400px] mx-auto
             rounded-[28px]
             bg-[#FFF8F0]
             shadow-lg
@@ -167,9 +167,8 @@ export default function Home() {
             border border-[#5A3A22]/10
             border-l-4 border-l-[#5A3A22]
           "
-          style={{ aspectRatio: "16 / 9" }}
         >
-          <div className="w-full h-full grid grid-cols-1 md:grid-cols-2 gap-8 p-8 md:p-10">
+          <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-8 p-8 md:p-10">
             {/* Coluna esquerda */}
             <div className="flex flex-col justify-center">
               <span className="inline-flex items-center gap-2 w-fit px-4 py-2 rounded-full bg-[#EBCBA9] text-[#5A3A22] text-sm font-semibold border border-[#5A3A22]/10">
@@ -187,7 +186,6 @@ export default function Home() {
               </p>
 
               <div className="mt-6 flex flex-wrap gap-3">
-                {/* Mantém estilo/posição — só tira "Ver" */}
                 <Link
                   to="/comportamento"
                   className="bg-[#95301F] hover:brightness-110 text-white px-6 py-3 rounded-xl font-semibold shadow-md transition"
@@ -195,7 +193,6 @@ export default function Home() {
                   Comportamento Animal
                 </Link>
 
-                {/* Vai pra comportamento e já desce na especialista */}
                 <Link
                   to="/comportamento#dra-laise-oliveira"
                   className="bg-transparent border-2 border-[#5A3A22] text-[#5A3A22] hover:bg-[#5A3A22]/10 px-6 py-3 rounded-xl font-semibold transition"
@@ -207,8 +204,8 @@ export default function Home() {
 
             {/* Coluna direita */}
             <div className="relative flex items-center justify-center">
-              {/* Card interno (mantém), só muda borda pra amarelo */}
-              <div className="w-full max-w-[1400px] bg-white rounded-2xl shadow-md p-6 border border-[#5A3A22]/10 border-r-4 border-r-[#FFD700]">
+              {/* Card interno (mantém), borda amarela na direita */}
+              <div className="w-full max-w-md bg-white rounded-2xl shadow-md p-6 border border-[#5A3A22]/10 border-r-4 border-r-[#FFD700]">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="rounded-xl bg-[#FFF8F0] border border-[#5A3A22]/10 p-4">
                     <p className="font-bold text-[#5A3A22]">🎆 Fogos e barulho</p>
