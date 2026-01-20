@@ -16,15 +16,9 @@ export default function Home() {
         <div
           className="relative w-full"
           style={{
-            // ✅ desconta a navbar da dobra (primeira tela)
             height: `calc(100vh - ${NAVBAR_H}px)`,
-
-            // ✅ mantém “sensação” 16:9 sem distorcer:
-            // - em telas bem baixas, segura um mínimo
-            // - em telas grandes, segura um máximo parecido com 16:9 visível
             minHeight: "540px",
             maxHeight: "720px",
-
             backgroundImage: "url('/images/Gato_e_cachorro_Home.png')",
             backgroundSize: "cover",
             backgroundPosition: "center",
@@ -32,10 +26,10 @@ export default function Home() {
           }}
         >
           <div className="absolute inset-0 flex items-start justify-center">
-            <div className="w-full max-w-6xl px-6 text-center text-white pt-16 sm:pt-20">
-              {/* TEXTO PRINCIPAL (mantém onde está) */}
+            <div className="w-full max-w-6xl px-6 text-center text-white pt-6 sm:pt-8">
+              {/* ✅ TÍTULO (subiu no limite) */}
               <h1
-                className="text-4xl sm:text-5xl font-bold mb-4"
+                className="text-4xl sm:text-5xl font-bold mb-3"
                 style={{ textShadow: "2px 2px 10px rgba(0,0,0,0.65)" }}
               >
                 Na <span className="text-white">Pelo</span>
@@ -43,7 +37,7 @@ export default function Home() {
                 pet recebe cuidado com carinho e confiança 🐾
               </h1>
 
-              {/* Botão (mantém) */}
+              {/* ✅ BOTÃO (não mexer na posição) */}
               <div className="mt-6 sm:mt-8 flex justify-center">
                 <Link
                   to="/buscar"
@@ -77,11 +71,26 @@ export default function Home() {
 
               {/* Cards + “não cobramos” */}
               <div className="max-w-6xl mx-auto mt-6 relative">
-                {/* ✅ antes era h-40/48/56 — agora sobe discretamente */}
                 <div className="h-28 sm:h-36 md:h-44" />
 
                 <div className="flex flex-col items-center gap-4 pb-6">
-                  {/* Cards */}
+                  {/* ✅ INVERTEU: “Não cobramos…” primeiro */}
+                  <p
+                    className="
+                      text-[#5A3A22]
+                      text-sm sm:text-base
+                      font-semibold
+                      px-4 py-2
+                      rounded-xl
+                      bg-white/30
+                      backdrop-blur-sm
+                      border border-[#5A3A22]/10
+                    "
+                  >
+                    Não cobramos taxas de tutores ou cuidadores — nosso foco é a experiência e o bem-estar dos pets.
+                  </p>
+
+                  {/* ✅ Cards depois */}
                   <div className="w-full grid grid-cols-1 sm:grid-cols-3 gap-4 items-stretch">
                     <div className="rounded-2xl px-6 py-4 bg-[#5A3A22]/34 backdrop-blur-sm border border-white/10 shadow-md">
                       <p className="font-semibold text-white text-center text-base">
@@ -110,22 +119,6 @@ export default function Home() {
                       </p>
                     </div>
                   </div>
-
-                  {/* “Não cobramos…” (mantém leve/transparente) */}
-                  <p
-                    className="
-                      text-[#5A3A22]
-                      text-sm sm:text-base
-                      font-semibold
-                      px-4 py-2
-                      rounded-xl
-                      bg-white/30
-                      backdrop-blur-sm
-                      border border-[#5A3A22]/10
-                    "
-                  >
-                    Não cobramos taxas de tutores ou cuidadores — nosso foco é a experiência e o bem-estar dos pets.
-                  </p>
                 </div>
               </div>
             </div>
