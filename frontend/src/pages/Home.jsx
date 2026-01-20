@@ -35,10 +35,8 @@ export default function Home() {
                 >
                   <span className="block max-w-[22rem] mx-auto sm:max-w-none">
                     Na <span className="text-white">Pelo</span>
-                    <span className="text-yellow-400 drop-shadow-md">
-                      Caramelo
-                    </span>
-                    , seu pet recebe cuidado com carinho e confiança 🐾
+                    <span className="text-yellow-400 drop-shadow-md">Caramelo</span>, seu
+                    pet recebe cuidado com carinho e confiança 🐾
                   </span>
                 </h1>
               </div>
@@ -81,8 +79,8 @@ export default function Home() {
                             Confiança
                           </p>
                           <p className="text-[#5A3A22] text-sm mt-2 text-center leading-snug">
-                            Aqui, o foco é simples: garantir que seu pet esteja
-                            sempre bem cuidado, seguro e feliz.
+                            Aqui, o foco é simples: garantir que seu pet esteja sempre
+                            bem cuidado, seguro e feliz.
                           </p>
                         </div>
                       </div>
@@ -94,8 +92,7 @@ export default function Home() {
                             Bem-estar
                           </p>
                           <p className="text-[#5A3A22] text-sm mt-2 text-center leading-snug">
-                            O cuidado do seu pet sempre vem antes de qualquer
-                            valor.
+                            O cuidado do seu pet sempre vem antes de qualquer valor.
                           </p>
                         </div>
                       </div>
@@ -107,8 +104,8 @@ export default function Home() {
                             Experiência
                           </p>
                           <p className="text-[#5A3A22] text-sm mt-2 text-center leading-snug">
-                            Não cobramos taxas de tutores ou cuidadores — nossa
-                            prioridade é o bem-estar dos pets.
+                            Não cobramos taxas de tutores ou cuidadores — nossa prioridade
+                            é o bem-estar dos pets.
                           </p>
                         </div>
                       </div>
@@ -125,8 +122,8 @@ export default function Home() {
                       Confiança
                     </p>
                     <p className="text-[#5A3A22] text-sm mt-2 text-center leading-snug">
-                      Aqui, o foco é simples: garantir que seu pet esteja sempre
-                      bem cuidado, seguro e feliz.
+                      Aqui, o foco é simples: garantir que seu pet esteja sempre bem
+                      cuidado, seguro e feliz.
                     </p>
                   </div>
 
@@ -144,8 +141,8 @@ export default function Home() {
                       Experiência
                     </p>
                     <p className="text-[#5A3A22] text-sm mt-2 text-center leading-snug">
-                      Não cobramos taxas de tutores ou cuidadores — nossa
-                      prioridade é o bem-estar dos pets.
+                      Não cobramos taxas de tutores ou cuidadores — nossa prioridade é
+                      o bem-estar dos pets.
                     </p>
                   </div>
                 </div>
@@ -156,24 +153,26 @@ export default function Home() {
         </div>
       </section>
 
-      {/* NOVA SEÇÃO 16:9 — COMPORTAMENTO ANIMAL */}
+      {/* NOVA SEÇÃO — COMPORTAMENTO ANIMAL */}
       <section className="px-6 py-12">
         <div
           className="
-            max-w-6xl mx-auto
+            w-full
+            max-w-[1400px] mx-auto
             rounded-[28px]
             bg-[#FFF8F0]
             shadow-lg
             overflow-hidden
             border border-[#5A3A22]/10
             border-l-4 border-l-[#5A3A22]
+            md:aspect-[16/9]
           "
-          style={{ aspectRatio: "16 / 9" }}
         >
-          <div className="w-full h-full grid grid-cols-1 md:grid-cols-2 gap-8 p-8 md:p-10">
+          {/* ✅ no desktop preenche a altura do 16:9; no mobile fica altura natural */}
+          <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-8 p-8 md:p-10 md:h-full">
             {/* Coluna esquerda */}
-            <div className="flex flex-col justify-between">
-              {/* Topo (sobe o conteúdo) */}
+            <div className="flex flex-col gap-6 md:gap-0 md:justify-between">
+              {/* Topo */}
               <div>
                 <span className="inline-flex items-center gap-2 w-fit px-4 py-2 rounded-full bg-[#EBCBA9] text-[#5A3A22] text-sm font-semibold border border-[#5A3A22]/10">
                   🧠 Comportamento Animal
@@ -184,12 +183,12 @@ export default function Home() {
                 </h2>
 
                 <p className="mt-4 text-[#5A3A22]/80 leading-relaxed">
-                  Veja conteúdos e consultas com especialista para te ajudar com
-                  rotina, ansiedade, passeios e também com aquele momento difícil
-                  de fogos e muito barulho.
+                  Veja conteúdos e consultas com especialista para te ajudar com rotina,
+                  ansiedade, passeios e também com aquele momento difícil de fogos e muito
+                  barulho.
                 </p>
 
-                {/* ✅ MOBILE: botões menores e lado a lado */}
+                {/* ✅ Botões (mobile menor e lado a lado) */}
                 <div className="mt-6 flex flex-row flex-wrap gap-3">
                   <Link
                     to="/comportamento"
@@ -217,8 +216,8 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* ✅ Imagem do gato (com respiro dos botões) */}
-              <div className="mt-8 md:mt-0 md:pt-8">
+              {/* Imagem do gato (com respiro) */}
+              <div className="md:pt-6">
                 <div className="rounded-2xl overflow-hidden shadow-md border border-[#5A3A22]/10">
                   <img
                     src="/images/Gatil.png"
@@ -230,9 +229,9 @@ export default function Home() {
             </div>
 
             {/* Coluna direita */}
-            <div className="flex flex-col justify-between">
-              {/* ✅ Imagem do cachorro (com respiro) */}
-              <div className="mt-2 md:mt-0">
+            <div className="flex flex-col gap-6 md:gap-0 md:justify-between">
+              {/* Imagem do cachorro */}
+              <div>
                 <div className="rounded-2xl overflow-hidden shadow-md border border-[#5A3A22]/10">
                   <img
                     src="/images/Guia_cachorro.png"
@@ -242,8 +241,8 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Card interno (mantém), borda amarela (com respiro da imagem) */}
-              <div className="mt-8 md:mt-0 md:pt-8 relative">
+              {/* Card interno (borda amarela) */}
+              <div className="relative md:pt-6">
                 <div className="w-full bg-white rounded-2xl shadow-md p-6 border border-[#5A3A22]/10 border-r-4 border-r-[#FFD700]">
                   {/* DESKTOP/TABLET */}
                   <div className="hidden sm:grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -276,7 +275,7 @@ export default function Home() {
                     </div>
                   </div>
 
-                  {/* ✅ MOBILE: CAROUSEL */}
+                  {/* MOBILE: CAROUSEL */}
                   <div className="sm:hidden">
                     <div
                       className="
@@ -290,9 +289,7 @@ export default function Home() {
                     >
                       <div className="snap-center shrink-0 w-[82%]">
                         <div className="rounded-xl bg-[#FFF8F0] border border-[#5A3A22]/10 p-4">
-                          <p className="font-bold text-[#5A3A22]">
-                            🎆 Fogos e barulho
-                          </p>
+                          <p className="font-bold text-[#5A3A22]">🎆 Fogos e barulho</p>
                           <p className="text-sm text-[#5A3A22]/80 mt-1">
                             Como acalmar e preparar seu pet com segurança.
                           </p>
