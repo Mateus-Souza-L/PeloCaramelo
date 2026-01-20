@@ -7,95 +7,96 @@ export default function Home() {
     document.title = "PeloCaramelo | Início";
   }, []);
 
+  const NAVBAR_H = 72;
+
   return (
     <div className="bg-[#EBCBA9] min-h-screen">
-      {/* HERO (imagem full, sem película geral) */}
-      <section
-        className="relative w-full"
-        style={{
-          // ✅ imagem no public → use /images/...
-          backgroundImage: "url('/images/Gato_e_cachorro_Home.png')",
-          backgroundSize: "cover",
-          backgroundPosition: "center",
-          backgroundRepeat: "no-repeat",
-          // ✅ tenta manter sensação de 16:9 descontando navbar (sem quebrar desktop)
-          minHeight: "calc(100vh - 72px)",
-        }}
-      >
-        {/* Conteúdo por cima da imagem */}
-        <div className="relative z-10 w-full h-full">
-          <div className="max-w-6xl mx-auto px-6">
-            {/* Área principal: título + botão */}
-            <div className="pt-16 sm:pt-10 md:pt-8 text-center">
-              {/* ✅ título principal: subir no limite máximo */}
-              <h1
-                className="text-4xl sm:text-5xl md:text-6xl font-bold text-white"
-                style={{ textShadow: "2px 2px 10px rgba(0,0,0,0.45)" }}
-              >
-                Na{" "}
-                <span className="text-white">Pelo</span>
-                <span className="text-yellow-400 drop-shadow-md">Caramelo</span>
-                , seu pet recebe cuidado com carinho e confiança 🐾
-              </h1>
-
-              {/* ✅ botão mantém exatamente onde está (não mexer) */}
-              <div className="mt-8">
-                <Link
-                  to="/buscar"
-                  className="bg-secondary hover:bg-[#95301F] text-white px-6 py-3 rounded-lg font-semibold shadow-lg transition inline-block"
+      {/* HERO */}
+      <section className="relative overflow-hidden">
+        <div
+          className="relative w-full"
+          style={{
+            height: `calc(100vh - ${NAVBAR_H}px)`,
+            minHeight: "540px",
+            maxHeight: "720px",
+            backgroundImage: "url('/images/Gato_e_cachorro_Home.png')",
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            backgroundRepeat: "no-repeat",
+          }}
+        >
+          {/* Conteúdo */}
+          <div className="absolute inset-0">
+            <div className="relative w-full h-full max-w-6xl mx-auto px-6 text-center text-white">
+              {/* ✅ Título no limite máximo (sem aumentar fonte) */}
+              <div className="pt-2 sm:pt-3">
+                <h1
+                  className="text-4xl sm:text-5xl font-bold"
+                  style={{ textShadow: "2px 2px 10px rgba(0,0,0,0.55)" }}
                 >
-                  Buscar Cuidadores
-                </Link>
-              </div>
-            </div>
+                  Na <span className="text-white">Pelo</span>
+                  <span className="text-yellow-400 drop-shadow-md">Caramelo</span>, seu
+                  pet recebe cuidado com carinho e confiança 🐾
+                </h1>
 
-            {/* Cards (agora SEM as frases soltas; textos dentro dos cards; texto marrom) */}
-            <div className="mt-10 pb-10 sm:pb-14">
-              <div className="w-full grid grid-cols-1 sm:grid-cols-3 gap-4 items-stretch">
-                {/* Confiança */}
-                <div className="rounded-2xl px-6 py-4 bg-[#5A3A22]/26 backdrop-blur-sm border border-white/10 shadow-md">
-                  <p className="font-semibold text-[#5A3A22] text-center text-base">
-                    Confiança
-                  </p>
-                  <p className="text-[#5A3A22] text-sm mt-2 text-center leading-snug">
-                    Aqui, o foco é simples: garantir que seu pet esteja sempre bem
-                    cuidado, seguro e feliz.
-                  </p>
-                </div>
-
-                {/* Bem-estar */}
-                <div className="rounded-2xl px-6 py-4 bg-[#5A3A22]/26 backdrop-blur-sm border border-white/10 shadow-md">
-                  <p className="font-semibold text-[#5A3A22] text-center text-base">
-                    Bem-estar
-                  </p>
-                  <p className="text-[#5A3A22] text-sm mt-2 text-center leading-snug">
-                    O cuidado do seu pet sempre vem antes de qualquer valor.
-                  </p>
-                </div>
-
-                {/* Experiência */}
-                <div className="rounded-2xl px-6 py-4 bg-[#5A3A22]/26 backdrop-blur-sm border border-white/10 shadow-md">
-                  <p className="font-semibold text-[#5A3A22] text-center text-base">
-                    Experiência
-                  </p>
-                  <p className="text-[#5A3A22] text-sm mt-2 text-center leading-snug">
-                    Não cobramos taxas de tutores ou cuidadores — nossa prioridade é
-                    o bem-estar dos pets.
-                  </p>
+                {/* ✅ Botão: exatamente onde está (mantive o mt-8) */}
+                <div className="mt-8 flex justify-center">
+                  <Link
+                    to="/buscar"
+                    className="bg-secondary hover:bg-[#95301F] text-white px-6 py-3 rounded-lg font-semibold shadow-lg transition inline-block"
+                  >
+                    Buscar Cuidadores
+                  </Link>
                 </div>
               </div>
+
+              {/* ✅ Cards no limite máximo inferior do HERO */}
+              <div className="absolute left-6 right-6 bottom-6">
+                <div className="w-full grid grid-cols-1 sm:grid-cols-3 gap-4 items-stretch">
+                  {/* Confiança */}
+                  <div className="rounded-2xl px-6 py-4 bg-[#5A3A22]/26 backdrop-blur-sm border border-white/10 shadow-md">
+                    <p className="font-semibold text-[#5A3A22] text-center text-base">
+                      Confiança
+                    </p>
+                    <p className="text-[#5A3A22] text-sm mt-2 text-center leading-snug">
+                      Aqui, o foco é simples: garantir que seu pet esteja sempre bem
+                      cuidado, seguro e feliz.
+                    </p>
+                  </div>
+
+                  {/* Bem-estar */}
+                  <div className="rounded-2xl px-6 py-4 bg-[#5A3A22]/26 backdrop-blur-sm border border-white/10 shadow-md">
+                    <p className="font-semibold text-[#5A3A22] text-center text-base">
+                      Bem-estar
+                    </p>
+                    <p className="text-[#5A3A22] text-sm mt-2 text-center leading-snug">
+                      O cuidado do seu pet sempre vem antes de qualquer valor.
+                    </p>
+                  </div>
+
+                  {/* Experiência */}
+                  <div className="rounded-2xl px-6 py-4 bg-[#5A3A22]/26 backdrop-blur-sm border border-white/10 shadow-md">
+                    <p className="font-semibold text-[#5A3A22] text-center text-base">
+                      Experiência
+                    </p>
+                    <p className="text-[#5A3A22] text-sm mt-2 text-center leading-snug">
+                      Não cobramos taxas de tutores ou cuidadores — nossa prioridade é
+                      o bem-estar dos pets.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              {/* fim cards */}
             </div>
           </div>
         </div>
       </section>
 
-      {/* Seção inferior (mantive como estava no seu original) */}
+      {/* Seção inferior (igual ao seu original) */}
       <section className="py-16 px-6 max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-8 text-center">
         <div className="bg-white shadow-md rounded-2xl p-6 hover:shadow-lg transition">
           <div className="text-5xl mb-4">👩‍👧‍👦</div>
-          <h2 className="text-xl font-bold mb-2 text-primary-dark">
-            Para Tutores
-          </h2>
+          <h2 className="text-xl font-bold mb-2 text-primary-dark">Para Tutores</h2>
           <p className="text-textsub">
             Encontre cuidadores confiáveis na{" "}
             <span className="text-[#5A3A22]">Pelo</span>
