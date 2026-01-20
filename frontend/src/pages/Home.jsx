@@ -190,6 +190,88 @@ export default function Home() {
           </p>
         </div>
       </section>
+
+      {/* ✅ NOVA SEÇÃO 16:9 — Comportamento Animal */}
+      <section className="px-6 pb-16">
+        <div className="max-w-6xl mx-auto">
+          {/* wrapper 16:9 */}
+          <div className="relative w-full rounded-3xl overflow-hidden shadow-lg border border-[#5A3A22]/10 bg-[#FFF8F0]">
+            <div style={{ paddingTop: "56.25%" }} />
+
+            {/* conteúdo */}
+            <div className="absolute inset-0 p-6 sm:p-10">
+              <div className="h-full grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
+                {/* Coluna esquerda */}
+                <div className="text-[#5A3A22]">
+                  <p className="inline-flex items-center gap-2 text-xs font-semibold px-3 py-1 rounded-full bg-[#D2A679]/35 border border-[#5A3A22]/10">
+                    🧠 Comportamento Animal
+                  </p>
+
+                  <h3 className="mt-4 text-2xl sm:text-3xl font-extrabold leading-tight">
+                    Orientação prática para melhorar o dia a dia do seu pet
+                  </h3>
+
+                  <p className="mt-3 text-sm sm:text-base text-[#5A3A22]/85 max-w-xl">
+                    Conteúdos e consultas com especialista para te ajudar com rotina,
+                    ansiedade, passeios e também com aquele momento difícil de
+                    <span className="font-semibold"> fogos e muito barulho</span>.
+                  </p>
+
+                  <div className="mt-5 flex flex-col sm:flex-row gap-3">
+                    <Link
+                      to="/comportamento"
+                      className="bg-[#95301F] hover:opacity-95 text-white px-5 py-3 rounded-xl font-semibold shadow-md transition text-center"
+                    >
+                      Ver Comportamento Animal
+                    </Link>
+
+                    <Link
+                      to="/comportamento"
+                      className="border-2 border-[#5A3A22] text-[#5A3A22] hover:bg-[#5A3A22] hover:text-white px-5 py-3 rounded-xl font-semibold transition text-center"
+                    >
+                      Consultar especialista
+                    </Link>
+                  </div>
+                </div>
+
+                {/* Coluna direita (mini cards) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="bg-white rounded-2xl p-5 shadow-sm border border-[#5A3A22]/10">
+                    <p className="text-sm font-bold text-[#5A3A22]">🎆 Fogos e barulho</p>
+                    <p className="mt-2 text-sm text-[#5A3A22]/80">
+                      Como acalmar e preparar seu pet com segurança.
+                    </p>
+                  </div>
+
+                  <div className="bg-white rounded-2xl p-5 shadow-sm border border-[#5A3A22]/10">
+                    <p className="text-sm font-bold text-[#5A3A22]">🕒 Rotina</p>
+                    <p className="mt-2 text-sm text-[#5A3A22]/80">
+                      Ajustes simples que melhoram o comportamento.
+                    </p>
+                  </div>
+
+                  <div className="bg-white rounded-2xl p-5 shadow-sm border border-[#5A3A22]/10">
+                    <p className="text-sm font-bold text-[#5A3A22]">🐾 Passeio</p>
+                    <p className="mt-2 text-sm text-[#5A3A22]/80">
+                      Dicas para passear melhor e com menos estresse.
+                    </p>
+                  </div>
+
+                  <div className="bg-white rounded-2xl p-5 shadow-sm border border-[#5A3A22]/10">
+                    <p className="text-sm font-bold text-[#5A3A22]">💛 Ansiedade</p>
+                    <p className="mt-2 text-sm text-[#5A3A22]/80">
+                      Sinais comuns e o que fazer no dia a dia.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* detalhe visual discreto */}
+              <div className="pointer-events-none absolute -bottom-16 -right-16 w-64 h-64 rounded-full bg-[#FFD700]/20 blur-2xl" />
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }
