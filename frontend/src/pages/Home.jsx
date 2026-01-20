@@ -51,7 +51,7 @@ export default function Home() {
               </div>
 
               {/* ✅ Cards no limite máximo inferior do HERO */}
-              <div className="absolute left-6 right-6 bottom-6">
+              <div className="absolute left-6 right-6 bottom-3">
                 <div className="w-full grid grid-cols-1 sm:grid-cols-3 gap-4 items-stretch">
                   {/* Confiança */}
                   <div className="rounded-2xl px-6 py-4 bg-[#5A3A22]/26 backdrop-blur-sm border border-white/10 shadow-md">
