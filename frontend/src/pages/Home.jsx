@@ -155,7 +155,7 @@ export default function Home() {
 
       {/* ✅ REMOVIDO: os 3 cards soltos (Para Tutores / Para Cuidadores / Segurança) */}
 
-      {/* NOVA SEÇÃO — COMPORTAMENTO ANIMAL (padrão largo igual Dra. Laíse) */}
+      {/* NOVA SEÇÃO 16:9 — COMPORTAMENTO ANIMAL */}
       <section className="px-6 py-12">
         <div
           className="
@@ -167,8 +167,13 @@ export default function Home() {
             border border-[#5A3A22]/10
             border-l-4 border-l-[#5A3A22]
           "
+          style={{
+            aspectRatio: "16 / 9",
+            minHeight: 520,
+            maxHeight: 680,
+          }}
         >
-          <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-8 p-8 md:p-10">
+          <div className="w-full h-full grid grid-cols-1 md:grid-cols-2 gap-10 p-8 md:p-10">
             {/* Coluna esquerda */}
             <div className="flex flex-col justify-center">
               <span className="inline-flex items-center gap-2 w-fit px-4 py-2 rounded-full bg-[#EBCBA9] text-[#5A3A22] text-sm font-semibold border border-[#5A3A22]/10">
@@ -204,33 +209,33 @@ export default function Home() {
 
             {/* Coluna direita */}
             <div className="relative flex items-center justify-center">
-              {/* Card interno (mantém), borda amarela na direita */}
-              <div className="w-full max-w-md bg-white rounded-2xl shadow-md p-6 border border-[#5A3A22]/10 border-r-4 border-r-[#FFD700]">
+              {/* Card interno: mais largo */}
+              <div className="w-full max-w-xl bg-white rounded-2xl shadow-md p-7 border border-[#5A3A22]/10 border-r-4 border-r-[#FFD700]">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="rounded-xl bg-[#FFF8F0] border border-[#5A3A22]/10 p-4">
                     <p className="font-bold text-[#5A3A22]">🎆 Fogos e barulho</p>
-                    <p className="text-sm text-[#5A3A22]/80 mt-1">
+                    <p className="text-[13px] leading-snug text-[#5A3A22]/80 mt-1">
                       Como acalmar e preparar seu pet com segurança.
                     </p>
                   </div>
 
                   <div className="rounded-xl bg-[#FFF8F0] border border-[#5A3A22]/10 p-4">
                     <p className="font-bold text-[#5A3A22]">🕒 Rotina</p>
-                    <p className="text-sm text-[#5A3A22]/80 mt-1">
+                    <p className="text-[13px] leading-snug text-[#5A3A22]/80 mt-1">
                       Ajustes simples que melhoram o comportamento.
                     </p>
                   </div>
 
                   <div className="rounded-xl bg-[#FFF8F0] border border-[#5A3A22]/10 p-4">
                     <p className="font-bold text-[#5A3A22]">🐾 Passeio</p>
-                    <p className="text-sm text-[#5A3A22]/80 mt-1">
+                    <p className="text-[13px] leading-snug text-[#5A3A22]/80 mt-1">
                       Dicas para passear melhor e com menos estresse.
                     </p>
                   </div>
 
                   <div className="rounded-xl bg-[#FFF8F0] border border-[#5A3A22]/10 p-4">
                     <p className="font-bold text-[#5A3A22]">💛 Ansiedade</p>
-                    <p className="text-sm text-[#5A3A22]/80 mt-1">
+                    <p className="text-[13px] leading-snug text-[#5A3A22]/80 mt-1">
                       Sinais comuns e o que fazer no dia a dia.
                     </p>
                   </div>
