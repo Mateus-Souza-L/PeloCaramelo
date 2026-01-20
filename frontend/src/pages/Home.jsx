@@ -27,14 +27,10 @@ export default function Home() {
         >
           <div className="absolute inset-0">
             <div className="relative w-full h-full max-w-6xl mx-auto px-6 text-center text-white">
-              {/* Título (MOBILE menor + tende a 2 linhas; DESKTOP igual) */}
+              {/* Título (mobile menor) */}
               <div className="pt-2 sm:pt-3">
                 <h1
-                  className="
-                    font-bold text-white
-                    text-3xl leading-tight
-                    sm:text-5xl
-                  "
+                  className="font-bold text-white text-3xl leading-tight sm:text-5xl"
                   style={{ textShadow: "2px 2px 10px rgba(0,0,0,0.55)" }}
                 >
                   <span className="block max-w-[22rem] mx-auto sm:max-w-none">
@@ -45,9 +41,9 @@ export default function Home() {
                 </h1>
               </div>
 
-              {/* Bloco inferior (botão + cards) */}
+              {/* Bloco inferior */}
               <div className="absolute left-6 right-6 bottom-3">
-                {/* Botão (MOBILE menor; DESKTOP igual) */}
+                {/* Botão (mobile menor) */}
                 <div className="flex justify-center mb-3">
                   <Link
                     to="/buscar"
@@ -62,21 +58,66 @@ export default function Home() {
                   </Link>
                 </div>
 
-                {/* Cards:
-                    - MOBILE: carrossel horizontal (menos altura, mais imagem)
-                    - DESKTOP (sm+): grid 3 colunas como antes
-                */}
-                <div className="sm:grid sm:grid-cols-3 sm:gap-4 sm:items-stretch flex gap-3 overflow-x-auto snap-x snap-mandatory pb-2">
-                  {/* Confiança */}
-                  <div
-                    className="
-                      snap-center
-                      rounded-2xl bg-[#5A3A22]/26 backdrop-blur-sm border border-white/10 shadow-md
-                      px-4 py-3
-                      min-w-[78%]
-                      sm:min-w-0 sm:px-6 sm:py-4
-                    "
-                  >
+                {/* ✅ DESKTOP: grid normal | ✅ MOBILE: 1 card por vez (snap) */}
+                <div className="sm:grid sm:grid-cols-3 sm:gap-4 sm:items-stretch">
+                  {/* MOBILE CAROUSEL */}
+                  <div className="sm:hidden">
+                    <div
+                      className="
+                        flex gap-6
+                        overflow-x-auto
+                        snap-x snap-mandatory
+                        px-5
+                        -mx-5
+                        pb-2
+                      "
+                    >
+                      {/* Card 1 */}
+                      <div className="snap-center shrink-0 w-full">
+                        <div className="rounded-2xl bg-[#5A3A22]/26 backdrop-blur-sm border border-white/10 shadow-md px-5 py-4">
+                          <p className="font-semibold text-[#5A3A22] text-center text-base">
+                            Confiança
+                          </p>
+                          <p className="text-[#5A3A22] text-sm mt-2 text-center leading-snug">
+                            Aqui, o foco é simples: garantir que seu pet esteja sempre
+                            bem cuidado, seguro e feliz.
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Card 2 */}
+                      <div className="snap-center shrink-0 w-full">
+                        <div className="rounded-2xl bg-[#5A3A22]/26 backdrop-blur-sm border border-white/10 shadow-md px-5 py-4">
+                          <p className="font-semibold text-[#5A3A22] text-center text-base">
+                            Bem-estar
+                          </p>
+                          <p className="text-[#5A3A22] text-sm mt-2 text-center leading-snug">
+                            O cuidado do seu pet sempre vem antes de qualquer valor.
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Card 3 */}
+                      <div className="snap-center shrink-0 w-full">
+                        <div className="rounded-2xl bg-[#5A3A22]/26 backdrop-blur-sm border border-white/10 shadow-md px-5 py-4">
+                          <p className="font-semibold text-[#5A3A22] text-center text-base">
+                            Experiência
+                          </p>
+                          <p className="text-[#5A3A22] text-sm mt-2 text-center leading-snug">
+                            Não cobramos taxas de tutores ou cuidadores — nossa prioridade
+                            é o bem-estar dos pets.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <p className="mt-1 text-[11px] text-white/70">
+                      Deslize para o lado para ver os cards →
+                    </p>
+                  </div>
+
+                  {/* DESKTOP GRID (mantido igual) */}
+                  <div className="hidden sm:block rounded-2xl bg-[#5A3A22]/26 backdrop-blur-sm border border-white/10 shadow-md px-6 py-4">
                     <p className="font-semibold text-[#5A3A22] text-center text-base">
                       Confiança
                     </p>
@@ -86,16 +127,7 @@ export default function Home() {
                     </p>
                   </div>
 
-                  {/* Bem-estar */}
-                  <div
-                    className="
-                      snap-center
-                      rounded-2xl bg-[#5A3A22]/26 backdrop-blur-sm border border-white/10 shadow-md
-                      px-4 py-3
-                      min-w-[78%]
-                      sm:min-w-0 sm:px-6 sm:py-4
-                    "
-                  >
+                  <div className="hidden sm:block rounded-2xl bg-[#5A3A22]/26 backdrop-blur-sm border border-white/10 shadow-md px-6 py-4">
                     <p className="font-semibold text-[#5A3A22] text-center text-base">
                       Bem-estar
                     </p>
@@ -104,16 +136,7 @@ export default function Home() {
                     </p>
                   </div>
 
-                  {/* Experiência */}
-                  <div
-                    className="
-                      snap-center
-                      rounded-2xl bg-[#5A3A22]/26 backdrop-blur-sm border border-white/10 shadow-md
-                      px-4 py-3
-                      min-w-[78%]
-                      sm:min-w-0 sm:px-6 sm:py-4
-                    "
-                  >
+                  <div className="hidden sm:block rounded-2xl bg-[#5A3A22]/26 backdrop-blur-sm border border-white/10 shadow-md px-6 py-4">
                     <p className="font-semibold text-[#5A3A22] text-center text-base">
                       Experiência
                     </p>
@@ -123,13 +146,8 @@ export default function Home() {
                     </p>
                   </div>
                 </div>
-
-                {/* dica visual no mobile (bem discreta) */}
-                <p className="mt-1 text-[11px] text-white/70 sm:hidden">
-                  Deslize para o lado para ver os cards →
-                </p>
+                {/* fim cards */}
               </div>
-              {/* fim bloco inferior */}
             </div>
           </div>
         </div>
