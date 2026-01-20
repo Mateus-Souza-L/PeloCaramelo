@@ -208,7 +208,7 @@ export default function Home() {
             {/* Coluna direita */}
             <div className="relative flex items-center justify-center">
               {/* Card interno (mantém), só muda borda pra amarelo */}
-              <div className="w-full max-w-md bg-white rounded-2xl shadow-md p-6 border border-[#5A3A22]/10 border-r-4 border-r-[#FFD700]">
+              <div className="w-full max-w-[1400px] bg-white rounded-2xl shadow-md p-6 border border-[#5A3A22]/10 border-r-4 border-r-[#FFD700]">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="rounded-xl bg-[#FFF8F0] border border-[#5A3A22]/10 p-4">
                     <p className="font-bold text-[#5A3A22]">🎆 Fogos e barulho</p>
