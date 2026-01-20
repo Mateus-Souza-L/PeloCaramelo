@@ -22,7 +22,7 @@ export default function ComportamentoAnimal() {
     if (location.pathname !== "/comportamento") return;
 
     const NAVBAR_OFFSET = 92; // ajuste fino caso sua navbar varie (72 + margem)
-    const DEFAULT_END = 110; // seu valor original
+    const DEFAULT_END = 160; // seu valor original
 
     const timeout = setTimeout(() => {
       const hash = (location.hash || "").replace("#", "").trim();
