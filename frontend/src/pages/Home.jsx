@@ -35,10 +35,8 @@ export default function Home() {
                 >
                   <span className="block max-w-[22rem] mx-auto sm:max-w-none">
                     Na <span className="text-white">Pelo</span>
-                    <span className="text-yellow-400 drop-shadow-md">
-                      Caramelo
-                    </span>
-                    , seu pet recebe cuidado com carinho e confiança 🐾
+                    <span className="text-yellow-400 drop-shadow-md">Caramelo</span>, seu
+                    pet recebe cuidado com carinho e confiança 🐾
                   </span>
                 </h1>
               </div>
@@ -81,8 +79,8 @@ export default function Home() {
                             Confiança
                           </p>
                           <p className="text-[#5A3A22] text-sm mt-2 text-center leading-snug">
-                            Aqui, o foco é simples: garantir que seu pet esteja
-                            sempre bem cuidado, seguro e feliz.
+                            Aqui, o foco é simples: garantir que seu pet esteja sempre
+                            bem cuidado, seguro e feliz.
                           </p>
                         </div>
                       </div>
@@ -94,8 +92,7 @@ export default function Home() {
                             Bem-estar
                           </p>
                           <p className="text-[#5A3A22] text-sm mt-2 text-center leading-snug">
-                            O cuidado do seu pet sempre vem antes de qualquer
-                            valor.
+                            O cuidado do seu pet sempre vem antes de qualquer valor.
                           </p>
                         </div>
                       </div>
@@ -107,8 +104,8 @@ export default function Home() {
                             Experiência
                           </p>
                           <p className="text-[#5A3A22] text-sm mt-2 text-center leading-snug">
-                            Não cobramos taxas de tutores ou cuidadores — nossa
-                            prioridade é o bem-estar dos pets.
+                            Não cobramos taxas de tutores ou cuidadores — nossa prioridade
+                            é o bem-estar dos pets.
                           </p>
                         </div>
                       </div>
@@ -125,8 +122,8 @@ export default function Home() {
                       Confiança
                     </p>
                     <p className="text-[#5A3A22] text-sm mt-2 text-center leading-snug">
-                      Aqui, o foco é simples: garantir que seu pet esteja sempre
-                      bem cuidado, seguro e feliz.
+                      Aqui, o foco é simples: garantir que seu pet esteja sempre bem
+                      cuidado, seguro e feliz.
                     </p>
                   </div>
 
@@ -144,8 +141,8 @@ export default function Home() {
                       Experiência
                     </p>
                     <p className="text-[#5A3A22] text-sm mt-2 text-center leading-snug">
-                      Não cobramos taxas de tutores ou cuidadores — nossa
-                      prioridade é o bem-estar dos pets.
+                      Não cobramos taxas de tutores ou cuidadores — nossa prioridade é
+                      o bem-estar dos pets.
                     </p>
                   </div>
                 </div>
@@ -156,13 +153,11 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ✅ REMOVIDO: os 3 cards soltos (Para Tutores / Para Cuidadores / Segurança) */}
-
-      {/* NOVA SEÇÃO 16:9 — COMPORTAMENTO ANIMAL */}
-      <section className="px-6 py-12">
+      {/* NOVA SEÇÃO — COMPORTAMENTO ANIMAL */}
+      <section className="px-4 sm:px-6 py-10 sm:py-12">
         <div
           className="
-            max-w-[1400px] mx-auto
+            max-w-6xl mx-auto
             rounded-[28px]
             bg-[#FFF8F0]
             shadow-lg
@@ -170,107 +165,111 @@ export default function Home() {
             border border-[#5A3A22]/10
             border-l-4 border-l-[#5A3A22]
           "
+          // ✅ Mobile: altura livre (não trava) | ✅ md+: mantém 16:9
           style={{
-            aspectRatio: "16 / 9",
-            minHeight: 520,
-            maxHeight: 680,
+            aspectRatio: undefined,
           }}
         >
-          <div className="w-full h-full grid grid-cols-1 md:grid-cols-2 gap-10 p-8 md:p-10">
-            {/* Coluna esquerda: topo (texto) + base (Gatil) */}
-            <div className="flex flex-col h-full justify-between">
-              {/* TOPO ESQUERDO */}
-              <div>
-                <span className="inline-flex items-center gap-2 w-fit px-4 py-2 rounded-full bg-[#EBCBA9] text-[#5A3A22] text-sm font-semibold border border-[#5A3A22]/10">
-                  🧠 Comportamento Animal
-                </span>
+          <div className="p-6 sm:p-8 md:p-10 md:[aspect-ratio:16/9]">
+            <div className="w-full h-full grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-10">
+              {/* Coluna esquerda */}
+              <div className="flex flex-col h-full">
+                <div>
+                  <span className="inline-flex items-center gap-2 w-fit px-4 py-2 rounded-full bg-[#EBCBA9] text-[#5A3A22] text-sm font-semibold border border-[#5A3A22]/10">
+                    🧠 Comportamento Animal
+                  </span>
 
-                <h2 className="mt-4 text-3xl md:text-4xl font-extrabold text-[#5A3A22] leading-tight">
-                  Entenda seu pet e comece a melhorar a rotina hoje
-                </h2>
+                  <h2 className="mt-4 text-3xl md:text-4xl font-extrabold text-[#5A3A22] leading-tight">
+                    Entenda seu pet e comece a melhorar a rotina hoje
+                  </h2>
 
-                <p className="mt-4 text-[#5A3A22]/80 leading-relaxed">
-                  Veja conteúdos e consultas com especialista para te ajudar com
-                  rotina, ansiedade, passeios e também com aquele momento difícil
-                  de fogos e muito barulho.
-                </p>
+                  <p className="mt-4 text-[#5A3A22]/80 leading-relaxed">
+                    Veja conteúdos e consultas com especialista para te ajudar com rotina,
+                    ansiedade, passeios e também com aquele momento difícil de fogos e muito
+                    barulho.
+                  </p>
 
-                <div className="mt-6 flex flex-wrap gap-3">
-                  <Link
-                    to="/comportamento"
-                    className="bg-[#95301F] hover:brightness-110 text-white px-6 py-3 rounded-xl font-semibold shadow-md transition"
-                  >
-                    Comportamento Animal
-                  </Link>
+                  <div className="mt-6 flex flex-wrap gap-3">
+                    <Link
+                      to="/comportamento"
+                      className="bg-[#95301F] hover:brightness-110 text-white px-6 py-3 rounded-xl font-semibold shadow-md transition"
+                    >
+                      Comportamento Animal
+                    </Link>
 
-                  <Link
-                    to="/comportamento#dra-laise-oliveira"
-                    className="bg-transparent border-2 border-[#5A3A22] text-[#5A3A22] hover:bg-[#5A3A22]/10 px-6 py-3 rounded-xl font-semibold transition"
-                  >
-                    Consultar especialista
-                  </Link>
+                    <Link
+                      to="/comportamento#dra-laise-oliveira"
+                      className="bg-transparent border-2 border-[#5A3A22] text-[#5A3A22] hover:bg-[#5A3A22]/10 px-6 py-3 rounded-xl font-semibold transition"
+                    >
+                      Consultar especialista
+                    </Link>
+                  </div>
+                </div>
+
+                {/* ✅ Imagem do gato: encosta no “fundo” da coluna no desktop, e no mobile fica abaixo dos botões */}
+                <div className="mt-6 md:mt-auto">
+                  <div className="w-full max-w-xl md:max-w-none mx-auto overflow-hidden rounded-2xl border border-[#5A3A22]/10 shadow-md">
+                    <img
+                      src="/images/Gatil.png"
+                      alt="Gato"
+                      className="w-full aspect-video object-cover"
+                      draggable="false"
+                    />
+                  </div>
                 </div>
               </div>
 
-              {/* BASE ESQUERDA: IMAGEM Gatil (encosta no fundo) */}
-              <div className="mt-6">
-                <img
-                  src="/images/Gatil.png"
-                  alt="Gatil"
-                  className="w-full object-contain select-none pointer-events-none"
-                  style={{ maxHeight: 230 }}
-                />
-              </div>
-            </div>
+              {/* Coluna direita */}
+              <div className="relative flex flex-col h-full">
+                {/* ✅ Imagem do cachorro: fica no topo da coluna no desktop; no mobile fica logo acima dos cards */}
+                <div className="w-full">
+                  <div className="w-full max-w-xl md:max-w-none mx-auto overflow-hidden rounded-2xl border border-[#5A3A22]/10 shadow-md">
+                    <img
+                      src="/images/Guia_cachorro.png"
+                      alt="Cachorro"
+                      className="w-full aspect-video object-cover"
+                      draggable="false"
+                    />
+                  </div>
+                </div>
 
-            {/* Coluna direita: topo (Guia_Cachorro) + base (cards) */}
-            <div className="relative flex flex-col h-full justify-between">
-              {/* TOPO DIREITO: IMAGEM Guia_Cachorro acima dos cards */}
-              <div className="flex justify-center">
-                <img
-                  src="/images/Guia_cachorro.png"
-                  alt="Guia do cachorro"
-                  className="w-full object-contain select-none pointer-events-none"
-                  style={{ maxHeight: 210 }}
-                />
-              </div>
+                {/* ✅ Card interno: empurra pro “fundo” da coluna no desktop */}
+                <div className="mt-6 md:mt-auto flex items-end justify-center">
+                  <div className="w-full max-w-xl bg-white rounded-2xl shadow-md p-6 border border-[#5A3A22]/10 border-r-4 border-r-[#FFD700]">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="rounded-xl bg-[#FFF8F0] border border-[#5A3A22]/10 p-4">
+                        <p className="font-bold text-[#5A3A22]">🎆 Fogos e barulho</p>
+                        <p className="text-sm text-[#5A3A22]/80 mt-1">
+                          Como acalmar e preparar seu pet com segurança.
+                        </p>
+                      </div>
 
-              {/* BASE DIREITA: CARDS (encostados no fundo) */}
-              <div className="relative flex items-end justify-center">
-                <div className="w-full max-w-xl bg-white rounded-2xl shadow-md p-7 border border-[#5A3A22]/10 border-r-4 border-r-[#FFD700]">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="rounded-xl bg-[#FFF8F0] border border-[#5A3A22]/10 p-4">
-                      <p className="font-bold text-[#5A3A22]">🎆 Fogos e barulho</p>
-                      <p className="text-[13px] leading-snug text-[#5A3A22]/80 mt-1">
-                        Como acalmar e preparar seu pet com segurança.
-                      </p>
-                    </div>
+                      <div className="rounded-xl bg-[#FFF8F0] border border-[#5A3A22]/10 p-4">
+                        <p className="font-bold text-[#5A3A22]">🕒 Rotina</p>
+                        <p className="text-sm text-[#5A3A22]/80 mt-1">
+                          Ajustes simples que melhoram o comportamento.
+                        </p>
+                      </div>
 
-                    <div className="rounded-xl bg-[#FFF8F0] border border-[#5A3A22]/10 p-4">
-                      <p className="font-bold text-[#5A3A22]">🕒 Rotina</p>
-                      <p className="text-[13px] leading-snug text-[#5A3A22]/80 mt-1">
-                        Ajustes simples que melhoram o comportamento.
-                      </p>
-                    </div>
+                      <div className="rounded-xl bg-[#FFF8F0] border border-[#5A3A22]/10 p-4">
+                        <p className="font-bold text-[#5A3A22]">🐾 Passeio</p>
+                        <p className="text-sm text-[#5A3A22]/80 mt-1">
+                          Dicas para passear melhor e com menos estresse.
+                        </p>
+                      </div>
 
-                    <div className="rounded-xl bg-[#FFF8F0] border border-[#5A3A22]/10 p-4">
-                      <p className="font-bold text-[#5A3A22]">🐾 Passeio</p>
-                      <p className="text-[13px] leading-snug text-[#5A3A22]/80 mt-1">
-                        Dicas para passear melhor e com menos estresse.
-                      </p>
-                    </div>
-
-                    <div className="rounded-xl bg-[#FFF8F0] border border-[#5A3A22]/10 p-4">
-                      <p className="font-bold text-[#5A3A22]">💛 Ansiedade</p>
-                      <p className="text-[13px] leading-snug text-[#5A3A22]/80 mt-1">
-                        Sinais comuns e o que fazer no dia a dia.
-                      </p>
+                      <div className="rounded-xl bg-[#FFF8F0] border border-[#5A3A22]/10 p-4">
+                        <p className="font-bold text-[#5A3A22]">💛 Ansiedade</p>
+                        <p className="text-sm text-[#5A3A22]/80 mt-1">
+                          Sinais comuns e o que fazer no dia a dia.
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </div>
 
                 {/* brilho suave decorativo */}
-                <div className="absolute -bottom-14 -right-14 w-72 h-72 rounded-full bg-[#FFD700]/20 blur-3xl pointer-events-none" />
+                <div className="absolute -bottom-16 -right-16 w-72 h-72 rounded-full bg-[#FFD700]/20 blur-3xl pointer-events-none" />
               </div>
             </div>
           </div>
