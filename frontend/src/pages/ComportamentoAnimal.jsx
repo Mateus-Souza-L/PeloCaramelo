@@ -23,7 +23,7 @@ export default function ComportamentoAnimal() {
 
     const NAVBAR_OFFSET = 92; // ajuste fino caso sua navbar varie (72 + margem)
     const EXTRA_SCROLL = 120; // 👈 aumenta aqui (ex.: 80, 120, 160) = “1 scroll do mouse” a mais
-    const DEFAULT_END = 180; // usado só quando NÃO tem hash
+    const DEFAULT_END = 0; // usado só quando NÃO tem hash
 
     const timeout = setTimeout(() => {
       const hash = (location.hash || "").replace("#", "").trim();
