@@ -17,8 +17,8 @@ export default function Home() {
           className="relative w-full"
           style={{
             height: `calc(100svh - ${NAVBAR_H}px)`,
-            minHeight: "540px",
-            maxHeight: "720px",
+            minHeight: "640px", // ✅ evita "encolher" no Android e não deixa a seção invadir
+            maxHeight: "760px",
             backgroundImage: "url('/images/Gato_e_cachorro_Home.png')",
             backgroundSize: "cover",
             backgroundPosition: "center",
@@ -82,8 +82,8 @@ export default function Home() {
                             Confiança
                           </p>
                           <p className="text-[#5A3A22] text-sm mt-2 text-center leading-snug">
-                            Aqui, o foco é simples: garantir que seu pet esteja sempre
-                            bem cuidado, seguro e feliz.
+                            Aqui, o foco é simples: garantir que seu pet esteja sempre bem
+                            cuidado, seguro e feliz.
                           </p>
                         </div>
                       </div>
@@ -105,8 +105,8 @@ export default function Home() {
                             Experiência
                           </p>
                           <p className="text-[#5A3A22] text-sm mt-2 text-center leading-snug">
-                            Não cobramos taxas de tutores ou cuidadores — nossa prioridade
-                            é o bem-estar dos pets.
+                            Não cobramos taxas de tutores ou cuidadores — nossa prioridade é o
+                            bem-estar dos pets.
                           </p>
                         </div>
                       </div>
@@ -123,8 +123,8 @@ export default function Home() {
                       Confiança
                     </p>
                     <p className="text-[#5A3A22] text-sm mt-2 text-center leading-snug">
-                      Aqui, o foco é simples: garantir que seu pet esteja sempre bem
-                      cuidado, seguro e feliz.
+                      Aqui, o foco é simples: garantir que seu pet esteja sempre bem cuidado,
+                      seguro e feliz.
                     </p>
                   </div>
 
@@ -142,8 +142,8 @@ export default function Home() {
                       Experiência
                     </p>
                     <p className="text-[#5A3A22] text-sm mt-2 text-center leading-snug">
-                      Não cobramos taxas de tutores ou cuidadores — nossa prioridade é
-                      o bem-estar dos pets.
+                      Não cobramos taxas de tutores ou cuidadores — nossa prioridade é o
+                      bem-estar dos pets.
                     </p>
                   </div>
                 </div>
@@ -155,11 +155,9 @@ export default function Home() {
       </section>
 
       {/* ✅ SEÇÃO 16:9 (área), mas o card externo não é 16:9 */}
-      <section className="px-6 py-12">
-        {/* Área 16:9 no md+ (no mobile fica natural) */}
+      <section className="px-6 py-14 md:py-12">
         <div className="max-w-[1400px] mx-auto md:aspect-[16/9]">
           <div className="w-full h-full flex items-center justify-center">
-            {/* Card externo */}
             <div
               className="
                 w-full max-w-6xl
@@ -300,11 +298,21 @@ export default function Home() {
                               t: "🎆 Fogos e barulho",
                               d: "Como acalmar e preparar seu pet com segurança.",
                             },
-                            { t: "🕒 Rotina", d: "Ajustes simples que melhoram o comportamento." },
-                            { t: "🐾 Passeio", d: "Dicas para passear melhor e com menos estresse." },
-                            { t: "💛 Ansiedade", d: "Sinais comuns e o que fazer no dia a dia." },
+                            {
+                              t: "🕒 Rotina",
+                              d: "Ajustes simples que melhoram o comportamento.",
+                            },
+                            {
+                              t: "🐾 Passeio",
+                              d: "Dicas para passear melhor e com menos estresse.",
+                            },
+                            {
+                              t: "💛 Ansiedade",
+                              d: "Sinais comuns e o que fazer no dia a dia.",
+                            },
                           ].map((x) => (
-                            <div key={x.t} className="snap-center shrink-0 w-[82%]">
+                            <div key={x.t} className="snap-center shrink-0 w-[90%]">
+                              {/* ✅ w-[90%] para evitar aparecer “pedaços” do próximo card */}
                               <div className="rounded-xl bg-[#FFF8F0] border border-[#5A3A22]/10 p-4">
                                 <p className="font-bold text-[#5A3A22]">{x.t}</p>
                                 <p className="text-sm text-[#5A3A22]/80 mt-1">{x.d}</p>
