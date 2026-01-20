@@ -164,10 +164,10 @@ export default function Home() {
             bg-[#FFF8F0]
             shadow-lg
             overflow-hidden
+            border border-[#5A3A22]/10
+            border-l-4 border-l-[#5A3A22]
           "
-          style={{
-            aspectRatio: "16 / 9",
-          }}
+          style={{ aspectRatio: "16 / 9" }}
         >
           <div className="w-full h-full grid grid-cols-1 md:grid-cols-2 gap-8 p-8 md:p-10">
             {/* Coluna esquerda */}
@@ -181,9 +181,9 @@ export default function Home() {
               </h2>
 
               <p className="mt-4 text-[#5A3A22]/80 leading-relaxed">
-                Entenda como funciona: conteúdos e consultas com especialista para te
-                ajudar com rotina, ansiedade, passeios e também com aquele momento
-                difícil de fogos e muito barulho.
+                Veja conteúdos e consultas com especialista para te ajudar com rotina,
+                ansiedade, passeios e também com aquele momento difícil de fogos e muito
+                barulho.
               </p>
 
               <div className="mt-6 flex flex-wrap gap-3">
@@ -207,8 +207,8 @@ export default function Home() {
 
             {/* Coluna direita */}
             <div className="relative flex items-center justify-center">
-              {/* Card principal estilo “pc-card” com borda direita marrom */}
-              <div className="w-full max-w-md bg-white rounded-2xl shadow-md p-6 border border-[#5A3A22]/10 border-r-4 border-r-[#5A3A22]">
+              {/* Card interno (mantém), só muda borda pra amarelo */}
+              <div className="w-full max-w-md bg-white rounded-2xl shadow-md p-6 border border-[#5A3A22]/10 border-r-4 border-r-[#FFD700]">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="rounded-xl bg-[#FFF8F0] border border-[#5A3A22]/10 p-4">
                     <p className="font-bold text-[#5A3A22]">🎆 Fogos e barulho</p>
