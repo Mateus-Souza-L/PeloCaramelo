@@ -25,36 +25,58 @@ export default function Home() {
             backgroundRepeat: "no-repeat",
           }}
         >
-          {/* Conteúdo */}
           <div className="absolute inset-0">
             <div className="relative w-full h-full max-w-6xl mx-auto px-6 text-center text-white">
-              {/* Título (mantido) */}
+              {/* Título (MOBILE menor + tende a 2 linhas; DESKTOP igual) */}
               <div className="pt-2 sm:pt-3">
                 <h1
-                  className="text-4xl sm:text-5xl font-bold"
+                  className="
+                    font-bold text-white
+                    text-3xl leading-tight
+                    sm:text-5xl
+                  "
                   style={{ textShadow: "2px 2px 10px rgba(0,0,0,0.55)" }}
                 >
-                  Na <span className="text-white">Pelo</span>
-                  <span className="text-yellow-400 drop-shadow-md">Caramelo</span>, seu
-                  pet recebe cuidado com carinho e confiança 🐾
+                  <span className="block max-w-[22rem] mx-auto sm:max-w-none">
+                    Na <span className="text-white">Pelo</span>
+                    <span className="text-yellow-400 drop-shadow-md">Caramelo</span>, seu
+                    pet recebe cuidado com carinho e confiança 🐾
+                  </span>
                 </h1>
               </div>
 
-              {/* ✅ Cards no limite máximo inferior do HERO */}
+              {/* Bloco inferior (botão + cards) */}
               <div className="absolute left-6 right-6 bottom-3">
-                {/* ✅ Botão colado no limite dos cards (logo acima) */}
+                {/* Botão (MOBILE menor; DESKTOP igual) */}
                 <div className="flex justify-center mb-3">
                   <Link
                     to="/buscar"
-                    className="bg-secondary hover:bg-[#95301F] text-white px-6 py-3 rounded-lg font-semibold shadow-lg transition inline-block"
+                    className="
+                      bg-secondary hover:bg-[#95301F] text-white
+                      rounded-lg font-semibold shadow-lg transition inline-block
+                      px-5 py-2.5 text-sm
+                      sm:px-6 sm:py-3 sm:text-base
+                    "
                   >
                     Buscar Cuidadores
                   </Link>
                 </div>
 
-                <div className="w-full grid grid-cols-1 sm:grid-cols-3 gap-4 items-stretch">
+                {/* Cards:
+                    - MOBILE: carrossel horizontal (menos altura, mais imagem)
+                    - DESKTOP (sm+): grid 3 colunas como antes
+                */}
+                <div className="sm:grid sm:grid-cols-3 sm:gap-4 sm:items-stretch flex gap-3 overflow-x-auto snap-x snap-mandatory pb-2">
                   {/* Confiança */}
-                  <div className="rounded-2xl px-6 py-4 bg-[#5A3A22]/26 backdrop-blur-sm border border-white/10 shadow-md">
+                  <div
+                    className="
+                      snap-center
+                      rounded-2xl bg-[#5A3A22]/26 backdrop-blur-sm border border-white/10 shadow-md
+                      px-4 py-3
+                      min-w-[78%]
+                      sm:min-w-0 sm:px-6 sm:py-4
+                    "
+                  >
                     <p className="font-semibold text-[#5A3A22] text-center text-base">
                       Confiança
                     </p>
@@ -65,7 +87,15 @@ export default function Home() {
                   </div>
 
                   {/* Bem-estar */}
-                  <div className="rounded-2xl px-6 py-4 bg-[#5A3A22]/26 backdrop-blur-sm border border-white/10 shadow-md">
+                  <div
+                    className="
+                      snap-center
+                      rounded-2xl bg-[#5A3A22]/26 backdrop-blur-sm border border-white/10 shadow-md
+                      px-4 py-3
+                      min-w-[78%]
+                      sm:min-w-0 sm:px-6 sm:py-4
+                    "
+                  >
                     <p className="font-semibold text-[#5A3A22] text-center text-base">
                       Bem-estar
                     </p>
@@ -75,7 +105,15 @@ export default function Home() {
                   </div>
 
                   {/* Experiência */}
-                  <div className="rounded-2xl px-6 py-4 bg-[#5A3A22]/26 backdrop-blur-sm border border-white/10 shadow-md">
+                  <div
+                    className="
+                      snap-center
+                      rounded-2xl bg-[#5A3A22]/26 backdrop-blur-sm border border-white/10 shadow-md
+                      px-4 py-3
+                      min-w-[78%]
+                      sm:min-w-0 sm:px-6 sm:py-4
+                    "
+                  >
                     <p className="font-semibold text-[#5A3A22] text-center text-base">
                       Experiência
                     </p>
@@ -85,8 +123,13 @@ export default function Home() {
                     </p>
                   </div>
                 </div>
+
+                {/* dica visual no mobile (bem discreta) */}
+                <p className="mt-1 text-[11px] text-white/70 sm:hidden">
+                  Deslize para o lado para ver os cards →
+                </p>
               </div>
-              {/* fim cards */}
+              {/* fim bloco inferior */}
             </div>
           </div>
         </div>
