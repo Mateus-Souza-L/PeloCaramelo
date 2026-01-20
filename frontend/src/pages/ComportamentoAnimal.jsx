@@ -22,17 +22,21 @@ export default function ComportamentoAnimal() {
     if (location.pathname !== "/comportamento") return;
 
     const NAVBAR_OFFSET = 92; // ajuste fino caso sua navbar varie (72 + margem)
-    const DEFAULT_END = 180; // seu valor original
+    const EXTRA_SCROLL = 120; // 👈 aumenta aqui (ex.: 80, 120, 160) = “1 scroll do mouse” a mais
+    const DEFAULT_END = 180; // usado só quando NÃO tem hash
 
     const timeout = setTimeout(() => {
       const hash = (location.hash || "").replace("#", "").trim();
 
-      // ✅ Se tiver hash, rola pro elemento alvo
+      // ✅ Se tiver hash, rola pro elemento alvo (+ EXTRA_SCROLL)
       if (hash) {
         const el = document.getElementById(hash);
         if (el) {
           const top =
-            el.getBoundingClientRect().top + window.scrollY - NAVBAR_OFFSET;
+            el.getBoundingClientRect().top +
+            window.scrollY -
+            NAVBAR_OFFSET +
+            EXTRA_SCROLL;
 
           window.scrollTo({ top: Math.max(top, 0), behavior: "smooth" });
           return;
@@ -42,7 +46,7 @@ export default function ComportamentoAnimal() {
 
       // ✅ Scroll padrão (se não tiver hash)
       const start = window.scrollY;
-      const end = DEFAULT_END;
+      const end = DEFAULT_END + EXTRA_SCROLL; // também aplica a “descida extra”
       const duration = 800;
       let startTime = null;
 
