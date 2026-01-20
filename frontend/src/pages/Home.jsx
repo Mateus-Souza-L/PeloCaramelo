@@ -16,7 +16,7 @@ export default function Home() {
         <div
           className="relative w-full"
           style={{
-            height: `calc(100vh - ${NAVBAR_H}px)`,
+            height: `calc(100svh - ${NAVBAR_H}px)`,
             minHeight: "540px",
             maxHeight: "720px",
             backgroundImage: "url('/images/Gato_e_cachorro_Home.png')",
@@ -25,6 +25,9 @@ export default function Home() {
             backgroundRepeat: "no-repeat",
           }}
         >
+          {/* Overlay p/ legibilidade */}
+          <div className="absolute inset-0 bg-black/25" />
+
           <div className="absolute inset-0">
             <div className="relative w-full h-full max-w-6xl mx-auto px-6 text-center text-white">
               {/* Título */}
@@ -51,6 +54,7 @@ export default function Home() {
                       rounded-lg font-semibold shadow-lg transition inline-block
                       px-5 py-2.5 text-sm
                       sm:px-6 sm:py-3 sm:text-base
+                      focus:outline-none focus:ring-2 focus:ring-white/70
                     "
                   >
                     Buscar Cuidadores
@@ -68,7 +72,9 @@ export default function Home() {
                         px-5
                         -mx-5
                         pb-2
+                        [-webkit-overflow-scrolling:touch]
                       "
+                      aria-label="Destaques"
                     >
                       <div className="snap-center shrink-0 w-full">
                         <div className="rounded-2xl bg-[#5A3A22]/26 backdrop-blur-sm border border-white/10 shadow-md px-5 py-4">
@@ -106,7 +112,7 @@ export default function Home() {
                       </div>
                     </div>
 
-                    <p className="mt-1 text-[11px] text-white/70">
+                    <p className="mt-1 text-[11px] text-white/80">
                       Deslize para o lado para ver os cards →
                     </p>
                   </div>
@@ -148,17 +154,15 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ✅ SEÇÃO 16:9 (o espaço), MAS o CARD EXTERNO NÃO é 16:9 */}
+      {/* ✅ SEÇÃO 16:9 (área), mas o card externo não é 16:9 */}
       <section className="px-6 py-12">
-        {/* ESTE wrapper é a "área 16:9" */}
+        {/* Área 16:9 no md+ (no mobile fica natural) */}
         <div className="max-w-[1400px] mx-auto md:aspect-[16/9]">
-          {/* centraliza o card dentro da área 16:9 */}
           <div className="w-full h-full flex items-center justify-center">
-            {/* ✅ Card externo menor (sem aspect) */}
+            {/* Card externo */}
             <div
               className="
-                w-full
-                max-w-6xl
+                w-full max-w-6xl
                 rounded-[28px]
                 bg-[#FFF8F0]
                 shadow-lg
@@ -193,6 +197,7 @@ export default function Home() {
                           rounded-xl font-semibold shadow-md transition
                           px-4 py-2 text-sm
                           sm:px-6 sm:py-3 sm:text-base
+                          focus:outline-none focus:ring-2 focus:ring-[#95301F]/40
                         "
                       >
                         Comportamento Animal
@@ -205,6 +210,7 @@ export default function Home() {
                           hover:bg-[#5A3A22]/10 rounded-xl font-semibold transition
                           px-4 py-2 text-sm
                           sm:px-6 sm:py-3 sm:text-base
+                          focus:outline-none focus:ring-2 focus:ring-[#5A3A22]/30
                         "
                       >
                         Consultar especialista
@@ -212,13 +218,15 @@ export default function Home() {
                     </div>
                   </div>
 
-                  {/* imagem gato (com respiro) */}
+                  {/* imagem gato */}
                   <div className="md:pt-6">
                     <div className="rounded-2xl overflow-hidden shadow-md border border-[#5A3A22]/10 mt-4 md:mt-0">
                       <img
                         src="/images/Gatil.png"
                         alt="Gato (Gatil)"
                         className="w-full h-full object-cover"
+                        loading="lazy"
+                        decoding="async"
                       />
                     </div>
                   </div>
@@ -233,6 +241,8 @@ export default function Home() {
                         src="/images/Guia_cachorro.png"
                         alt="Cachorro (Guia)"
                         className="w-full h-full object-cover"
+                        loading="lazy"
+                        decoding="async"
                       />
                     </div>
                   </div>
@@ -281,25 +291,18 @@ export default function Home() {
                             pb-2
                             -mx-1
                             px-1
+                            [-webkit-overflow-scrolling:touch]
                           "
+                          aria-label="Conteúdos de comportamento"
                         >
                           {[
                             {
                               t: "🎆 Fogos e barulho",
                               d: "Como acalmar e preparar seu pet com segurança.",
                             },
-                            {
-                              t: "🕒 Rotina",
-                              d: "Ajustes simples que melhoram o comportamento.",
-                            },
-                            {
-                              t: "🐾 Passeio",
-                              d: "Dicas para passear melhor e com menos estresse.",
-                            },
-                            {
-                              t: "💛 Ansiedade",
-                              d: "Sinais comuns e o que fazer no dia a dia.",
-                            },
+                            { t: "🕒 Rotina", d: "Ajustes simples que melhoram o comportamento." },
+                            { t: "🐾 Passeio", d: "Dicas para passear melhor e com menos estresse." },
+                            { t: "💛 Ansiedade", d: "Sinais comuns e o que fazer no dia a dia." },
                           ].map((x) => (
                             <div key={x.t} className="snap-center shrink-0 w-[82%]">
                               <div className="rounded-xl bg-[#FFF8F0] border border-[#5A3A22]/10 p-4">
