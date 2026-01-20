@@ -1,3 +1,4 @@
+// src/pages/Home.jsx
 import { useEffect } from "react";
 import { Link } from "react-router-dom";
 
@@ -6,119 +7,81 @@ export default function Home() {
     document.title = "PeloCaramelo | Início";
   }, []);
 
-  // altura aproximada da navbar (px) — ajusta se necessário
-  const NAVBAR_H = 72;
-
   return (
     <div className="bg-[#EBCBA9] min-h-screen">
-      {/* Hero */}
-      <section className="relative overflow-hidden">
-        <div
-          className="relative w-full"
-          style={{
-            height: `calc(100vh - ${NAVBAR_H}px)`,
-            minHeight: "540px",
-            maxHeight: "720px",
-            backgroundImage: "url('/images/Gato_e_cachorro_Home.png')",
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-            backgroundRepeat: "no-repeat",
-          }}
-        >
-          <div className="absolute inset-0 flex items-start justify-center">
-            <div className="w-full max-w-6xl px-6 text-center text-white pt-6 sm:pt-8">
-              {/* ✅ TÍTULO (subiu no limite) */}
+      {/* HERO (imagem full, sem película geral) */}
+      <section
+        className="relative w-full"
+        style={{
+          // ✅ imagem no public → use /images/...
+          backgroundImage: "url('/images/Gato_e_cachorro_Home.png')",
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          backgroundRepeat: "no-repeat",
+          // ✅ tenta manter sensação de 16:9 descontando navbar (sem quebrar desktop)
+          minHeight: "calc(100vh - 72px)",
+        }}
+      >
+        {/* Conteúdo por cima da imagem */}
+        <div className="relative z-10 w-full h-full">
+          <div className="max-w-6xl mx-auto px-6">
+            {/* Área principal: título + botão */}
+            <div className="pt-16 sm:pt-10 md:pt-8 text-center">
+              {/* ✅ título principal: subir no limite máximo */}
               <h1
-                className="text-4xl sm:text-5xl font-bold mb-3"
-                style={{ textShadow: "2px 2px 10px rgba(0,0,0,0.65)" }}
+                className="text-4xl sm:text-5xl md:text-6xl font-bold text-white"
+                style={{ textShadow: "2px 2px 10px rgba(0,0,0,0.45)" }}
               >
-                Na <span className="text-white">Pelo</span>
-                <span className="text-yellow-400 drop-shadow-md">Caramelo</span>, seu
-                pet recebe cuidado com carinho e confiança 🐾
+                Na{" "}
+                <span className="text-white">Pelo</span>
+                <span className="text-yellow-400 drop-shadow-md">Caramelo</span>
+                , seu pet recebe cuidado com carinho e confiança 🐾
               </h1>
 
-              {/* ✅ BOTÃO (não mexer na posição) */}
-              <div className="mt-6 sm:mt-8 flex justify-center">
+              {/* ✅ botão mantém exatamente onde está (não mexer) */}
+              <div className="mt-8">
                 <Link
                   to="/buscar"
-                  className="bg-secondary hover:bg-[#95301F] text-white px-7 py-3 rounded-lg font-semibold shadow-lg transition inline-block"
+                  className="bg-secondary hover:bg-[#95301F] text-white px-6 py-3 rounded-lg font-semibold shadow-lg transition inline-block"
                 >
                   Buscar Cuidadores
                 </Link>
               </div>
+            </div>
 
-              {/* Texto “Aqui, o foco…” (mantém) */}
-              <div className="mt-6 flex justify-center">
-                <div className="max-w-3xl w-full">
-                  <p
-                    className="
-                      mx-auto inline-block
-                      text-sm sm:text-base
-                      text-white
-                      px-5 py-3
-                      rounded-2xl
-                      bg-[#5A3A22]/40
-                      backdrop-blur-sm
-                      border border-white/10
-                    "
-                    style={{ textShadow: "1px 1px 6px rgba(0,0,0,0.40)" }}
-                  >
-                    <span className="font-semibold">Aqui, o foco é simples:</span>{" "}
-                    garantir que seu pet esteja bem cuidado, seguro e feliz, em qualquer situação.
+            {/* Cards (agora SEM as frases soltas; textos dentro dos cards; texto marrom) */}
+            <div className="mt-10 pb-10 sm:pb-14">
+              <div className="w-full grid grid-cols-1 sm:grid-cols-3 gap-4 items-stretch">
+                {/* Confiança */}
+                <div className="rounded-2xl px-6 py-4 bg-[#5A3A22]/26 backdrop-blur-sm border border-white/10 shadow-md">
+                  <p className="font-semibold text-[#5A3A22] text-center text-base">
+                    Confiança
+                  </p>
+                  <p className="text-[#5A3A22] text-sm mt-2 text-center leading-snug">
+                    Aqui, o foco é simples: garantir que seu pet esteja sempre bem
+                    cuidado, seguro e feliz.
                   </p>
                 </div>
-              </div>
 
-              {/* Cards + “não cobramos” */}
-              <div className="max-w-6xl mx-auto mt-6 relative">
-                <div className="h-28 sm:h-36 md:h-44" />
-
-                <div className="flex flex-col items-center gap-4 pb-6">
-                  {/* ✅ INVERTEU: “Não cobramos…” primeiro */}
-                  <p
-                    className="
-                      text-[#5A3A22]
-                      text-sm sm:text-base
-                      font-semibold
-                      px-4 py-2
-                      rounded-xl
-                      bg-white/30
-                      backdrop-blur-sm
-                      border border-[#5A3A22]/10
-                    "
-                  >
-                    Não cobramos taxas de tutores ou cuidadores — nosso foco é a experiência e o bem-estar dos pets.
+                {/* Bem-estar */}
+                <div className="rounded-2xl px-6 py-4 bg-[#5A3A22]/26 backdrop-blur-sm border border-white/10 shadow-md">
+                  <p className="font-semibold text-[#5A3A22] text-center text-base">
+                    Bem-estar
                   </p>
+                  <p className="text-[#5A3A22] text-sm mt-2 text-center leading-snug">
+                    O cuidado do seu pet sempre vem antes de qualquer valor.
+                  </p>
+                </div>
 
-                  {/* ✅ Cards depois */}
-                  <div className="w-full grid grid-cols-1 sm:grid-cols-3 gap-4 items-stretch">
-                    <div className="rounded-2xl px-6 py-4 bg-[#5A3A22]/34 backdrop-blur-sm border border-white/10 shadow-md">
-                      <p className="font-semibold text-white text-center text-base">
-                        Confiança
-                      </p>
-                      <p className="text-white/90 text-sm mt-2 text-center leading-snug">
-                        Escolha com tranquilidade quem vai cuidar do seu pet.
-                      </p>
-                    </div>
-
-                    <div className="rounded-2xl px-6 py-4 bg-[#5A3A22]/34 backdrop-blur-sm border border-white/10 shadow-md">
-                      <p className="font-semibold text-white text-center text-base">
-                        Bem-estar
-                      </p>
-                      <p className="text-white/90 text-sm mt-2 text-center leading-snug">
-                        O cuidado do seu pet sempre vem antes de qualquer valor.
-                      </p>
-                    </div>
-
-                    <div className="rounded-2xl px-6 py-4 bg-[#5A3A22]/34 backdrop-blur-sm border border-white/10 shadow-md">
-                      <p className="font-semibold text-white text-center text-base">
-                        Experiência
-                      </p>
-                      <p className="text-white/90 text-sm mt-2 text-center leading-snug">
-                        Um processo simples para você se sentir seguro do início ao fim.
-                      </p>
-                    </div>
-                  </div>
+                {/* Experiência */}
+                <div className="rounded-2xl px-6 py-4 bg-[#5A3A22]/26 backdrop-blur-sm border border-white/10 shadow-md">
+                  <p className="font-semibold text-[#5A3A22] text-center text-base">
+                    Experiência
+                  </p>
+                  <p className="text-[#5A3A22] text-sm mt-2 text-center leading-snug">
+                    Não cobramos taxas de tutores ou cuidadores — nossa prioridade é
+                    o bem-estar dos pets.
+                  </p>
                 </div>
               </div>
             </div>
@@ -126,27 +89,31 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Seção inferior (mantida) */}
+      {/* Seção inferior (mantive como estava no seu original) */}
       <section className="py-16 px-6 max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-8 text-center">
         <div className="bg-white shadow-md rounded-2xl p-6 hover:shadow-lg transition">
           <div className="text-5xl mb-4">👩‍👧‍👦</div>
-          <h2 className="text-xl font-bold mb-2 text-primary-dark">Para Tutores</h2>
+          <h2 className="text-xl font-bold mb-2 text-primary-dark">
+            Para Tutores
+          </h2>
           <p className="text-textsub">
             Encontre cuidadores confiáveis na{" "}
             <span className="text-[#5A3A22]">Pelo</span>
-            <span className="text-yellow-400 drop-shadow-md">Caramelo</span> e reserve
-            em poucos cliques.
+            <span className="text-yellow-400 drop-shadow-md">Caramelo</span> e
+            reserve em poucos cliques.
           </p>
         </div>
 
         <div className="bg-white shadow-md rounded-2xl p-6 hover:shadow-lg transition">
           <div className="text-5xl mb-4">🐶</div>
-          <h2 className="text-xl font-bold mb-2 text-primary-dark">Para Cuidadores</h2>
+          <h2 className="text-xl font-bold mb-2 text-primary-dark">
+            Para Cuidadores
+          </h2>
           <p className="text-textsub">
             Cadastre-se na{" "}
             <span className="text-[#5A3A22]">Pelo</span>
-            <span className="text-yellow-400 drop-shadow-md">Caramelo</span>, receba
-            pedidos e aumente sua renda cuidando de pets.
+            <span className="text-yellow-400 drop-shadow-md">Caramelo</span>,
+            receba pedidos e aumente sua renda cuidando de pets.
           </p>
         </div>
 
@@ -154,9 +121,10 @@ export default function Home() {
           <div className="text-5xl mb-4">🛡️</div>
           <h2 className="text-xl font-bold mb-2 text-primary-dark">Segurança</h2>
           <p className="text-textsub">
-            A <span className="text-[#5A3A22]">Pelo</span>
-            <span className="text-yellow-400 drop-shadow-md">Caramelo</span> garante
-            transparência, confiança e suporte em todas as reservas.
+            A{" "}
+            <span className="text-[#5A3A22]">Pelo</span>
+            <span className="text-yellow-400 drop-shadow-md">Caramelo</span>{" "}
+            garante transparência, confiança e suporte em todas as reservas.
           </p>
         </div>
       </section>
