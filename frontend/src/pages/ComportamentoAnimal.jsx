@@ -15,32 +15,53 @@ export default function ComportamentoAnimal() {
     document.title = "PeloCaramelo | Comportamento Animal";
   }, []);
 
-  // 🌟 SCROLL SUAVE AO ABRIR A PÁGINA
+  // ✅ Scroll suave ao abrir a página
+  // - Se vier com hash (ex.: /comportamento#dra-laise-oliveira), rola até o elemento com offset de navbar
+  // - Se não tiver hash, aplica o seu scroll "padrão" (end = 110)
   useEffect(() => {
-    if (location.pathname === "/comportamento") {
-      const timeout = setTimeout(() => {
-        const start = window.scrollY;
-        const end = 110; // valor escolhido por você
-        const duration = 800;
-        let startTime = null;
+    if (location.pathname !== "/comportamento") return;
 
-        const animateScroll = (timestamp) => {
-          if (!startTime) startTime = timestamp;
-          const progress = timestamp - startTime;
-          const percent = Math.min(progress / duration, 1);
-          const ease = 1 - Math.pow(1 - percent, 3);
+    const NAVBAR_OFFSET = 92; // ajuste fino caso sua navbar varie (72 + margem)
+    const DEFAULT_END = 110; // seu valor original
 
-          window.scrollTo(0, start + (end - start) * ease);
+    const timeout = setTimeout(() => {
+      const hash = (location.hash || "").replace("#", "").trim();
 
-          if (percent < 1) requestAnimationFrame(animateScroll);
-        };
+      // ✅ Se tiver hash, rola pro elemento alvo
+      if (hash) {
+        const el = document.getElementById(hash);
+        if (el) {
+          const top =
+            el.getBoundingClientRect().top + window.scrollY - NAVBAR_OFFSET;
 
-        requestAnimationFrame(animateScroll);
-      }, 200);
+          window.scrollTo({ top: Math.max(top, 0), behavior: "smooth" });
+          return;
+        }
+        // se não achar o elemento, cai no scroll padrão
+      }
 
-      return () => clearTimeout(timeout);
-    }
-  }, [location.pathname]);
+      // ✅ Scroll padrão (se não tiver hash)
+      const start = window.scrollY;
+      const end = DEFAULT_END;
+      const duration = 800;
+      let startTime = null;
+
+      const animateScroll = (timestamp) => {
+        if (!startTime) startTime = timestamp;
+        const progress = timestamp - startTime;
+        const percent = Math.min(progress / duration, 1);
+        const ease = 1 - Math.pow(1 - percent, 3);
+
+        window.scrollTo(0, start + (end - start) * ease);
+
+        if (percent < 1) requestAnimationFrame(animateScroll);
+      };
+
+      requestAnimationFrame(animateScroll);
+    }, 200);
+
+    return () => clearTimeout(timeout);
+  }, [location.pathname, location.hash]);
 
   // 🔧 FECHAR MODAL COM ESC
   useEffect(() => {
@@ -196,8 +217,8 @@ export default function ComportamentoAnimal() {
         </div>
       </section>
 
-      {/* DRA. LAÍSE – CARD PRINCIPAL */}
-      <section className="py-16 px-6">
+      {/* ✅ DRA. LAÍSE – CARD PRINCIPAL (com id para âncora) */}
+      <section className="py-16 px-6" id="dra-laise-oliveira">
         <motion.div
           initial={{ opacity: 0 }}
           whileInView={{ opacity: 1 }}
