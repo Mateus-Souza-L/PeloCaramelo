@@ -21,14 +21,13 @@ function normalizePet(row) {
     id: row.id,
     tutor_id: row.tutor_id,
     name: row.name,
-    species: row.species || "",
-    breed: row.breed || "",
-    size: row.size || "",
-    age: row.age || "",
+    species: row.species ?? "",
+    breed: row.breed ?? "",
+    size: row.size ?? "",
+    age: row.age ?? "", // ✅ não converte 0 para ""
     temperament: temperamentArray,
-    notes: row.notes || "",
-    image: row.image || "",
-    // não depende de created_at/updated_at
+    notes: row.notes ?? "",
+    image: row.image ?? "",
     created_at: row.created_at ?? null,
     updated_at: row.updated_at ?? null,
   };
@@ -38,52 +37,113 @@ function isUndefinedColumnError(err) {
   return err && err.code === "42703";
 }
 
+function errHasColumn(err, col) {
+  return String(err?.message || "").includes(`"${col}"`);
+}
+
 module.exports = {
   // GET /pets
   async getAllByTutor(tutorId) {
-    // ✅ não seleciona created_at/updated_at
-    const result = await pool.query(
-      `
-      SELECT
-        id,
-        tutor_id,
-        name,
-        species,
-        breed,
-        size,
-        age,
-        notes,
-        image
-      FROM pets
-      WHERE tutor_id = $1
-      ORDER BY id DESC;
-      `,
-      [tutorId]
-    );
+    // 1) tenta com temperament (se existir)
+    try {
+      const result = await pool.query(
+        `
+        SELECT
+          id,
+          tutor_id,
+          name,
+          species,
+          breed,
+          size,
+          age,
+          temperament,
+          notes,
+          image
+        FROM pets
+        WHERE tutor_id = $1
+        ORDER BY id DESC;
+        `,
+        [tutorId]
+      );
 
-    return result.rows.map(normalizePet);
+      return result.rows.map(normalizePet);
+    } catch (err) {
+      // fallback: sem temperament
+      if (!isUndefinedColumnError(err) || !errHasColumn(err, "temperament")) {
+        throw err;
+      }
+
+      const result2 = await pool.query(
+        `
+        SELECT
+          id,
+          tutor_id,
+          name,
+          species,
+          breed,
+          size,
+          age,
+          notes,
+          image
+        FROM pets
+        WHERE tutor_id = $1
+        ORDER BY id DESC;
+        `,
+        [tutorId]
+      );
+
+      return result2.rows.map(normalizePet);
+    }
   },
 
   async getById(id) {
-    const result = await pool.query(
-      `
-      SELECT
-        id,
-        tutor_id,
-        name,
-        species,
-        breed,
-        size,
-        age,
-        notes,
-        image
-      FROM pets
-      WHERE id = $1;
-      `,
-      [id]
-    );
+    // 1) tenta com temperament
+    try {
+      const result = await pool.query(
+        `
+        SELECT
+          id,
+          tutor_id,
+          name,
+          species,
+          breed,
+          size,
+          age,
+          temperament,
+          notes,
+          image
+        FROM pets
+        WHERE id = $1;
+        `,
+        [id]
+      );
 
-    return normalizePet(result.rows[0]);
+      return normalizePet(result.rows[0]);
+    } catch (err) {
+      if (!isUndefinedColumnError(err) || !errHasColumn(err, "temperament")) {
+        throw err;
+      }
+
+      const result2 = await pool.query(
+        `
+        SELECT
+          id,
+          tutor_id,
+          name,
+          species,
+          breed,
+          size,
+          age,
+          notes,
+          image
+        FROM pets
+        WHERE id = $1;
+        `,
+        [id]
+      );
+
+      return normalizePet(result2.rows[0]);
+    }
   },
 
   // POST /pets
@@ -118,7 +178,7 @@ module.exports = {
           species || null,
           breed || null,
           size || null,
-          age || null,
+          age ?? null,
           temperamentStr,
           notes || null,
           image || null,
@@ -128,7 +188,7 @@ module.exports = {
       return normalizePet(result.rows[0]);
     } catch (err) {
       // se temperament não existe, tenta sem
-      if (!isUndefinedColumnError(err) || !String(err.message || "").includes(`"temperament"`)) {
+      if (!isUndefinedColumnError(err) || !errHasColumn(err, "temperament")) {
         throw err;
       }
 
@@ -153,7 +213,7 @@ module.exports = {
           species || null,
           breed || null,
           size || null,
-          age || null,
+          age ?? null,
           notes || null,
           image || null,
         ]
@@ -193,7 +253,7 @@ module.exports = {
           species || null,
           breed || null,
           size || null,
-          age || null,
+          age ?? null,
           temperamentStr,
           notes || null,
           image || null,
@@ -204,7 +264,7 @@ module.exports = {
 
       return normalizePet(result.rows[0]);
     } catch (err) {
-      if (!isUndefinedColumnError(err) || !String(err.message || "").includes(`"temperament"`)) {
+      if (!isUndefinedColumnError(err) || !errHasColumn(err, "temperament")) {
         throw err;
       }
 
@@ -227,7 +287,7 @@ module.exports = {
           species || null,
           breed || null,
           size || null,
-          age || null,
+          age ?? null,
           notes || null,
           image || null,
           id,
