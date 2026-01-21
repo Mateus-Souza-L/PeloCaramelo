@@ -14,12 +14,12 @@ export default function Home() {
       {/* HERO */}
       <section className="relative overflow-hidden">
         <div
-          className="relative w-full"
+          // ✅ (1) MOBILE: altura do hero responsiva (evita aparecer a próxima seção)
+          // - mobile: subtrai 56px (menu/hamburguer costuma ser menor)
+          // - sm+: mantém exatamente o cálculo anterior com 72px
+          className="relative w-full h-[calc(100svh-56px)] sm:h-[calc(100svh-72px)]"
           style={{
-            height: `calc(100svh - ${NAVBAR_H}px)`,
-            // ✅ (1) MOBILE: aumenta um pouco o hero para ficar mais 9x16 e não "vazar" a próxima seção
-            // (desktop continua respeitando o minHeight de 640px)
-            minHeight: "max(640px, 88svh)",
+            minHeight: "640px",
             maxHeight: "760px",
             backgroundImage: "url('/images/Gato_e_cachorro_Home.png')",
             backgroundSize: "cover",
@@ -179,8 +179,8 @@ export default function Home() {
                       🧠 Comportamento Animal
                     </span>
 
-                    {/* ✅ (2) MOBILE: reduz o h2 para ficar ~3 linhas, mantendo md+ igual */}
-                    <h2 className="mt-4 text-[26px] leading-snug sm:text-3xl sm:leading-tight md:text-4xl font-extrabold text-[#5A3A22]">
+                    {/* (título como está no seu arquivo atual) */}
+                    <h2 className="mt-4 text-3xl md:text-4xl font-extrabold text-[#5A3A22] leading-tight">
                       Entenda seu pet e comece a melhorar a rotina hoje
                     </h2>
 
@@ -305,7 +305,8 @@ export default function Home() {
                             { t: "🐾 Passeio", d: "Dicas para passear melhor e com menos estresse." },
                             { t: "💛 Ansiedade", d: "Sinais comuns e o que fazer no dia a dia." },
                           ].map((x) => (
-                            <div key={x.t} className="snap-center shrink-0 w-[90%]">
+                            // ✅ (2) MOBILE: 100% da largura -> não aparece “pedaço” de outro card
+                            <div key={x.t} className="snap-center shrink-0 w-full">
                               <div className="rounded-xl bg-[#FFF8F0] border border-[#5A3A22]/10 p-4">
                                 <p className="font-bold text-[#5A3A22]">{x.t}</p>
                                 <p className="text-sm text-[#5A3A22]/80 mt-1">{x.d}</p>
