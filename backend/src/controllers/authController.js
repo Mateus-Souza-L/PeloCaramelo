@@ -218,10 +218,17 @@ async function forgotPassword(req, res) {
 
     const base = computeFrontendBase(req);
 
-    // Se base estiver vazio, ainda assim não vaza info. Mas o e-mail pode ficar inútil.
-    const link = base
-      ? `${base}/reset-password?token=${encodeURIComponent(token)}`
-      : `/reset-password?token=${encodeURIComponent(token)}`;
+    // ✅ ALTERAÇÃO NECESSÁRIA:
+    // Em produção, não envie link relativo (quebra no e-mail).
+    if (!base) {
+      console.warn(
+        "[forgotPassword] FRONTEND_URL/origin ausente. Configure FRONTEND_URL no Render. " +
+          "E-mail não será enviado para evitar link quebrado."
+      );
+      return res.json(safeResponse);
+    }
+
+    const link = `${base}/reset-password?token=${encodeURIComponent(token)}`;
 
     await sendEmail({
       to: user.email,

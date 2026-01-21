@@ -7,6 +7,9 @@ const http = require("http");
 
 const app = express();
 
+// ✅ Render/proxy: necessário para express-rate-limit e IP real
+app.set("trust proxy", 1);
+
 /* ===========================================================
    ✅ CORS
    =========================================================== */
