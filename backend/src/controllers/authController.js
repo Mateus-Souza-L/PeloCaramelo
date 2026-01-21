@@ -1,3 +1,4 @@
+// backend/src/controllers/authController.js
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
@@ -31,8 +32,30 @@ function generateToken(user) {
   });
 }
 
+function safeJsonParse(raw) {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Lê o body de forma robusta:
+ * - se req.body já for objeto (express.json), retorna.
+ * - se vier como string JSON (algum middleware/proxy), tenta parse.
+ * - fallback: {}
+ */
 function readBody(req) {
-  if (req.body && typeof req.body === "object") return req.body;
+  if (req?.body && typeof req.body === "object") return req.body;
+
+  if (typeof req?.body === "string") {
+    const s = req.body.trim();
+    if (!s || s === "[object Object]") return {};
+    const parsed = safeJsonParse(s);
+    if (parsed && typeof parsed === "object") return parsed;
+  }
+
   return {};
 }
 
@@ -42,6 +65,31 @@ function pickBlockInfo(user) {
     blockedReason: user?.blocked_reason ?? null,
     blockedUntil: user?.blocked_until ?? null,
   };
+}
+
+function trimLower(v) {
+  return String(v || "").trim().toLowerCase();
+}
+
+function computeFrontendBase(req) {
+  const envBase = String(process.env.FRONTEND_URL || "").trim().replace(/\/$/, "");
+  if (envBase) return envBase;
+
+  const origin = String(req.get("origin") || "").trim().replace(/\/$/, "");
+  if (origin) return origin;
+
+  // fallback extra: alguns ambientes não mandam Origin; Referer costuma vir do navegador
+  const referer = String(req.get("referer") || "").trim();
+  if (referer) {
+    try {
+      const u = new URL(referer);
+      return `${u.protocol}//${u.host}`;
+    } catch {
+      // ignore
+    }
+  }
+
+  return "";
 }
 
 /* ============================================================
@@ -57,13 +105,13 @@ async function register(req, res) {
         .json({ error: "Nome, e-mail e senha são obrigatórios." });
     }
 
-    const normalizedEmail = String(email).trim().toLowerCase();
+    const normalizedEmail = trimLower(email);
     const existing = await findUserByEmail(normalizedEmail);
     if (existing) {
       return res.status(409).json({ error: "E-mail já cadastrado." });
     }
 
-    const passwordHash = await bcrypt.hash(password, 10);
+    const passwordHash = await bcrypt.hash(String(password), 10);
 
     const newUser = await createUser({
       name: String(name).trim(),
@@ -93,7 +141,7 @@ async function login(req, res) {
         .json({ error: "E-mail e senha são obrigatórios." });
     }
 
-    const user = await findUserByEmail(String(email).toLowerCase());
+    const user = await findUserByEmail(trimLower(email));
     if (!user) {
       return res.status(401).json({ error: "Credenciais inválidas." });
     }
@@ -103,7 +151,7 @@ async function login(req, res) {
       return res.status(403).json({ error: "Usuário bloqueado." });
     }
 
-    const match = await bcrypt.compare(password, user.password_hash);
+    const match = await bcrypt.compare(String(password), user.password_hash);
     if (!match) {
       return res.status(401).json({ error: "Credenciais inválidas." });
     }
@@ -145,7 +193,7 @@ async function forgotPassword(req, res) {
 
   try {
     const { email } = readBody(req);
-    const normalizedEmail = String(email || "").trim().toLowerCase();
+    const normalizedEmail = trimLower(email);
     if (!normalizedEmail) return res.json(safeResponse);
 
     const user = await findUserByEmail(normalizedEmail);
@@ -155,21 +203,25 @@ async function forgotPassword(req, res) {
 
     try {
       await cleanupPasswordResets();
-    } catch {}
+    } catch {
+      // silencioso de propósito
+    }
 
     const token = crypto.randomBytes(32).toString("hex");
 
     const minutes = Number(process.env.PASSWORD_RESET_EXPIRES_MINUTES || 60);
     const expiresAt = new Date(Date.now() + minutes * 60 * 1000);
 
+    // invalida tokens antigos e cria novo
     await invalidateAllActiveByUserId(user.id);
     await createPasswordReset({ userId: user.id, token, expiresAt });
 
-    const base =
-      String(process.env.FRONTEND_URL || "").replace(/\/$/, "") ||
-      String(req.get("origin") || "").replace(/\/$/, "");
+    const base = computeFrontendBase(req);
 
-    const link = `${base}/reset-password?token=${encodeURIComponent(token)}`;
+    // Se base estiver vazio, ainda assim não vaza info. Mas o e-mail pode ficar inútil.
+    const link = base
+      ? `${base}/reset-password?token=${encodeURIComponent(token)}`
+      : `/reset-password?token=${encodeURIComponent(token)}`;
 
     await sendEmail({
       to: user.email,
@@ -193,7 +245,11 @@ async function forgotPassword(req, res) {
    ============================================================ */
 async function resetPassword(req, res) {
   try {
-    const { token, newPassword } = readBody(req);
+    const body = readBody(req);
+
+    // aceita tanto "password" (seu frontend atual) quanto "newPassword"
+    const token = String(body?.token || "").trim();
+    const newPassword = String(body?.newPassword || body?.password || "").trim();
 
     if (!token || !newPassword || newPassword.length < 6) {
       return res.status(400).json({
@@ -208,7 +264,12 @@ async function resetPassword(req, res) {
 
     const passwordHash = await bcrypt.hash(newPassword, 10);
     await updateUserPassword(reset.user_id, passwordHash);
+
+    // marca este token como usado
     await markPasswordResetUsed(reset.id);
+
+    // segurança extra: invalida qualquer outro token ativo do usuário
+    await invalidateAllActiveByUserId(reset.user_id);
 
     return res.json({ ok: true, message: "Senha atualizada com sucesso." });
   } catch (err) {
