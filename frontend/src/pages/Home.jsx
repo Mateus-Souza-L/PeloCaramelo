@@ -17,7 +17,9 @@ export default function Home() {
           className="relative w-full"
           style={{
             height: `calc(100svh - ${NAVBAR_H}px)`,
-            minHeight: "640px",
+            // ✅ (1) MOBILE: aumenta um pouco o hero para ficar mais 9x16 e não "vazar" a próxima seção
+            // (desktop continua respeitando o minHeight de 640px)
+            minHeight: "max(640px, 88svh)",
             maxHeight: "760px",
             backgroundImage: "url('/images/Gato_e_cachorro_Home.png')",
             backgroundSize: "cover",
@@ -177,7 +179,8 @@ export default function Home() {
                       🧠 Comportamento Animal
                     </span>
 
-                    <h2 className="mt-4 text-3xl md:text-4xl font-extrabold text-[#5A3A22] leading-tight">
+                    {/* ✅ (2) MOBILE: reduz o h2 para ficar ~3 linhas, mantendo md+ igual */}
+                    <h2 className="mt-4 text-[26px] leading-snug sm:text-3xl sm:leading-tight md:text-4xl font-extrabold text-[#5A3A22]">
                       Entenda seu pet e comece a melhorar a rotina hoje
                     </h2>
 
