@@ -30,11 +30,7 @@ export default function ForgotPassword() {
         body: JSON.stringify({ email: String(email).trim().toLowerCase() }),
       });
 
-      showToast(
-        "Se o e-mail existir, enviaremos um link de recuperação.",
-        "success"
-      );
-
+      showToast("Se o e-mail existir, enviaremos um link de recuperação.", "success");
       setEmail("");
     } catch (err) {
       console.error("forgot-password error:", err);
@@ -45,116 +41,113 @@ export default function ForgotPassword() {
   }
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 16,
-        background: "#EBCBA9",
-      }}
-    >
+    <div className="min-h-screen bg-[#EBCBA9] px-4 py-10 flex items-center justify-center">
       <div
-        style={{
-          width: "100%",
-          maxWidth: 420,
-          background: "#fff",
-          borderRadius: 16,
-          padding: 20,
-          boxShadow: "0 10px 30px rgba(0,0,0,0.12)",
-          border: "1px solid rgba(90,58,34,0.10)",
-        }}
+        className="
+          w-full max-w-[520px]
+          rounded-[28px]
+          bg-[#FFF8F0]
+          shadow-lg
+          overflow-hidden
+          border border-[#5A3A22]/10
+          border-l-4 border-l-[#5A3A22]
+        "
       >
-        <h1 style={{ margin: 0, color: "#5A3A22", fontSize: 22 }}>
-          Esqueci minha senha
-        </h1>
-        <p style={{ marginTop: 8, marginBottom: 16, color: "#5A3A22" }}>
-          Informe seu e-mail e enviaremos um link para redefinir sua senha.
-        </p>
+        <div className="p-6 sm:p-8">
+          <h1 className="m-0 text-[#5A3A22] text-xl sm:text-2xl font-extrabold">
+            Esqueci minha senha
+          </h1>
 
-        <form onSubmit={handleSubmit}>
-          <label
-            style={{
-              display: "block",
-              fontSize: 14,
-              marginBottom: 6,
-              color: "#5A3A22",
-            }}
-          >
-            E-mail
-          </label>
-          <input
-            type="email"
-            value={email}
-            autoComplete="email"
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="seuemail@exemplo.com"
-            style={{
-              width: "100%",
-              padding: "12px 12px",
-              borderRadius: 12,
-              border: "1px solid rgba(90,58,34,0.25)",
-              outline: "none",
-              fontSize: 14,
-              marginBottom: 12,
-            }}
-          />
+          <p className="mt-2 mb-6 text-[#5A3A22]/80 leading-relaxed">
+            Informe seu e-mail e enviaremos um link para redefinir sua senha.
+          </p>
 
-          <button
-            type="submit"
-            disabled={!isValid || sending}
-            style={{
-              width: "100%",
-              padding: "12px 14px",
-              borderRadius: 12,
-              border: "none",
-              cursor: !isValid || sending ? "not-allowed" : "pointer",
-              background: !isValid || sending ? "#c9b9aa" : "#5A3A22",
-              color: "#fff",
-              fontWeight: 700,
-              fontSize: 14,
-            }}
-          >
-            {sending ? "Enviando..." : "Enviar link"}
-          </button>
+          <form onSubmit={handleSubmit}>
+            <label className="block text-sm font-semibold text-[#5A3A22] mb-2">
+              E-mail
+            </label>
 
-          <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
-            <button
-              type="button"
-              onClick={() => navigate("/login")}
-              style={{
-                flex: 1,
-                padding: "10px 12px",
-                borderRadius: 12,
-                border: "1px solid rgba(90,58,34,0.25)",
-                background: "#fff",
-                color: "#5A3A22",
-                cursor: "pointer",
-                fontWeight: 700,
-              }}
-            >
-              Voltar ao login
-            </button>
+            <input
+              type="email"
+              value={email}
+              autoComplete="email"
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="seuemail@exemplo.com"
+              className="
+                w-full
+                rounded-xl
+                border border-[#5A3A22]/25
+                bg-white
+                px-4 py-3
+                text-sm
+                outline-none
+                focus:border-[#5A3A22]/60
+                focus:ring-2 focus:ring-[#5A3A22]/20
+                transition
+              "
+            />
 
             <button
-              type="button"
-              onClick={() => navigate("/")}
-              style={{
-                flex: 1,
-                padding: "10px 12px",
-                borderRadius: 12,
-                border: "1px solid rgba(90,58,34,0.25)",
-                background: "#fff",
-                color: "#5A3A22",
-                cursor: "pointer",
-                fontWeight: 700,
-              }}
+              type="submit"
+              disabled={!isValid || sending}
+              className="
+                mt-4
+                w-full
+                rounded-xl
+                px-4 py-3
+                text-sm font-bold
+                shadow-md
+                transition
+                bg-[#95301F] text-white
+                hover:brightness-110
+                focus:outline-none focus:ring-2 focus:ring-[#95301F]/30
+                disabled:cursor-not-allowed
+                disabled:bg-[#c9b9aa]
+                disabled:shadow-none
+              "
             >
-              Início
+              {sending ? "Enviando..." : "Enviar link"}
             </button>
-          </div>
-        </form>
+
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => navigate("/login")}
+                className="
+                  w-full
+                  rounded-xl
+                  border-2 border-[#5A3A22]
+                  bg-transparent
+                  px-4 py-3
+                  text-sm font-bold text-[#5A3A22]
+                  transition
+                  hover:bg-[#5A3A22]/10
+                  focus:outline-none focus:ring-2 focus:ring-[#5A3A22]/25
+                "
+              >
+                Voltar ao login
+              </button>
+
+              <button
+                type="button"
+                onClick={() => navigate("/")}
+                className="
+                  w-full
+                  rounded-xl
+                  border-2 border-[#5A3A22]
+                  bg-transparent
+                  px-4 py-3
+                  text-sm font-bold text-[#5A3A22]
+                  transition
+                  hover:bg-[#5A3A22]/10
+                  focus:outline-none focus:ring-2 focus:ring-[#5A3A22]/25
+                "
+              >
+                Início
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   );
