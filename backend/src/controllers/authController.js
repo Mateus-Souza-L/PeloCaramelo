@@ -223,22 +223,19 @@ async function forgotPassword(req, res) {
     if (!base) {
       console.warn(
         "[forgotPassword] FRONTEND_URL/origin ausente. Configure FRONTEND_URL no Render. " +
-          "E-mail não será enviado para evitar link quebrado."
+        "E-mail não será enviado para evitar link quebrado."
       );
       return res.json(safeResponse);
     }
 
     const link = `${base}/reset-password?token=${encodeURIComponent(token)}`;
 
-    await sendEmail({
-      to: user.email,
-      subject: "Recuperação de senha – PeloCaramelo",
-      html: `
-        <p>Você solicitou a redefinição de senha.</p>
-        <p><a href="${link}">Clique aqui para redefinir sua senha</a></p>
-        <p>Este link expira em ${minutes} minutos.</p>
-      `,
-    });
+    try {
+      await sendEmail({ to: user.email, subject: "Recuperação de senha – PeloCaramelo", html: `...` });
+    } catch (e) {
+      console.error("[forgotPassword] Falha ao enviar email:", e?.message || e);
+      // retorna safeResponse mesmo assim (não vaza info)
+    }
 
     return res.json(safeResponse);
   } catch (err) {
