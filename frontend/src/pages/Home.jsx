@@ -17,8 +17,8 @@ export default function Home() {
           className="relative w-full"
           style={{
             height: `calc(100svh - ${NAVBAR_H}px)`,
-            minHeight: "640px", // ✅ mobile: evita "encolher"
-            maxHeight: "760px", // ✅ mantém seu desktop como estava
+            minHeight: "640px",
+            maxHeight: "760px",
             backgroundImage: "url('/images/Gato_e_cachorro_Home.png')",
             backgroundSize: "cover",
             backgroundPosition: "center",
@@ -30,8 +30,8 @@ export default function Home() {
 
           <div className="absolute inset-0">
             <div className="relative w-full h-full max-w-6xl mx-auto px-6 text-center text-white">
-              {/* Título */}
-              <div className="pt-2 sm:pt-3">
+              {/* ✅ (1) Título desceu ~1cm (somente isso) */}
+              <div className="pt-2 sm:pt-3 mt-10 sm:mt-8">
                 <h1
                   className="font-bold text-white text-3xl leading-tight sm:text-5xl"
                   style={{ textShadow: "2px 2px 10px rgba(0,0,0,0.55)" }}
@@ -154,14 +154,13 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ✅ SEÇÃO 16:9 (área), mas o card externo não é 16:9 */}
-      {/* Ajustes WEB (md+):
-          - reduzir "um scroll": menos padding/folga no md+
-          - centralizar card externo com mais controle dentro da área
+      {/* ✅ (2) Seção Comportamento:
+            - "retirar ~1 scroll do final": reduz padding do section no desktop
+            - centralizar o card maior: mantém flex center e aumenta consistência com min-h no md+
       */}
-      <section className="px-6 py-14 md:py-8">
+      <section className="px-6 py-14 md:py-4">
         <div className="max-w-[1400px] mx-auto md:aspect-[16/9]">
-          <div className="w-full h-full flex items-center justify-center">
+          <div className="w-full h-full flex items-center justify-center md:min-h-[calc(100vh-220px)]">
             <div
               className="
                 w-full max-w-6xl
@@ -173,8 +172,7 @@ export default function Home() {
                 border-l-4 border-l-[#5A3A22]
               "
             >
-              {/* Menos altura no md+ */}
-              <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-8 p-8 md:p-8">
+              <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-8 p-8 md:p-10">
                 {/* Coluna esquerda */}
                 <div className="flex flex-col gap-6 md:gap-0 md:justify-between">
                   <div>
@@ -221,13 +219,13 @@ export default function Home() {
                     </div>
                   </div>
 
-                  {/* imagem gato (mais compacta no md+) */}
-                  <div className="md:pt-4">
+                  {/* imagem gato */}
+                  <div className="md:pt-6">
                     <div className="rounded-2xl overflow-hidden shadow-md border border-[#5A3A22]/10 mt-4 md:mt-0">
                       <img
                         src="/images/Gatil.png"
                         alt="Gato (Gatil)"
-                        className="w-full h-full object-cover md:max-h-[220px]"
+                        className="w-full h-full object-cover"
                         loading="lazy"
                         decoding="async"
                       />
@@ -237,13 +235,13 @@ export default function Home() {
 
                 {/* Coluna direita */}
                 <div className="flex flex-col gap-6 md:gap-0 md:justify-between">
-                  {/* imagem cachorro (mais compacta no md+) */}
+                  {/* imagem cachorro */}
                   <div>
                     <div className="rounded-2xl overflow-hidden shadow-md border border-[#5A3A22]/10 mb-4 md:mb-0">
                       <img
                         src="/images/Guia_cachorro.png"
                         alt="Cachorro (Guia)"
-                        className="w-full h-full object-cover md:max-h-[240px]"
+                        className="w-full h-full object-cover"
                         loading="lazy"
                         decoding="async"
                       />
@@ -251,7 +249,7 @@ export default function Home() {
                   </div>
 
                   {/* Card interno (borda amarela) */}
-                  <div className="relative md:pt-4">
+                  <div className="relative md:pt-6">
                     <div className="w-full bg-white rounded-2xl shadow-md p-6 border border-[#5A3A22]/10 border-r-4 border-r-[#FFD700]">
                       {/* DESKTOP/TABLET */}
                       <div className="hidden sm:grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -286,18 +284,14 @@ export default function Home() {
 
                       {/* MOBILE: CAROUSEL */}
                       <div className="sm:hidden">
-                        {/* ✅ Ajuste aqui é o que elimina o “pedaço” do primeiro e do último:
-                            - container com padding real (px-4)
-                            - scroll-px-4
-                            - itens com w-full e snap-start
-                        */}
                         <div
                           className="
                             flex gap-4
                             overflow-x-auto
                             snap-x snap-mandatory
-                            px-4 pb-2
-                            scroll-px-4
+                            pb-2
+                            -mx-1
+                            px-1
                             [-webkit-overflow-scrolling:touch]
                           "
                           aria-label="Conteúdos de comportamento"
@@ -320,7 +314,7 @@ export default function Home() {
                               d: "Sinais comuns e o que fazer no dia a dia.",
                             },
                           ].map((x) => (
-                            <div key={x.t} className="snap-start shrink-0 w-full">
+                            <div key={x.t} className="snap-center shrink-0 w-[90%]">
                               <div className="rounded-xl bg-[#FFF8F0] border border-[#5A3A22]/10 p-4">
                                 <p className="font-bold text-[#5A3A22]">{x.t}</p>
                                 <p className="text-sm text-[#5A3A22]/80 mt-1">{x.d}</p>
