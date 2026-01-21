@@ -14,11 +14,14 @@ export default function Home() {
       {/* HERO */}
       <section className="relative overflow-hidden">
         <div
-          className="relative w-full"
+          className={`
+            relative w-full
+            h-[calc(100dvh-${NAVBAR_H}px)]
+            min-h-[640px]
+            sm:min-h-[540px]
+            sm:max-h-[720px]
+          `}
           style={{
-            height: `calc(100svh - ${NAVBAR_H}px)`,
-            minHeight: "640px", // ✅ evita "encolher" no Android e não deixa a seção invadir
-            maxHeight: "760px",
             backgroundImage: "url('/images/Gato_e_cachorro_Home.png')",
             backgroundSize: "cover",
             backgroundPosition: "center",
@@ -154,7 +157,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ✅ SEÇÃO 16:9 (área), mas o card externo não é 16:9 */}
+      {/* SEÇÃO COMPORTAMENTO */}
       <section className="px-6 py-14 md:py-12">
         <div className="max-w-[1400px] mx-auto md:aspect-[16/9]">
           <div className="w-full h-full flex items-center justify-center">
@@ -287,8 +290,6 @@ export default function Home() {
                             overflow-x-auto
                             snap-x snap-mandatory
                             pb-2
-                            -mx-1
-                            px-1
                             [-webkit-overflow-scrolling:touch]
                           "
                           aria-label="Conteúdos de comportamento"
@@ -311,8 +312,8 @@ export default function Home() {
                               d: "Sinais comuns e o que fazer no dia a dia.",
                             },
                           ].map((x) => (
-                            <div key={x.t} className="snap-center shrink-0 w-[90%]">
-                              {/* ✅ w-[90%] para evitar aparecer “pedaços” do próximo card */}
+                            <div key={x.t} className="snap-center shrink-0 w-full">
+                              {/* ✅ w-full: NÃO aparece “pedaço” no primeiro e no último */}
                               <div className="rounded-xl bg-[#FFF8F0] border border-[#5A3A22]/10 p-4">
                                 <p className="font-bold text-[#5A3A22]">{x.t}</p>
                                 <p className="text-sm text-[#5A3A22]/80 mt-1">{x.d}</p>
