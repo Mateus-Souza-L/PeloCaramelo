@@ -17,8 +17,8 @@ export default function Home() {
           className="relative w-full"
           style={{
             height: `calc(100svh - ${NAVBAR_H}px)`,
-            minHeight: "640px", // ✅ evita "encolher" no Android e não deixa a seção invadir
-            maxHeight: "760px",
+            minHeight: "640px", // ✅ mobile: evita "encolher"
+            maxHeight: "760px", // ✅ mantém seu desktop como estava
             backgroundImage: "url('/images/Gato_e_cachorro_Home.png')",
             backgroundSize: "cover",
             backgroundPosition: "center",
@@ -155,7 +155,11 @@ export default function Home() {
       </section>
 
       {/* ✅ SEÇÃO 16:9 (área), mas o card externo não é 16:9 */}
-      <section className="px-6 py-14 md:py-12">
+      {/* Ajustes WEB (md+):
+          - reduzir "um scroll": menos padding/folga no md+
+          - centralizar card externo com mais controle dentro da área
+      */}
+      <section className="px-6 py-14 md:py-8">
         <div className="max-w-[1400px] mx-auto md:aspect-[16/9]">
           <div className="w-full h-full flex items-center justify-center">
             <div
@@ -169,7 +173,8 @@ export default function Home() {
                 border-l-4 border-l-[#5A3A22]
               "
             >
-              <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-8 p-8 md:p-10">
+              {/* Menos altura no md+ */}
+              <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-8 p-8 md:p-8">
                 {/* Coluna esquerda */}
                 <div className="flex flex-col gap-6 md:gap-0 md:justify-between">
                   <div>
@@ -216,13 +221,13 @@ export default function Home() {
                     </div>
                   </div>
 
-                  {/* imagem gato */}
-                  <div className="md:pt-6">
+                  {/* imagem gato (mais compacta no md+) */}
+                  <div className="md:pt-4">
                     <div className="rounded-2xl overflow-hidden shadow-md border border-[#5A3A22]/10 mt-4 md:mt-0">
                       <img
                         src="/images/Gatil.png"
                         alt="Gato (Gatil)"
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-cover md:max-h-[220px]"
                         loading="lazy"
                         decoding="async"
                       />
@@ -232,13 +237,13 @@ export default function Home() {
 
                 {/* Coluna direita */}
                 <div className="flex flex-col gap-6 md:gap-0 md:justify-between">
-                  {/* imagem cachorro */}
+                  {/* imagem cachorro (mais compacta no md+) */}
                   <div>
                     <div className="rounded-2xl overflow-hidden shadow-md border border-[#5A3A22]/10 mb-4 md:mb-0">
                       <img
                         src="/images/Guia_cachorro.png"
                         alt="Cachorro (Guia)"
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-cover md:max-h-[240px]"
                         loading="lazy"
                         decoding="async"
                       />
@@ -246,7 +251,7 @@ export default function Home() {
                   </div>
 
                   {/* Card interno (borda amarela) */}
-                  <div className="relative md:pt-6">
+                  <div className="relative md:pt-4">
                     <div className="w-full bg-white rounded-2xl shadow-md p-6 border border-[#5A3A22]/10 border-r-4 border-r-[#FFD700]">
                       {/* DESKTOP/TABLET */}
                       <div className="hidden sm:grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -281,14 +286,18 @@ export default function Home() {
 
                       {/* MOBILE: CAROUSEL */}
                       <div className="sm:hidden">
+                        {/* ✅ Ajuste aqui é o que elimina o “pedaço” do primeiro e do último:
+                            - container com padding real (px-4)
+                            - scroll-px-4
+                            - itens com w-full e snap-start
+                        */}
                         <div
                           className="
                             flex gap-4
                             overflow-x-auto
                             snap-x snap-mandatory
-                            pb-2
-                            -mx-1
-                            px-1
+                            px-4 pb-2
+                            scroll-px-4
                             [-webkit-overflow-scrolling:touch]
                           "
                           aria-label="Conteúdos de comportamento"
@@ -311,8 +320,7 @@ export default function Home() {
                               d: "Sinais comuns e o que fazer no dia a dia.",
                             },
                           ].map((x) => (
-                            <div key={x.t} className="snap-center shrink-0 w-[90%]">
-                              {/* ✅ w-[90%] para evitar aparecer “pedaços” do próximo card */}
+                            <div key={x.t} className="snap-start shrink-0 w-full">
                               <div className="rounded-xl bg-[#FFF8F0] border border-[#5A3A22]/10 p-4">
                                 <p className="font-bold text-[#5A3A22]">{x.t}</p>
                                 <p className="text-sm text-[#5A3A22]/80 mt-1">{x.d}</p>
