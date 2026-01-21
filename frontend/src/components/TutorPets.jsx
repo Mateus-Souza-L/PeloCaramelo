@@ -1,5 +1,5 @@
 // src/components/TutorPets.jsx
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { motion } from "framer-motion";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "./ToastProvider";
@@ -22,24 +22,43 @@ const ADJECTIVE_OPTIONS = [
   "Protetor(a)",
 ];
 
+// pega o primeiro número (ex: "2 anos, 6 meses" -> 2)
+function extractFirstInt(v) {
+  if (v == null) return null;
+  if (typeof v === "number" && Number.isFinite(v)) return Math.max(0, Math.trunc(v));
+  const s = String(v).trim();
+  if (!s) return null;
+  const m = s.match(/(\d+)/);
+  if (!m) return null;
+  const n = Number(m[1]);
+  if (!Number.isFinite(n)) return null;
+  return Math.max(0, Math.trunc(n));
+}
+
 // Normaliza PET vindo da API (backend) para o formato usado no front
 function normalizePetFromApi(p) {
   if (!p) return null;
 
   let adjectives = [];
-  if (Array.isArray(p.temperament)) {
-    adjectives = p.temperament;
-  } else if (typeof p.temperament === "string" && p.temperament.trim()) {
-    adjectives = p.temperament
+  const rawTemp = p.temperament ?? p.temperaments ?? null;
+
+  if (Array.isArray(rawTemp)) {
+    adjectives = rawTemp;
+  } else if (typeof rawTemp === "string" && rawTemp.trim()) {
+    adjectives = rawTemp
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
   }
 
+  // se o backend manda age como int, a gente mostra como texto simples
+  const ageText =
+    p.age != null && String(p.age).trim() ? String(p.age).trim() : "";
+
   return {
-    id: p.id,
+    id: String(p.id),
     name: p.name || "",
-    approxAge: p.age || "",
+    approxAge: ageText,
     size: p.size || "",
     specie: p.species || "",
     breed: p.breed || "",
@@ -64,61 +83,67 @@ export default function TutorPets() {
     image: "",
   });
 
-  // --- helpers de storage ---
-  const getStorageKey = () => (user?.id ? `pets_${user.id}` : null);
+  const storageKey = useMemo(() => (user?.id ? `pets_${user.id}` : null), [user?.id]);
 
-  const persistPets = (nextPets) => {
-    const key = getStorageKey();
-    if (!key) return;
+  const persistPets = useCallback(
+    (nextPets) => {
+      if (!storageKey) return;
 
-    try {
-      localStorage.setItem(key, JSON.stringify(nextPets));
-    } catch (err) {
-      console.error("Erro ao salvar pets:", err);
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(nextPets));
+      } catch (err) {
+        console.error("Erro ao salvar pets:", err);
 
-      if (err.name === "QuotaExceededError") {
-        try {
-          const petsSemImagem = nextPets.map((p) => ({ ...p, image: "" }));
-          localStorage.setItem(key, JSON.stringify(petsSemImagem));
-          showToast(
-            "Espaço de armazenamento do navegador cheio. Salvamos os pets, mas sem as fotos. Tente usar imagens menores ou limpar os dados do site.",
-            "error"
-          );
-        } catch (err2) {
-          console.error("Erro ao salvar pets sem imagens:", err2);
-          showToast(
-            "O armazenamento do navegador está cheio. Limpe os dados do site para continuar salvando.",
-            "error"
-          );
+        if (err?.name === "QuotaExceededError") {
+          try {
+            const petsSemImagem = nextPets.map((p) => ({ ...p, image: "" }));
+            localStorage.setItem(storageKey, JSON.stringify(petsSemImagem));
+            showToast(
+              "Armazenamento do navegador cheio. Salvamos os pets, mas sem as fotos. Use imagens menores ou limpe os dados do site.",
+              "error"
+            );
+          } catch (err2) {
+            console.error("Erro ao salvar pets sem imagens:", err2);
+            showToast(
+              "O armazenamento do navegador está cheio. Limpe os dados do site para continuar salvando.",
+              "error"
+            );
+          }
+        } else {
+          showToast("Não foi possível salvar os pets no navegador.", "error");
         }
-      } else {
-        showToast("Não foi possível salvar os pets no navegador.", "error");
       }
-    }
-  };
+    },
+    [storageKey, showToast]
+  );
 
-  const loadPetsFromLocal = () => {
-    const key = getStorageKey();
-    if (!key) {
+  const loadPetsFromLocal = useCallback(() => {
+    if (!storageKey) {
       setPets([]);
       return;
     }
 
     try {
-      const raw = localStorage.getItem(key);
+      const raw = localStorage.getItem(storageKey);
       if (!raw) {
         setPets([]);
         return;
       }
       const parsed = JSON.parse(raw);
-      setPets(Array.isArray(parsed) ? parsed : []);
+      const list = Array.isArray(parsed) ? parsed : [];
+      // garante id string
+      setPets(
+        list
+          .map((p) => (p ? { ...p, id: String(p.id) } : null))
+          .filter(Boolean)
+      );
     } catch (e) {
       console.error("Erro ao carregar pets do localStorage:", e);
       setPets([]);
     }
-  };
+  }, [storageKey]);
 
-  const loadPets = async () => {
+  const loadPets = useCallback(async () => {
     if (!user) {
       setPets([]);
       return;
@@ -130,7 +155,7 @@ export default function TutorPets() {
     }
 
     try {
-      const data = await authRequest("/pets", token); // GET /pets
+      const data = await authRequest("/pets", token);
       const apiPets = Array.isArray(data?.pets) ? data.pets : [];
       const normalized = apiPets.map(normalizePetFromApi).filter(Boolean);
 
@@ -144,12 +169,11 @@ export default function TutorPets() {
       );
       loadPetsFromLocal();
     }
-  };
+  }, [user, token, loadPetsFromLocal, persistPets, showToast]);
 
   useEffect(() => {
     loadPets();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id, token]);
+  }, [loadPets]);
 
   const resetForm = () => {
     setEditingId(null);
@@ -184,112 +208,116 @@ export default function TutorPets() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // proteção simples: evita base64 gigante
+    const maxMb = Number(import.meta.env.VITE_PET_IMAGE_MAX_MB || 2);
+    if (file.size > maxMb * 1024 * 1024) {
+      showToast(`Imagem muito grande. Use até ${maxMb}MB.`, "error");
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = () => {
-      setForm((prev) => ({ ...prev, image: reader.result || "" }));
+      setForm((prev) => ({ ...prev, image: String(reader.result || "") }));
     };
     reader.readAsDataURL(file);
   };
 
   const handleEdit = (pet) => {
-    setEditingId(pet.id);
+    const id = String(pet.id);
+    setEditingId(id);
     setForm({
       name: pet.name || "",
       approxAge: pet.approxAge || "",
       size: pet.size || "",
       specie: pet.specie || "",
       breed: pet.breed || "",
-      adjectives: pet.adjectives || [],
+      adjectives: Array.isArray(pet.adjectives) ? pet.adjectives : [],
       image: pet.image || "",
     });
   };
 
   const handleDelete = async (id) => {
-    const key = getStorageKey();
-    if (!key) {
+    if (!storageKey) {
       showToast("Erro ao remover pet: usuário não identificado.", "error");
       return;
     }
 
-    const next = pets.filter((p) => p.id !== id);
+    const sid = String(id);
+    const next = pets.filter((p) => String(p.id) !== sid);
     setPets(next);
     persistPets(next);
 
     if (token) {
       try {
-        await authRequest(`/pets/${id}`, token, {
-          method: "DELETE",
-        });
+        await authRequest(`/pets/${sid}`, token, { method: "DELETE" });
       } catch (err) {
         console.error("Erro ao deletar pet no servidor:", err);
-        showToast(
-          "Pet removido localmente, mas houve erro ao remover no servidor.",
-          "error"
-        );
+        showToast("Pet removido localmente, mas houve erro ao remover no servidor.", "error");
       }
     }
 
-    if (editingId === id) resetForm();
+    if (editingId === sid) resetForm();
     showToast("Pet removido do perfil.", "notify");
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    const key = getStorageKey();
-    if (!key) {
+    if (!storageKey) {
       showToast("Erro ao salvar pet: usuário não identificado.", "error");
       return;
     }
 
-    const name = form.name.trim();
+    const name = String(form.name || "").trim();
     if (!name) {
       showToast("Dê um nome para o seu pet 😊", "error");
       return;
     }
 
-    // Objeto no FORMATO ESPERADO PELO BACKEND
-    const basePet = {
+    // Mantém texto no front, mas manda age como int (backend já normaliza)
+    const ageInt = extractFirstInt(form.approxAge);
+    const approxAgeText = String(form.approxAge || "").trim();
+
+    // objeto no formato esperado pelo backend
+    const payload = {
       name,
-      species: form.specie.trim() || null,
-      breed: form.breed.trim() || null,
+      species: String(form.specie || "").trim() || null,
+      breed: String(form.breed || "").trim() || null,
       size: form.size || null,
-      age: form.approxAge.trim() || null,
-      temperament: form.adjectives,
-      notes: null,
+      age: ageInt, // ✅ inteiro ou null
+      temperament: Array.isArray(form.adjectives) ? form.adjectives : [],
+      // ✅ guarda a idade “bonita” em notes pra não perder "2 anos, 6 meses"
+      notes: approxAgeText ? `Idade aprox.: ${approxAgeText}` : null,
       image: form.image || "",
     };
 
-    let newPet;
-    let next;
+    let next = [];
+    const sid = editingId ? String(editingId) : null;
 
     if (token) {
       try {
-        if (editingId) {
-          const data = await authRequest(`/pets/${editingId}`, token, {
+        if (sid) {
+          const data = await authRequest(`/pets/${sid}`, token, {
             method: "PUT",
-            body: JSON.stringify(basePet),
+            body: payload, // ✅ sem JSON.stringify
           });
 
           const petFromApi = normalizePetFromApi(data?.pet || data);
-          newPet = petFromApi || { id: editingId, ...form };
-          next = pets.map((p) => (p.id === editingId ? newPet : p));
+          const updated = petFromApi || { id: sid, ...form, name };
+
+          next = pets.map((p) => (String(p.id) === sid ? updated : p));
           showToast("Informações do pet atualizadas! 🐾", "success");
         } else {
           const data = await authRequest("/pets", token, {
             method: "POST",
-            body: JSON.stringify(basePet),
+            body: payload, // ✅ sem JSON.stringify
           });
 
           const petFromApi = normalizePetFromApi(data?.pet || data);
-          newPet =
-            petFromApi ||
-            {
-              id: Date.now(),
-              ...form,
-              name,
-            };
-          next = [...pets, newPet];
+          const created =
+            petFromApi || { id: String(Date.now()), ...form, name };
+
+          next = [...pets, created];
           showToast("Pet adicionado ao seu perfil! 💛", "success");
         }
       } catch (err) {
@@ -299,25 +327,22 @@ export default function TutorPets() {
           "error"
         );
 
-        if (editingId) {
-          newPet = { id: editingId, ...form, name };
-          next = pets.map((p) => (p.id === editingId ? newPet : p));
+        if (sid) {
+          const localUpdated = { id: sid, ...form, name };
+          next = pets.map((p) => (String(p.id) === sid ? localUpdated : p));
         } else {
-          newPet = { id: Date.now(), ...form, name };
-          next = [...pets, newPet];
+          const localCreated = { id: String(Date.now()), ...form, name };
+          next = [...pets, localCreated];
         }
       }
     } else {
-      if (editingId) {
-        newPet = { id: editingId, ...form, name };
-        next = pets.map((p) => (p.id === editingId ? newPet : p));
-        showToast(
-          "Informações do pet atualizadas (apenas local). 🐾",
-          "success"
-        );
+      if (sid) {
+        const localUpdated = { id: sid, ...form, name };
+        next = pets.map((p) => (String(p.id) === sid ? localUpdated : p));
+        showToast("Informações do pet atualizadas (apenas local). 🐾", "success");
       } else {
-        newPet = { id: Date.now(), ...form, name };
-        next = [...pets, newPet];
+        const localCreated = { id: String(Date.now()), ...form, name };
+        next = [...pets, localCreated];
         showToast("Pet adicionado (apenas local). 💛", "success");
       }
     }
@@ -332,27 +357,22 @@ export default function TutorPets() {
   return (
     <div className="text-[#5A3A22]">
       <div className="flex flex-col md:flex-row gap-6">
-        {/* Formulário do pet - ESQUERDA no desktop */}
+        {/* Formulário do pet */}
         <div className="md:w-1/2 md:order-1 order-1">
           <h2 className="text-lg font-semibold mb-3">
             {editingId ? "Editar pet" : "Adicionar novo pet"}
           </h2>
 
           <form onSubmit={handleSubmit} className="space-y-3">
-            {/* Foto do pet */}
+            {/* Foto */}
             <div className="flex items-center gap-4 mb-2">
-              <label
-                htmlFor="petImage"
-                className="cursor-pointer flex flex-col items-center"
-              >
+              <label htmlFor="petImage" className="cursor-pointer flex flex-col items-center">
                 <img
                   src={form.image || DEFAULT_PET_IMG}
                   alt="Foto do pet"
                   className="w-24 h-24 rounded-full object-cover border-4 border-[#FFD700] hover:opacity-80 transition"
                 />
-                <span className="mt-1 text-xs text-[#5A3A22]">
-                  Clique para alterar a foto
-                </span>
+                <span className="mt-1 text-xs text-[#5A3A22]">Clique para alterar a foto</span>
                 <span className="mt-0.5 text-[11px] text-[#5A3A22] opacity-80 text-center">
                   Formatos aceitos: JPG, PNG ou WebP.
                 </span>
@@ -410,8 +430,8 @@ export default function TutorPets() {
             <p className="text-[12px] md:text-sm text-[#5A3A22] opacity-90 leading-relaxed mt-1">
               Na{" "}
               <span className="font-bold text-[#5A3A22]">Pelo</span>
-              <span className="font-bold text-yellow-400">Caramelo</span> não
-              nos importamos com raça, mas sim com amor e cuidado!
+              <span className="font-bold text-yellow-400">Caramelo</span> não nos importamos com raça,
+              mas sim com amor e cuidado!
               <br />
               Mas temos uma quedinha especial pelos vira-latas 😅
             </p>
@@ -449,6 +469,7 @@ export default function TutorPets() {
               >
                 {editingId ? "Salvar alterações do pet" : "Adicionar pet"}
               </button>
+
               {editingId && (
                 <button
                   type="button"
@@ -462,29 +483,27 @@ export default function TutorPets() {
           </form>
         </div>
 
-        {/* Lista de pets - DIREITA no desktop */}
+        {/* Lista */}
         <div className="md:w-1/2 md:order-2 order-2 space-y-3">
           <h2 className="text-lg font-semibold mb-1">Meus Pets</h2>
-          <p className="text-xs mb-3 opacity-80">
-            Clique em um pet para editar as informações.
-          </p>
+          <p className="text-xs mb-3 opacity-80">Clique em um pet para editar as informações.</p>
 
           {pets.length ? (
             pets.map((pet) => {
-              const isEditing = editingId === pet.id;
+              const pid = String(pet.id);
+              const isEditing = String(editingId) === pid;
+
               return (
                 <motion.div
-                  key={pet.id}
+                  key={pid}
                   whileHover={{ scale: 1.01 }}
                   className={`flex gap-3 items-center border rounded-xl p-3 shadow-sm bg-[#FFF8F0] transition ${
-                    isEditing
-                      ? "border-[#5A3A22] bg-[#FFF3D0]"
-                      : "border-transparent"
+                    isEditing ? "border-[#5A3A22] bg-[#FFF3D0]" : "border-transparent"
                   }`}
                 >
                   <button
                     type="button"
-                    onClick={() => handleEdit(pet)}
+                    onClick={() => handleEdit({ ...pet, id: pid })}
                     className="flex items-center gap-3 flex-1 text-left"
                   >
                     <img
@@ -493,22 +512,15 @@ export default function TutorPets() {
                       className="w-16 h-16 rounded-full object-cover border-2 border-[#FFD700]"
                     />
                     <div>
-                      <p className="font-semibold text-sm md:text-base">
-                        {pet.name}
-                      </p>
+                      <p className="font-semibold text-sm md:text-base">{pet.name}</p>
                       <p className="text-xs md:text-sm opacity-80">
-                        {pet.specie || "Espécie não informada"}{" "}
-                        {pet.breed ? `• ${pet.breed}` : ""}
+                        {pet.specie || "Espécie não informada"} {pet.breed ? `• ${pet.breed}` : ""}
                       </p>
                       {pet.approxAge && (
-                        <p className="text-xs opacity-70">
-                          Idade aproximada: {pet.approxAge}
-                        </p>
+                        <p className="text-xs opacity-70">Idade aproximada: {pet.approxAge}</p>
                       )}
                       {!!pet.adjectives?.length && (
-                        <p className="text-[11px] mt-1 opacity-80">
-                          {pet.adjectives.join(" • ")}
-                        </p>
+                        <p className="text-[11px] mt-1 opacity-80">{pet.adjectives.join(" • ")}</p>
                       )}
                       {isEditing && (
                         <p className="text-[11px] mt-1 text-[#5A3A22] font-semibold">
@@ -517,9 +529,10 @@ export default function TutorPets() {
                       )}
                     </div>
                   </button>
+
                   <button
                     type="button"
-                    onClick={() => handleDelete(pet.id)}
+                    onClick={() => handleDelete(pid)}
                     className="text-xs px-2 py-1 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold"
                   >
                     Remover
@@ -529,8 +542,7 @@ export default function TutorPets() {
             })
           ) : (
             <p className="text-sm opacity-80">
-              Você ainda não cadastrou nenhum pet. Comece adicionando um ao lado
-              esquerdo 😉
+              Você ainda não cadastrou nenhum pet. Comece adicionando um ao lado esquerdo 😉
             </p>
           )}
         </div>
