@@ -17,7 +17,7 @@ export default function Home() {
           // ✅ (1) MOBILE: altura do hero responsiva (evita aparecer a próxima seção)
           // - mobile: subtrai 56px (menu/hamburguer costuma ser menor)
           // - sm+: mantém exatamente o cálculo anterior com 72px
-          className="relative w-full h-[calc(100svh-56px)] sm:h-[calc(100svh-72px)]"
+          className="relative w-full h-[calc(100svh-48px)] sm:h-[calc(100svh-72px)]"
           style={{
             minHeight: "640px",
             maxHeight: "760px",
