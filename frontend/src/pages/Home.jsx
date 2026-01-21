@@ -30,10 +30,10 @@ export default function Home() {
 
           <div className="absolute inset-0">
             <div className="relative w-full h-full max-w-6xl mx-auto px-6 text-center text-white">
-              {/* ✅ (1) Título desceu ~1cm (somente isso) */}
-              <div className="pt-2 sm:pt-3 mt-10 sm:mt-8">
+              {/* ✅ (1) Só o TEXTO desceu ~1cm (sem mexer em botão/cards) */}
+              <div className="pt-2 sm:pt-3">
                 <h1
-                  className="font-bold text-white text-3xl leading-tight sm:text-5xl"
+                  className="font-bold text-white text-3xl leading-tight sm:text-5xl relative top-6 sm:top-5"
                   style={{ textShadow: "2px 2px 10px rgba(0,0,0,0.55)" }}
                 >
                   <span className="block max-w-[22rem] mx-auto sm:max-w-none">
@@ -44,7 +44,7 @@ export default function Home() {
                 </h1>
               </div>
 
-              {/* Bloco inferior */}
+              {/* Bloco inferior (inalterado) */}
               <div className="absolute left-6 right-6 bottom-3">
                 <div className="flex justify-center mb-3">
                   <Link
@@ -154,10 +154,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ✅ (2) Seção Comportamento:
-            - "retirar ~1 scroll do final": reduz padding do section no desktop
-            - centralizar o card maior: mantém flex center e aumenta consistência com min-h no md+
-      */}
+      {/* Seção Comportamento (mantida como no seu código anterior) */}
       <section className="px-6 py-14 md:py-4">
         <div className="max-w-[1400px] mx-auto md:aspect-[16/9]">
           <div className="w-full h-full flex items-center justify-center md:min-h-[calc(100vh-220px)]">
@@ -301,18 +298,9 @@ export default function Home() {
                               t: "🎆 Fogos e barulho",
                               d: "Como acalmar e preparar seu pet com segurança.",
                             },
-                            {
-                              t: "🕒 Rotina",
-                              d: "Ajustes simples que melhoram o comportamento.",
-                            },
-                            {
-                              t: "🐾 Passeio",
-                              d: "Dicas para passear melhor e com menos estresse.",
-                            },
-                            {
-                              t: "💛 Ansiedade",
-                              d: "Sinais comuns e o que fazer no dia a dia.",
-                            },
+                            { t: "🕒 Rotina", d: "Ajustes simples que melhoram o comportamento." },
+                            { t: "🐾 Passeio", d: "Dicas para passear melhor e com menos estresse." },
+                            { t: "💛 Ansiedade", d: "Sinais comuns e o que fazer no dia a dia." },
                           ].map((x) => (
                             <div key={x.t} className="snap-center shrink-0 w-[90%]">
                               <div className="rounded-xl bg-[#FFF8F0] border border-[#5A3A22]/10 p-4">
