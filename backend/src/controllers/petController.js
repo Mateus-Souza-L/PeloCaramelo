@@ -14,23 +14,20 @@ function ensureTutor(req, res) {
 }
 
 // aceita: number, "7", "7 anos", "7 anos, 5 meses", "2 anos, 6 meses"
-function normalizeAgeToInt(age) {
+function normalizeAgeToText(age) {
   if (age == null) return null;
 
   if (typeof age === "number" && Number.isFinite(age)) {
-    return Math.max(0, Math.floor(age));
+    const n = Math.max(0, Math.floor(age));
+    return String(n);
   }
 
   const s = String(age).trim();
   if (!s) return null;
 
-  // pega o primeiro número encontrado
-  const m = s.match(/(\d+)/);
-  if (!m) return null;
-
-  const n = Number(m[1]);
-  if (!Number.isFinite(n)) return null;
-  return Math.max(0, Math.floor(n));
+  // opcional: limita tamanho para evitar strings enormes
+  const MAX_LEN = 60;
+  return s.slice(0, MAX_LEN);
 }
 
 module.exports = {
@@ -59,14 +56,14 @@ module.exports = {
         return res.status(400).json({ error: "Nome do pet é obrigatório." });
       }
 
-      const ageInt = normalizeAgeToInt(age);
+      const ageText = normalizeAgeToText(age);
 
       const pet = await Pet.create(tutorId, {
         name: name.trim(),
         species,
         breed,
         size,
-        age: ageInt, // ✅ sempre integer ou null
+        age: ageText, // ✅ agora salva como TEXTO (combina com o banco e o front)
         temperament,
         notes,
         image,
@@ -97,14 +94,14 @@ module.exports = {
         return res.status(404).json({ error: "Pet não encontrado." });
       }
 
-      const ageInt = normalizeAgeToInt(age);
+      const ageText = normalizeAgeToText(age);
 
       const pet = await Pet.update(petId, tutorId, {
         name: name.trim(),
         species,
         breed,
         size,
-        age: ageInt, // ✅ sempre integer ou null
+        age: ageText, // ✅ texto
         temperament,
         notes,
         image,
