@@ -22,28 +22,16 @@ const ADJECTIVE_OPTIONS = [
   "Protetor(a)",
 ];
 
-// pega o primeiro número (ex: "2 anos, 6 meses" -> 2)
-function extractFirstInt(v) {
-  if (v == null) return null;
-  if (typeof v === "number" && Number.isFinite(v)) return Math.max(0, Math.trunc(v));
-  const s = String(v).trim();
-  if (!s) return null;
-  const m = s.match(/(\d+)/);
-  if (!m) return null;
-  const n = Number(m[1]);
-  if (!Number.isFinite(n)) return null;
-  return Math.max(0, Math.trunc(n));
-}
-
 // Normaliza PET vindo da API (backend) para o formato usado no front
 function normalizePetFromApi(p) {
   if (!p) return null;
 
+  // temperament pode vir como array ou string "a, b, c"
   let adjectives = [];
   const rawTemp = p.temperament ?? p.temperaments ?? null;
 
   if (Array.isArray(rawTemp)) {
-    adjectives = rawTemp;
+    adjectives = rawTemp.filter(Boolean);
   } else if (typeof rawTemp === "string" && rawTemp.trim()) {
     adjectives = rawTemp
       .split(",")
@@ -51,7 +39,8 @@ function normalizePetFromApi(p) {
       .filter(Boolean);
   }
 
-  // se o backend manda age como int, a gente mostra como texto simples
+  // ✅ Agora age é TEXTO no banco (coluna age é text).
+  // Então mostramos exatamente o que vem do backend.
   const ageText =
     p.age != null && String(p.age).trim() ? String(p.age).trim() : "";
 
@@ -83,7 +72,10 @@ export default function TutorPets() {
     image: "",
   });
 
-  const storageKey = useMemo(() => (user?.id ? `pets_${user.id}` : null), [user?.id]);
+  const storageKey = useMemo(
+    () => (user?.id ? `pets_${user.id}` : null),
+    [user?.id]
+  );
 
   const persistPets = useCallback(
     (nextPets) => {
@@ -131,12 +123,21 @@ export default function TutorPets() {
       }
       const parsed = JSON.parse(raw);
       const list = Array.isArray(parsed) ? parsed : [];
-      // garante id string
-      setPets(
-        list
-          .map((p) => (p ? { ...p, id: String(p.id) } : null))
-          .filter(Boolean)
-      );
+
+      // garante id string e garante approxAge string
+      const normalizedLocal = list
+        .map((p) => {
+          if (!p) return null;
+          return {
+            ...p,
+            id: String(p.id),
+            approxAge: p.approxAge != null ? String(p.approxAge) : "",
+            adjectives: Array.isArray(p.adjectives) ? p.adjectives : [],
+          };
+        })
+        .filter(Boolean);
+
+      setPets(normalizedLocal);
     } catch (e) {
       console.error("Erro ao carregar pets do localStorage:", e);
       setPets([]);
@@ -149,6 +150,7 @@ export default function TutorPets() {
       return;
     }
 
+    // sem token -> usa local
     if (!token) {
       loadPetsFromLocal();
       return;
@@ -252,7 +254,10 @@ export default function TutorPets() {
         await authRequest(`/pets/${sid}`, token, { method: "DELETE" });
       } catch (err) {
         console.error("Erro ao deletar pet no servidor:", err);
-        showToast("Pet removido localmente, mas houve erro ao remover no servidor.", "error");
+        showToast(
+          "Pet removido localmente, mas houve erro ao remover no servidor.",
+          "error"
+        );
       }
     }
 
@@ -274,20 +279,18 @@ export default function TutorPets() {
       return;
     }
 
-    // Mantém texto no front, mas manda age como int (backend já normaliza)
-    const ageInt = extractFirstInt(form.approxAge);
+    // ✅ idade deve ser TEXTO LIVRE (sem parseInt/Number)
     const approxAgeText = String(form.approxAge || "").trim();
 
-    // objeto no formato esperado pelo backend
     const payload = {
       name,
       species: String(form.specie || "").trim() || null,
       breed: String(form.breed || "").trim() || null,
       size: form.size || null,
-      age: ageInt, // ✅ inteiro ou null
+      age: approxAgeText || null, // ✅ salva o texto completo no campo age (coluna text)
       temperament: Array.isArray(form.adjectives) ? form.adjectives : [],
-      // ✅ guarda a idade “bonita” em notes pra não perder "2 anos, 6 meses"
-      notes: approxAgeText ? `Idade aprox.: ${approxAgeText}` : null,
+      // ✅ não duplicar idade em notes (isso estava “roubando” o texto e deixando age como 3)
+      notes: String(form.notes || "").trim() || null, // (se você não usa notes no form, fica null e ok)
       image: form.image || "",
     };
 
@@ -299,23 +302,34 @@ export default function TutorPets() {
         if (sid) {
           const data = await authRequest(`/pets/${sid}`, token, {
             method: "PUT",
-            body: payload, // ✅ sem JSON.stringify
+            body: payload,
           });
 
           const petFromApi = normalizePetFromApi(data?.pet || data);
-          const updated = petFromApi || { id: sid, ...form, name };
+          const updated =
+            petFromApi || {
+              id: sid,
+              ...form,
+              name,
+              approxAge: approxAgeText,
+            };
 
           next = pets.map((p) => (String(p.id) === sid ? updated : p));
           showToast("Informações do pet atualizadas! 🐾", "success");
         } else {
           const data = await authRequest("/pets", token, {
             method: "POST",
-            body: payload, // ✅ sem JSON.stringify
+            body: payload,
           });
 
           const petFromApi = normalizePetFromApi(data?.pet || data);
           const created =
-            petFromApi || { id: String(Date.now()), ...form, name };
+            petFromApi || {
+              id: String(Date.now()),
+              ...form,
+              name,
+              approxAge: approxAgeText,
+            };
 
           next = [...pets, created];
           showToast("Pet adicionado ao seu perfil! 💛", "success");
@@ -328,20 +342,40 @@ export default function TutorPets() {
         );
 
         if (sid) {
-          const localUpdated = { id: sid, ...form, name };
+          const localUpdated = {
+            id: sid,
+            ...form,
+            name,
+            approxAge: approxAgeText,
+          };
           next = pets.map((p) => (String(p.id) === sid ? localUpdated : p));
         } else {
-          const localCreated = { id: String(Date.now()), ...form, name };
+          const localCreated = {
+            id: String(Date.now()),
+            ...form,
+            name,
+            approxAge: approxAgeText,
+          };
           next = [...pets, localCreated];
         }
       }
     } else {
       if (sid) {
-        const localUpdated = { id: sid, ...form, name };
+        const localUpdated = {
+          id: sid,
+          ...form,
+          name,
+          approxAge: approxAgeText,
+        };
         next = pets.map((p) => (String(p.id) === sid ? localUpdated : p));
         showToast("Informações do pet atualizadas (apenas local). 🐾", "success");
       } else {
-        const localCreated = { id: String(Date.now()), ...form, name };
+        const localCreated = {
+          id: String(Date.now()),
+          ...form,
+          name,
+          approxAge: approxAgeText,
+        };
         next = [...pets, localCreated];
         showToast("Pet adicionado (apenas local). 💛", "success");
       }
@@ -366,13 +400,18 @@ export default function TutorPets() {
           <form onSubmit={handleSubmit} className="space-y-3">
             {/* Foto */}
             <div className="flex items-center gap-4 mb-2">
-              <label htmlFor="petImage" className="cursor-pointer flex flex-col items-center">
+              <label
+                htmlFor="petImage"
+                className="cursor-pointer flex flex-col items-center"
+              >
                 <img
                   src={form.image || DEFAULT_PET_IMG}
                   alt="Foto do pet"
                   className="w-24 h-24 rounded-full object-cover border-4 border-[#FFD700] hover:opacity-80 transition"
                 />
-                <span className="mt-1 text-xs text-[#5A3A22]">Clique para alterar a foto</span>
+                <span className="mt-1 text-xs text-[#5A3A22]">
+                  Clique para alterar a foto
+                </span>
                 <span className="mt-0.5 text-[11px] text-[#5A3A22] opacity-80 text-center">
                   Formatos aceitos: JPG, PNG ou WebP.
                 </span>
@@ -430,8 +469,8 @@ export default function TutorPets() {
             <p className="text-[12px] md:text-sm text-[#5A3A22] opacity-90 leading-relaxed mt-1">
               Na{" "}
               <span className="font-bold text-[#5A3A22]">Pelo</span>
-              <span className="font-bold text-yellow-400">Caramelo</span> não nos importamos com raça,
-              mas sim com amor e cuidado!
+              <span className="font-bold text-yellow-400">Caramelo</span> não nos
+              importamos com raça, mas sim com amor e cuidado!
               <br />
               Mas temos uma quedinha especial pelos vira-latas 😅
             </p>
@@ -486,7 +525,9 @@ export default function TutorPets() {
         {/* Lista */}
         <div className="md:w-1/2 md:order-2 order-2 space-y-3">
           <h2 className="text-lg font-semibold mb-1">Meus Pets</h2>
-          <p className="text-xs mb-3 opacity-80">Clique em um pet para editar as informações.</p>
+          <p className="text-xs mb-3 opacity-80">
+            Clique em um pet para editar as informações.
+          </p>
 
           {pets.length ? (
             pets.map((pet) => {
@@ -498,7 +539,9 @@ export default function TutorPets() {
                   key={pid}
                   whileHover={{ scale: 1.01 }}
                   className={`flex gap-3 items-center border rounded-xl p-3 shadow-sm bg-[#FFF8F0] transition ${
-                    isEditing ? "border-[#5A3A22] bg-[#FFF3D0]" : "border-transparent"
+                    isEditing
+                      ? "border-[#5A3A22] bg-[#FFF3D0]"
+                      : "border-transparent"
                   }`}
                 >
                   <button
@@ -512,15 +555,22 @@ export default function TutorPets() {
                       className="w-16 h-16 rounded-full object-cover border-2 border-[#FFD700]"
                     />
                     <div>
-                      <p className="font-semibold text-sm md:text-base">{pet.name}</p>
+                      <p className="font-semibold text-sm md:text-base">
+                        {pet.name}
+                      </p>
                       <p className="text-xs md:text-sm opacity-80">
-                        {pet.specie || "Espécie não informada"} {pet.breed ? `• ${pet.breed}` : ""}
+                        {pet.specie || "Espécie não informada"}{" "}
+                        {pet.breed ? `• ${pet.breed}` : ""}
                       </p>
                       {pet.approxAge && (
-                        <p className="text-xs opacity-70">Idade aproximada: {pet.approxAge}</p>
+                        <p className="text-xs opacity-70">
+                          Idade aproximada: {pet.approxAge}
+                        </p>
                       )}
                       {!!pet.adjectives?.length && (
-                        <p className="text-[11px] mt-1 opacity-80">{pet.adjectives.join(" • ")}</p>
+                        <p className="text-[11px] mt-1 opacity-80">
+                          {pet.adjectives.join(" • ")}
+                        </p>
                       )}
                       {isEditing && (
                         <p className="text-[11px] mt-1 text-[#5A3A22] font-semibold">
@@ -542,7 +592,8 @@ export default function TutorPets() {
             })
           ) : (
             <p className="text-sm opacity-80">
-              Você ainda não cadastrou nenhum pet. Comece adicionando um ao lado esquerdo 😉
+              Você ainda não cadastrou nenhum pet. Comece adicionando um ao lado
+              esquerdo 😉
             </p>
           )}
         </div>
