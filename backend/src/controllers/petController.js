@@ -18,7 +18,6 @@ function ensureTutor(req, res) {
 function normalizeAgeToText(age) {
   if (age == null) return null;
 
-  // se vier número, transforma em string simples
   if (typeof age === "number" && Number.isFinite(age)) {
     const n = Math.max(0, Math.floor(age));
     return String(n);
@@ -27,7 +26,6 @@ function normalizeAgeToText(age) {
   const s = String(age).trim();
   if (!s) return null;
 
-  // evita textos gigantes no DB
   const MAX_LEN = 60;
   return s.length > MAX_LEN ? s.slice(0, MAX_LEN) : s;
 }
@@ -65,8 +63,8 @@ module.exports = {
         species,
         breed,
         size,
-        age: ageText, // ✅ agora salva texto completo
-        temperament,
+        age: ageText,                 // ✅ texto completo
+        temperament: temperament || [],// ✅ vem do front
         notes,
         image,
       });
@@ -103,8 +101,8 @@ module.exports = {
         species,
         breed,
         size,
-        age: ageText, // ✅ agora salva texto completo
-        temperament,
+        age: ageText,                  // ✅ texto completo
+        temperament: temperament || [], // ✅ salva no DB (se a coluna existir!)
         notes,
         image,
       });
@@ -123,15 +121,12 @@ module.exports = {
       const tutorId = req.user.id;
       const petId = req.params.id;
 
-      // ✅ se vier um "id local" (gigante), devolve 404 direto (pet nunca existiu no servidor)
       if (!/^\d+$/.test(String(petId)) || String(petId).length > 12) {
         return res.status(404).json({ error: "Pet não encontrado." });
       }
 
       const ok = await Pet.remove(petId, tutorId);
-      if (!ok) {
-        return res.status(404).json({ error: "Pet não encontrado." });
-      }
+      if (!ok) return res.status(404).json({ error: "Pet não encontrado." });
 
       res.json({ success: true });
     } catch (err) {
