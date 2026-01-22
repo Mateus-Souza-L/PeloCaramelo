@@ -14,7 +14,7 @@ function ensureTutor(req, res) {
 }
 
 // aceita: number, "7", "7 anos", "7 anos, 5 meses", "2 anos, 6 meses"
-// ✅ AGORA preserva o texto (ou converte number para string)
+// ✅ preserva o texto (ou converte number para string)
 function normalizeAgeToText(age) {
   if (age == null) return null;
 
@@ -27,8 +27,7 @@ function normalizeAgeToText(age) {
   const s = String(age).trim();
   if (!s) return null;
 
-  // (opcional) evita textos gigantes no DB
-  // ajuste o limite se quiser
+  // evita textos gigantes no DB
   const MAX_LEN = 60;
   return s.length > MAX_LEN ? s.slice(0, MAX_LEN) : s;
 }
