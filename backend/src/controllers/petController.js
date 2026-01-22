@@ -14,9 +14,11 @@ function ensureTutor(req, res) {
 }
 
 // aceita: number, "7", "7 anos", "7 anos, 5 meses", "2 anos, 6 meses"
+// ✅ AGORA preserva o texto (ou converte number para string)
 function normalizeAgeToText(age) {
   if (age == null) return null;
 
+  // se vier número, transforma em string simples
   if (typeof age === "number" && Number.isFinite(age)) {
     const n = Math.max(0, Math.floor(age));
     return String(n);
@@ -25,9 +27,10 @@ function normalizeAgeToText(age) {
   const s = String(age).trim();
   if (!s) return null;
 
-  // opcional: limita tamanho para evitar strings enormes
+  // (opcional) evita textos gigantes no DB
+  // ajuste o limite se quiser
   const MAX_LEN = 60;
-  return s.slice(0, MAX_LEN);
+  return s.length > MAX_LEN ? s.slice(0, MAX_LEN) : s;
 }
 
 module.exports = {
@@ -63,7 +66,7 @@ module.exports = {
         species,
         breed,
         size,
-        age: ageText, // ✅ agora salva como TEXTO (combina com o banco e o front)
+        age: ageText, // ✅ agora salva texto completo
         temperament,
         notes,
         image,
@@ -101,7 +104,7 @@ module.exports = {
         species,
         breed,
         size,
-        age: ageText, // ✅ texto
+        age: ageText, // ✅ agora salva texto completo
         temperament,
         notes,
         image,
