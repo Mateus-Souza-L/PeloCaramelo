@@ -369,6 +369,7 @@ export default function Navbar() {
     </div>
   );
 
+  // ✅ troca "Login" -> "Cadastre-se" (manda para /register)
   const desktopAuth = (
     <div className="hidden md:flex gap-3 items-center">
       {user && (
@@ -388,8 +389,11 @@ export default function Navbar() {
       )}
 
       {!user ? (
-        <Link to="/login" className="bg-[#95301F] px-4 py-2 rounded-lg font-semibold">
-          Login
+        <Link
+          to="/register"
+          className="bg-[#95301F] px-4 py-2 rounded-lg font-semibold"
+        >
+          Cadastre-se
         </Link>
       ) : (
         <>
@@ -483,11 +487,11 @@ export default function Navbar() {
 
             {!user ? (
               <Link
-                to="/login"
+                to="/register"
                 className="bg-[#95301F] px-4 py-2 rounded-lg font-semibold text-center"
                 onClick={closeMobile}
               >
-                Login
+                Cadastre-se
               </Link>
             ) : (
               <>

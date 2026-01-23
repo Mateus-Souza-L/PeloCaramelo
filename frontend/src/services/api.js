@@ -47,7 +47,11 @@ function autoLogout(reason = "unauthorized") {
 
     // dispara eventos para Navbar/AuthContext/qualquer listener
     try {
-      window.dispatchEvent(new CustomEvent("auth-changed", { detail: { status: "logged_out", reason } }));
+      window.dispatchEvent(
+        new CustomEvent("auth-changed", {
+          detail: { status: "logged_out", reason },
+        })
+      );
       window.dispatchEvent(new CustomEvent("auth-expired", { detail: { reason } }));
     } catch {
       // ignore
@@ -102,11 +106,12 @@ async function apiRequest(path, options = {}) {
   const isAbsolute = typeof path === "string" && /^https?:\/\//i.test(path);
   const normalizedPath =
     typeof path === "string"
-      ? path.startsWith("/") ? path : `/${path}`
+      ? path.startsWith("/")
+        ? path
+        : `/${path}`
       : "";
 
   const url = isAbsolute ? String(path) : `${API_BASE_URL}${normalizedPath}`;
-
 
   // opções internas (não devem ir pro fetch)
   const { __noAutoLogout, ...fetchOptions } = options || {};

@@ -1,6 +1,6 @@
 // src/pages/Search.jsx
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { normalizeCaregiver, serviceLabel } from "../utils/normalize";
 import { useAuth } from "../context/AuthContext";
 import { toLocalKey, parseLocalKey } from "../utils/date";
@@ -33,6 +33,42 @@ function toNum(v) {
   if (v == null || v === "") return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
+}
+
+function normalizeServiceParam(raw) {
+  const v = String(raw || "").trim();
+  if (!v) return "";
+  const x = v.toLowerCase();
+
+  // aliases -> chave padrão do seu app (como em services[])
+  const map = {
+    // hospedagem
+    hospedagem: "hospedagem",
+    hotel: "hospedagem",
+
+    // creche
+    creche: "creche",
+    daycare: "creche",
+
+    // pet sitter
+    petsitter: "petSitter",
+    "pet-sitter": "petSitter",
+    pet_sitter: "petSitter",
+    pet: "petSitter",
+    pets: "petSitter",
+    petsit: "petSitter",
+    petsitting: "petSitter",
+    "pet sitter": "petSitter",
+    petSitter: "petSitter", // caso venha igual
+
+    // passeios
+    passeio: "passeios",
+    passeios: "passeios",
+    walk: "passeios",
+    walking: "passeios",
+  };
+
+  return map[x] || v; // se não reconhecer, devolve como veio
 }
 
 /**
@@ -125,9 +161,7 @@ function normalizeAvailabilityToSet(payload) {
       .filter(
         (r) =>
           r &&
-          (r.is_available === true ||
-            r.isAvailable === true ||
-            r.available === true)
+          (r.is_available === true || r.isAvailable === true || r.available === true)
       )
       .map((r) => toKey10(r.date_key || r.dateKey || r.date || r.day))
       .filter(isValidKey)
@@ -183,6 +217,7 @@ async function runWithConcurrency(tasks, limit = 6) {
 
 export default function Search() {
   const { token } = useAuth();
+  const location = useLocation();
 
   // filtros
   const [query, setQuery] = useState("");
@@ -208,6 +243,63 @@ export default function Search() {
   const availabilityCacheRef = useRef(new Map());
   const availabilityReqAbortRef = useRef(null);
   const availabilityReqIdRef = useRef(0);
+
+  // ✅ lê filtros vindos via URL (para Home -> /buscar com parâmetros)
+  useEffect(() => {
+    const sp = new URLSearchParams(location.search || "");
+
+    const q =
+      sp.get("q") ||
+      sp.get("query") ||
+      sp.get("cidade") ||
+      sp.get("bairro") ||
+      "";
+
+    const s1 = sp.get("start") || sp.get("startDate") || sp.get("inicio") || "";
+    const s2 = sp.get("end") || sp.get("endDate") || sp.get("fim") || "";
+
+    const svcRaw = normalizeServiceParam(sp.get("svc") || sp.get("service") || "");
+    const sortRaw = (sp.get("sort") || "").trim();
+
+    const allowedSvc = new Set(["todos", "hospedagem", "creche", "petSitter", "passeios"]);
+    const allowedSort = new Set(["preco", "nome"]);
+
+    const nextQuery = String(q).trim();
+    const nextStart = isValidKey(s1) ? s1 : "";
+    const nextEnd = isValidKey(s2) ? s2 : "";
+
+    const nextSvc = allowedSvc.has(svcRaw) ? svcRaw : "todos";
+    const nextSort = allowedSort.has(sortRaw) ? sortRaw : "preco";
+
+    // aplica apenas se vier algo na URL (não atrapalha uso normal)
+    const hasAny =
+      nextQuery ||
+      nextStart ||
+      nextEnd ||
+      (svcRaw && allowedSvc.has(svcRaw)) ||
+      (sortRaw && allowedSort.has(sortRaw));
+
+    if (!hasAny) return;
+
+    setQuery(nextQuery);
+    setStartDateKey(nextStart);
+
+    // se end < start, limpa end (evita range inválido)
+    if (nextStart && nextEnd) {
+      const ds = parseLocalKey(nextStart);
+      const de = parseLocalKey(nextEnd);
+      if (!Number.isNaN(ds.getTime()) && !Number.isNaN(de.getTime()) && de < ds) {
+        setEndDateKey("");
+      } else {
+        setEndDateKey(nextEnd);
+      }
+    } else {
+      setEndDateKey(nextEnd);
+    }
+
+    setSvc(nextSvc);
+    setSort(nextSort);
+  }, [location.search]);
 
   const refresh = useCallback(async () => {
     const myReqId = ++reqIdRef.current;
@@ -392,9 +484,7 @@ export default function Search() {
   return (
     <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] py-8 px-6">
       <div className="max-w-[1400px] mx-auto bg-white rounded-2xl shadow p-6 border-l-4 border-[#FFD700]/80">
-        <h1 className="text-2xl font-bold text-[#5A3A22] mb-4">
-          Buscar Cuidadores
-        </h1>
+        <h1 className="text-2xl font-bold text-[#5A3A22] mb-4">Buscar Cuidadores</h1>
 
         {/* filtros */}
         <div className="grid grid-cols-1 md:grid-cols-12 gap-2 mb-5">
