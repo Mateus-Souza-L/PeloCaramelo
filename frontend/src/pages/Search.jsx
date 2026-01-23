@@ -197,6 +197,72 @@ async function runWithConcurrency(tasks, limit = 6) {
   return results;
 }
 
+function formatDateBR(key) {
+  if (!isValidKey(key)) return "";
+  const [y, m, d] = key.split("-");
+  return `${d}/${m}/${y}`;
+}
+
+// ---------- UI helpers ----------
+function Pill({ children, onRemove, title }) {
+  return (
+    <span
+      className="
+        inline-flex items-center gap-2
+        px-3 py-1.5 rounded-full text-sm
+        bg-[#FFF6CC] text-[#5A3A22]
+        border border-[#5A3A22]/10
+      "
+      title={title}
+    >
+      <span className="truncate max-w-[220px]">{children}</span>
+      {onRemove && (
+        <button
+          type="button"
+          onClick={onRemove}
+          className="
+            w-6 h-6 rounded-full
+            inline-flex items-center justify-center
+            bg-white/70 hover:bg-white
+            border border-[#5A3A22]/10
+            text-[#5A3A22]
+            transition
+          "
+          aria-label="Remover filtro"
+          title="Remover"
+        >
+          ×
+        </button>
+      )}
+    </span>
+  );
+}
+
+function SkeletonCard() {
+  return (
+    <div className="pc-card pc-card-accent">
+      <div className="flex items-center gap-3 mb-3">
+        <div className="w-14 h-14 rounded-full bg-black/10 animate-pulse" />
+        <div className="flex-1 min-w-0">
+          <div className="h-4 w-2/3 bg-black/10 rounded animate-pulse" />
+          <div className="h-3 w-1/2 bg-black/10 rounded mt-2 animate-pulse" />
+          <div className="h-3 w-1/3 bg-black/10 rounded mt-2 animate-pulse" />
+        </div>
+      </div>
+
+      <div className="h-4 w-1/2 bg-black/10 rounded mb-3 animate-pulse" />
+
+      <div className="flex flex-wrap gap-2 mb-4">
+        <div className="h-6 w-20 bg-black/10 rounded-full animate-pulse" />
+        <div className="h-6 w-24 bg-black/10 rounded-full animate-pulse" />
+        <div className="h-6 w-16 bg-black/10 rounded-full animate-pulse" />
+      </div>
+
+      <div className="h-10 w-32 bg-black/10 rounded-lg animate-pulse" />
+    </div>
+  );
+}
+
 export default function Search() {
   const { token } = useAuth();
   const location = useLocation();
@@ -484,7 +550,7 @@ export default function Search() {
     if (startDateKey || endDateKey) {
       const s = startDateKey || endDateKey;
       const e = startDateKey && endDateKey ? endDateKey : "";
-      parts.push(e ? `${s} → ${e}` : `${s}`);
+      parts.push(e ? `${formatDateBR(s)} → ${formatDateBR(e)}` : `${formatDateBR(s)}`);
     }
 
     if (svc && svc !== "todos") {
@@ -494,18 +560,71 @@ export default function Search() {
     return parts.join(" • ");
   }, [query, startDateKey, endDateKey, svc]);
 
+  // pílulas de filtros ativos
+  const activePills = useMemo(() => {
+    const pills = [];
+
+    const q = String(query || "").trim();
+    if (q) {
+      pills.push({
+        key: "q",
+        label: `📍 ${q}`,
+        remove: () => setQuery(""),
+        title: "Filtro de local",
+      });
+    }
+
+    const start = startDateKey || "";
+    const end = endDateKey || "";
+
+    if (start || end) {
+      const s = start || end;
+      const e = start && end ? end : "";
+      pills.push({
+        key: "dates",
+        label: `📅 ${e ? `${formatDateBR(s)} → ${formatDateBR(e)}` : formatDateBR(s)}`,
+        remove: () => {
+          setStartDateKey("");
+          setEndDateKey("");
+        },
+        title: "Filtro de datas",
+      });
+    }
+
+    if (svc && svc !== "todos") {
+      pills.push({
+        key: "svc",
+        label: `🏷️ ${serviceLabel(svc)}`,
+        remove: () => setSvc("todos"),
+        title: "Filtro de serviço",
+      });
+    }
+
+    return pills;
+  }, [query, startDateKey, endDateKey, svc]);
+
+  function clearAllFilters() {
+    setQuery("");
+    setStartDateKey("");
+    setEndDateKey("");
+    setSvc("todos");
+    setSort("preco");
+  }
+
+  const skeletonCount = 9;
+
   return (
     <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] py-8 px-6">
       <div className="max-w-[1400px] mx-auto bg-white rounded-2xl shadow p-6 border-l-4 border-[#FFD700]/80">
-        {/* ✅ Destaque "como funciona rápido" (antes do título) */}
+        {/* ✅ Destaque rápido (antes do título) */}
         <div className="mb-5 rounded-2xl border border-[#5A3A22]/10 bg-[#FFF8F0] p-4 sm:p-5 shadow-sm">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div className="min-w-0">
               <p className="text-sm sm:text-base font-semibold text-[#5A3A22]">
-                Como funciona na prática
+                Combine tudo pela plataforma — simples e seguro
               </p>
               <p className="text-[12px] sm:text-sm text-[#5A3A22]/75 mt-1">
-                Você combina tudo pela plataforma — com contato protegido e sem taxas.
+                Sem taxas, com contato protegido e chat como canal principal.
               </p>
             </div>
 
@@ -528,21 +647,21 @@ export default function Search() {
             <div className="rounded-xl bg-white border border-[#5A3A22]/10 p-3">
               <p className="font-bold text-[#5A3A22]">✅ Sem taxas</p>
               <p className="text-sm text-[#5A3A22]/75 mt-1">
-                Sem taxas para tutores e cuidadores.
+                Sem taxas para ninguém: tutor e cuidador combinam o valor entre si, com transparência.
               </p>
             </div>
 
             <div className="rounded-xl bg-white border border-[#5A3A22]/10 p-3">
               <p className="font-bold text-[#5A3A22]">🔒 Contato protegido</p>
               <p className="text-sm text-[#5A3A22]/75 mt-1">
-                Telefone mascarado e o chat é o canal principal.
+                Telefone sempre mascarado.
               </p>
             </div>
 
             <div className="rounded-xl bg-white border border-[#5A3A22]/10 p-3">
-              <p className="font-bold text-[#5A3A22]">⭐ Avaliações</p>
+              <p className="font-bold text-[#5A3A22]">💬 Chat é o principal</p>
               <p className="text-sm text-[#5A3A22]/75 mt-1">
-                Em breve com mais destaque quando houver volume.
+                O chat é o canal principal de comunicação.
               </p>
             </div>
           </div>
@@ -558,10 +677,31 @@ export default function Search() {
           )}
         </div>
 
-        <h1 className="text-2xl font-bold text-[#5A3A22] mb-4">Buscar Cuidadores</h1>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between mb-4">
+          <div>
+            <h1 className="text-2xl font-bold text-[#5A3A22]">Buscar Cuidadores</h1>
+            <p className="text-sm text-[#5A3A22]/70 mt-1">
+              Use os filtros e encontre o melhor match para o seu pet.
+            </p>
+          </div>
+
+          {/* Ordenação visível */}
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-[#5A3A22]/70">Ordenar por:</span>
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value)}
+              className="border rounded-lg px-3 py-2 bg-white"
+              aria-label="Ordenar por"
+            >
+              <option value="preco">Preço</option>
+              <option value="nome">Nome</option>
+            </select>
+          </div>
+        </div>
 
         {/* filtros */}
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-2 mb-5">
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-2 mb-4">
           <input
             type="text"
             placeholder="Bairro/Cidade…"
@@ -596,83 +736,169 @@ export default function Search() {
             <option value="passeios">Passeios</option>
           </select>
 
-          <select
-            value={sort}
-            onChange={(e) => setSort(e.target.value)}
-            className="md:col-span-2 border rounded-lg px-3 py-2 bg-white"
+          {/* botão “limpar” */}
+          <button
+            type="button"
+            onClick={clearAllFilters}
+            className="
+              md:col-span-2
+              rounded-lg px-3 py-2 font-semibold
+              bg-[#5A3A22]/10 text-[#5A3A22]
+              hover:bg-[#5A3A22]/15 transition
+            "
           >
-            <option value="preco">Preço</option>
-            <option value="nome">Nome</option>
-          </select>
+            Limpar filtros
+          </button>
         </div>
 
-        {loading ? (
-          <p>Carregando cuidadores...</p>
-        ) : filteringDates ? (
-          <p>Checando disponibilidade...</p>
-        ) : filtered.length === 0 ? (
-          <p>Nenhum cuidador encontrado.</p>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-            {filtered.map((c) => {
-              const { avg, count } = getRatingSummary(c);
-
-              return (
-                <div key={c.id} className="pc-card pc-card-accent">
-                  <div className="flex items-center gap-3 mb-3">
-                    <img
-                      src={c.image || DEFAULT_IMG}
-                      alt={c.name}
-                      className="w-14 h-14 rounded-full object-cover"
-                    />
-                    <div className="min-w-0">
-                      <h2 className="text-lg font-bold truncate">{c.name}</h2>
-                      <p className="text-sm opacity-80 truncate">
-                        {c.displayLocation || "Local não informado"}
-                      </p>
-
-                      {(count > 0 || avg != null) && (
-                        <p className="text-xs mt-1 text-[#5A3A22] flex items-center gap-2">
-                          <span className="leading-none">
-                            <Stars value={avg ?? 0} />
-                          </span>
-                          <span className="opacity-80">
-                            {avg != null ? Number(avg).toFixed(1) : "0.0"} ({count})
-                          </span>
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  <p className="mb-3 text-[#5A3A22]">
-                    {c.minPrice != null
-                      ? `A partir de R$ ${Number(c.minPrice).toFixed(2)}`
-                      : "Preço não definido"}
-                  </p>
-
-                  <div className="flex flex-wrap gap-2 mb-4">
-                    {Object.entries(c.services || {})
-                      .filter(([, v]) => v)
-                      .map(([k]) => (
-                        <span
-                          key={k}
-                          className="text-xs px-2 py-1 rounded-full bg-[#FFF6CC]"
-                        >
-                          {serviceLabel(k)}
-                        </span>
-                      ))}
-                  </div>
-
-                  <Link
-                    to={`/caregiver/${c.id}`}
-                    className="inline-block bg-[#5A3A22] text-white px-4 py-2 rounded-lg"
-                  >
-                    Ver Detalhes
-                  </Link>
-                </div>
-              );
-            })}
+        {/* pílulas de filtros ativos */}
+        {activePills.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-5">
+            {activePills.map((p) => (
+              <Pill key={p.key} onRemove={p.remove} title={p.title}>
+                {p.label}
+              </Pill>
+            ))}
           </div>
+        )}
+
+        {/* badges visuais de diferenciais (UI-only) */}
+        <div className="flex flex-wrap gap-2 mb-5">
+          <span className="text-xs px-3 py-1 rounded-full bg-[#FFF6CC] text-[#5A3A22] border border-[#5A3A22]/10">
+            ✅ Sem taxas
+          </span>
+          <span className="text-xs px-3 py-1 rounded-full bg-[#FFF6CC] text-[#5A3A22] border border-[#5A3A22]/10">
+            🔒 Contato protegido
+          </span>
+          <span className="text-xs px-3 py-1 rounded-full bg-[#FFF6CC] text-[#5A3A22] border border-[#5A3A22]/10">
+            💬 Chat pelo app
+          </span>
+          <span className="text-xs px-3 py-1 rounded-full bg-[#FFF6CC] text-[#5A3A22] border border-[#5A3A22]/10">
+            ⭐ Avaliações 
+          </span>
+        </div>
+
+        {/* estados + listagem */}
+        {loading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            {Array.from({ length: skeletonCount }).map((_, i) => (
+              <SkeletonCard key={i} />
+            ))}
+          </div>
+        ) : filteringDates ? (
+          <p className="text-[#5A3A22]">Checando disponibilidade...</p>
+        ) : filtered.length === 0 ? (
+          <div className="rounded-2xl border border-[#5A3A22]/10 bg-[#FFF8F0] p-6">
+            <p className="text-lg font-bold text-[#5A3A22]">Nenhum cuidador encontrado</p>
+            <p className="text-sm text-[#5A3A22]/80 mt-2">
+              Tente ajustar os filtros (principalmente datas e bairro/cidade) ou veja todos os
+              cuidadores disponíveis.
+            </p>
+
+            <div className="mt-4 flex flex-col sm:flex-row gap-2">
+              <button
+                type="button"
+                onClick={clearAllFilters}
+                className="
+                  inline-flex items-center justify-center
+                  px-4 py-2 rounded-xl font-semibold
+                  bg-[#5A3A22] text-white
+                  hover:brightness-110 transition
+                "
+              >
+                Ver todos cuidadores
+              </button>
+
+              <Link
+                to="/sobre#como-funciona"
+                className="
+                  inline-flex items-center justify-center
+                  px-4 py-2 rounded-xl font-semibold
+                  bg-white border border-[#5A3A22]/20
+                  text-[#5A3A22]
+                  hover:bg-[#5A3A22]/5 transition
+                "
+              >
+                Entender como funciona
+              </Link>
+            </div>
+          </div>
+        ) : (
+          <>
+            <p className="text-sm text-[#5A3A22]/70 mb-4">
+              Mostrando <span className="font-semibold text-[#5A3A22]">{filtered.length}</span>{" "}
+              {filtered.length === 1 ? "cuidador" : "cuidadores"}.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+              {filtered.map((c) => {
+                const { avg, count } = getRatingSummary(c);
+
+                return (
+                  <div key={c.id} className="pc-card pc-card-accent">
+                    <div className="flex items-center gap-3 mb-3">
+                      <img
+                        src={c.image || DEFAULT_IMG}
+                        alt={c.name}
+                        className="w-14 h-14 rounded-full object-cover"
+                      />
+                      <div className="min-w-0">
+                        <h2 className="text-lg font-bold truncate">{c.name}</h2>
+                        <p className="text-sm opacity-80 truncate">
+                          {c.displayLocation || "Local não informado"}
+                        </p>
+
+                        {(count > 0 || avg != null) && (
+                          <p className="text-xs mt-1 text-[#5A3A22] flex items-center gap-2">
+                            <span className="leading-none">
+                              <Stars value={avg ?? 0} />
+                            </span>
+                            <span className="opacity-80">
+                              {avg != null ? Number(avg).toFixed(1) : "0.0"} ({count})
+                            </span>
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <p className="mb-3 text-[#5A3A22]">
+                      {c.minPrice != null
+                        ? `A partir de R$ ${Number(c.minPrice).toFixed(2)}`
+                        : "Preço não definido"}
+                    </p>
+
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      {Object.entries(c.services || {})
+                        .filter(([, v]) => v)
+                        .map(([k]) => (
+                          <span
+                            key={k}
+                            className="text-xs px-2 py-1 rounded-full bg-[#FFF6CC]"
+                          >
+                            {serviceLabel(k)}
+                          </span>
+                        ))}
+                    </div>
+
+                    {/* CTA consistente (sem “Conversar” por enquanto) */}
+                    <Link
+                      to={`/caregiver/${c.id}`}
+                      className="
+                        inline-flex items-center justify-center
+                        w-full
+                        bg-[#5A3A22] text-white
+                        px-4 py-2 rounded-lg
+                        font-semibold
+                        hover:brightness-110 transition
+                      "
+                    >
+                      Ver perfil
+                    </Link>
+                  </div>
+                );
+              })}
+            </div>
+          </>
         )}
       </div>
     </div>

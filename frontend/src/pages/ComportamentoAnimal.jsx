@@ -1,13 +1,61 @@
 // src/pages/ComportamentoAnimal.jsx
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Instagram } from "lucide-react";
 import { useToast } from "../components/ToastProvider";
 
+const BRAND_UTM = "utm_source=pelocaramelo&utm_medium=cta&utm_campaign=comportamento";
+const WHATSAPP_NUMBER = "5531999999999"; // ✅ troque aqui
+
+function buildWhatsAppLink({ text, content = "hero" }) {
+  const base = `https://wa.me/${WHATSAPP_NUMBER}`;
+  const utm = `${BRAND_UTM}&utm_content=${encodeURIComponent(content)}`;
+  const msg = `${text}\n\n(${utm})`;
+  return `${base}?text=${encodeURIComponent(msg)}`;
+}
+
+function trackClick(eventName, payload) {
+  try {
+    // opcional: você pode depois trocar por sua solução (GA, etc.)
+    const data = {
+      id: Date.now(),
+      event: eventName,
+      ...payload,
+      ts: new Date().toISOString(),
+    };
+    const arr = JSON.parse(localStorage.getItem("pc_events") || "[]");
+    localStorage.setItem("pc_events", JSON.stringify([...arr, data]));
+  } catch {}
+}
+
+const FAQ = [
+  {
+    q: "Como funciona a consulta comportamental?",
+    a: "Você conta a rotina do pet, o que está acontecendo e recebe um plano de manejo claro, pensado para a realidade da sua casa e sem punições.",
+  },
+  {
+    q: "É online ou presencial?",
+    a: "Depende do caso e da disponibilidade. A pré-consulta serve para entender sua necessidade e indicar o melhor formato.",
+  },
+  {
+    q: "Quanto tempo dura?",
+    a: "Varia conforme o caso. Na pré-consulta você recebe uma orientação de tempo e próximos passos.",
+  },
+  {
+    q: "Para quais situações é indicado?",
+    a: "Ansiedade, medo de fogos/barulho, agressividade, destruição, latidos excessivos, adaptação a mudanças, convivência entre pets e mais.",
+  },
+  {
+    q: "O que eu preciso preparar antes?",
+    a: "Se possível, anote horários, gatilhos e rotina. Vídeos curtos do comportamento (quando seguro) ajudam bastante.",
+  },
+];
+
 export default function ComportamentoAnimal() {
   const { showToast } = useToast();
   const [openPalestra, setOpenPalestra] = useState(false);
+  const [faqOpen, setFaqOpen] = useState(null); // index
   const dialogRef = useRef(null);
   const location = useLocation();
 
@@ -15,20 +63,17 @@ export default function ComportamentoAnimal() {
     document.title = "PeloCaramelo | Comportamento Animal";
   }, []);
 
-  // ✅ Scroll suave ao abrir a página
-  // - Se vier com hash (ex.: /comportamento#dra-laise-oliveira), rola até o elemento com offset de navbar
-  // - Se não tiver hash, aplica o seu scroll "padrão" (end = 110)
+  // ✅ Scroll suave ao abrir a página (mantido)
   useEffect(() => {
     if (location.pathname !== "/comportamento") return;
 
-    const NAVBAR_OFFSET = 92; // ajuste fino caso sua navbar varie (72 + margem)
-    const EXTRA_SCROLL = 120; // 👈 aumenta aqui (ex.: 80, 120, 160) = “1 scroll do mouse” a mais
-    const DEFAULT_END = 0; // usado só quando NÃO tem hash
+    const NAVBAR_OFFSET = 92;
+    const EXTRA_SCROLL = 120;
+    const DEFAULT_END = 0;
 
     const timeout = setTimeout(() => {
       const hash = (location.hash || "").replace("#", "").trim();
 
-      // ✅ Se tiver hash, rola pro elemento alvo (+ EXTRA_SCROLL)
       if (hash) {
         const el = document.getElementById(hash);
         if (el) {
@@ -41,12 +86,10 @@ export default function ComportamentoAnimal() {
           window.scrollTo({ top: Math.max(top, 0), behavior: "smooth" });
           return;
         }
-        // se não achar o elemento, cai no scroll padrão
       }
 
-      // ✅ Scroll padrão (se não tiver hash)
       const start = window.scrollY;
-      const end = DEFAULT_END + EXTRA_SCROLL; // também aplica a “descida extra”
+      const end = DEFAULT_END + EXTRA_SCROLL;
       const duration = 800;
       let startTime = null;
 
@@ -70,9 +113,20 @@ export default function ComportamentoAnimal() {
   // 🔧 FECHAR MODAL COM ESC
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && setOpenPalestra(false);
-
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const waHeroLink = useMemo(() => {
+    const txt =
+      "Olá, Dra. Laíse! Vim pela PeloCaramelo e gostaria de agendar uma consulta comportamental. Posso te explicar rapidinho o caso do meu pet?";
+    return buildWhatsAppLink({ text: txt, content: "hero" });
+  }, []);
+
+  const waStickyLink = useMemo(() => {
+    const txt =
+      "Olá, Dra. Laíse! Vim pela PeloCaramelo. Quero agendar uma consulta comportamental — qual o melhor horário para conversarmos?";
+    return buildWhatsAppLink({ text: txt, content: "sticky" });
   }, []);
 
   const handleSubmitLead = (e) => {
@@ -121,6 +175,7 @@ export default function ComportamentoAnimal() {
           className="w-full h-[82vh] object-cover"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-black/25 to-transparent" />
+
         <div className="absolute inset-0 flex flex-col justify-center items-center px-4">
           <motion.h1
             initial={{ opacity: 0, y: -10 }}
@@ -145,6 +200,11 @@ export default function ComportamentoAnimal() {
             acreditamos que compreender o comportamento do seu pet é o primeiro
             passo para uma convivência saudável, feliz e sem traumas.
           </motion.p>
+
+          {/* ✅ Frase discreta no rodapé da imagem (sem atrapalhar visual) */}
+          <p className="absolute bottom-6 left-0 right-0 px-4 text-[12px] sm:text-sm text-white/90 drop-shadow-[0_0_6px_rgba(0,0,0,0.55)]">
+            Atendimento com abordagem positiva e orientações práticas para o seu dia a dia.
+          </p>
         </div>
       </section>
 
@@ -183,18 +243,29 @@ export default function ComportamentoAnimal() {
         </motion.h2>
 
         <div className="flex flex-col md:flex-row items-center justify-between max-w-6xl mx-auto gap-10">
-          {/* LISTA */}
-          <ul className="flex-1 space-y-4 leading-relaxed order-2 md:order-1 md:pr-6 text-base md:text-lg">
-            <li>✅ Reforce os comportamentos corretos.</li>
-            <li>❤️ Respeite os limites emocionais do pet.</li>
-            <li>🧠 Evite o medo: ele não ensina.</li>
-            <li>🕊️ Promova um ambiente seguro e amoroso.</li>
-            <li>🎯 Antecipe situações que possam gerar estresse ou frustração.</li>
-            <li>💬 Ensine comunicação clara para evitar ruídos.</li>
-            <li>🌿 Cuide do bem-estar físico e mental do pet.</li>
-            <li>🧩 Adapte o ambiente para facilitar o aprendizado.</li>
-            <li>🤝 Priorize a cooperação, nunca a obediência forçada.</li>
-          </ul>
+          {/* ✅ bullets -> cards escaneáveis */}
+          <div className="flex-1 order-2 md:order-1 md:pr-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {[
+                { t: "✅ Reforço do certo", d: "Reforce os comportamentos corretos com consistência." },
+                { t: "❤️ Limites emocionais", d: "Respeite o tempo e o emocional do pet." },
+                { t: "🧠 Sem medo", d: "Evite punições: o medo não ensina." },
+                { t: "🕊️ Ambiente seguro", d: "Rotina previsível e acolhedora reduz estresse." },
+                { t: "🎯 Prevenção", d: "Antecipe situações que geram frustração." },
+                { t: "💬 Comunicação clara", d: "Sinais e combinações simples evitam “ruídos”." },
+                { t: "🌿 Bem-estar completo", d: "Físico e mental caminham juntos." },
+                { t: "🤝 Cooperação", d: "Priorize cooperação, não obediência forçada." },
+              ].map((x) => (
+                <div
+                  key={x.t}
+                  className="rounded-2xl bg-white border border-[#5A3A22]/10 p-4 shadow-sm"
+                >
+                  <p className="font-extrabold text-[#5A3A22]">{x.t}</p>
+                  <p className="text-sm text-[#5A3A22]/75 mt-1 leading-relaxed">{x.d}</p>
+                </div>
+              ))}
+            </div>
+          </div>
 
           {/* IMAGEM */}
           <motion.div
@@ -260,49 +331,58 @@ export default function ComportamentoAnimal() {
             </span>
           </div>
 
-          <div className="flex flex-col sm:flex-row justify-center gap-4">
-            {/* WHATSAPP */}
+          {/* ✅ CTA padronizada: "Agendar no WhatsApp" */}
+          <div className="flex flex-col sm:flex-row justify-center gap-4 w-full">
             <a
-              href="https://wa.me/5531999999999"
+              href={buildWhatsAppLink({
+                text:
+                  "Olá, Dra. Laíse! Vim pela PeloCaramelo e gostaria de agendar uma consulta comportamental. Posso te contar o caso do meu pet?",
+                content: "perfil",
+              })}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-2 bg-[#5A3A22] hover:bg-[#95301F] text-white px-6 py-3 rounded-lg font-semibold shadow-md transition"
+              onClick={() =>
+                trackClick("cta_whatsapp_click", { page: "comportamento", pos: "perfil" })
+              }
+              className="
+                inline-flex items-center justify-center gap-2
+                bg-[#25D366] hover:brightness-105 text-[#0b2a14]
+                px-6 py-3 rounded-xl font-extrabold shadow-md transition
+                focus:outline-none focus:ring-2 focus:ring-[#5A3A22]/20
+              "
             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 32 32"
-                className="w-5 h-5 fill-current"
-              >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" className="w-5 h-5 fill-current">
                 <path d="M16 .395c-8.822 0-16 7.178-16 16 0 2.822.744 5.563 2.155 7.967L0 32l8.864-2.321A15.86 15.86 0 0 0 16 32c8.822 0 16-7.178 16-16s-7.178-15.605-16-15.605zm0 29.333a13.24 13.24 0 0 1-6.76-1.844l-.489-.289-5.26 1.375 1.406-5.146-.344-.533a13.213 13.213 0 1 1 11.447 6.437zm7.036-9.51c-.385-.193-2.273-1.12-2.626-1.247-.354-.128-.611-.192-.867.193-.257.386-.994 1.247-1.219 1.503-.225.257-.45.289-.835.096-.386-.193-1.628-.6-3.104-1.918-1.147-1.013-1.92-2.267-2.146-2.632-.225-.365-.024-.6.17-.793.175-.176.386-.45.579-.676.193-.225.257-.386.386-.643.128-.257.064-.48-.032-.676-.096-.193-.867-2.08-1.2-2.859-.32-.75-.644-.643-.867-.643h-.74c-.257 0-.675.096-1.025.482-.354.386-1.353 1.32-1.353 3.219s1.386 3.736 1.578 3.993c.193.257 2.736 4.176 6.632 5.85 3.896 1.643 3.896 1.098 4.596 1.031.7-.064 2.273-.932 2.603-1.834.321-.9 .321-1.672 .225-1.834-.096-.161-.354-.257-.74-.45z" />
               </svg>
-              Solicitar Pré-Consulta
+              Agendar no WhatsApp
             </a>
 
-            {/* PALESTRA */}
             <button
               onClick={() => setOpenPalestra(true)}
-              className="inline-flex items-center gap-2 bg-[#5A3A22] hover:bg-[#95301F] text-white px-6 py-3 rounded-lg font-semibold shadow-md transition"
+              className="
+                inline-flex items-center justify-center gap-2
+                bg-[#5A3A22] hover:bg-[#95301F] text-white
+                px-6 py-3 rounded-xl font-semibold shadow-md transition
+              "
             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 24 24"
-                className="w-5 h-5 fill-current"
-              >
-                <path d="M2 4h20a2 2 0 012 2v12a2 2 0 01-2 2H2a2 2 0 01-2-2V6a2 2 0 012-2zm20 4l-10 6L2 8v10h20V8zm-20-2l10 6 10-6H2z" />
-              </svg>
               Solicitar Orçamento de Palestra
             </button>
           </div>
 
-          {/* FRASE FINAL DENTRO DO CARD */}
+          {/* ✅ faixa de preço / expectativa */}
+          <p className="mt-4 text-sm text-[#5A3A22]/80 max-w-3xl">
+            💰 <span className="font-semibold">Expectativa de valor:</span>{" "}
+            o valor é alinhado conforme o caso, a rotina da família e a complexidade do acompanhamento.
+          </p>
+
           <p className="mt-6 text-base md:text-lg font-semibold text-[#5A3A22]">
             Cuidar é também compreender 💕
           </p>
         </motion.div>
       </section>
 
-      {/* SEÇÃO COMPLEMENTAR SOBRE A DRA. – EMPURRA O FOOTER E AGREGA CONTEÚDO */}
-      <section className="pb-20 px-6">
+      {/* SEÇÃO COMPLEMENTAR */}
+      <section className="pb-10 px-6">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
@@ -335,6 +415,93 @@ export default function ComportamentoAnimal() {
         </motion.div>
       </section>
 
+      {/* ✅ MINI-FAQ (somente dúvidas fixas) */}
+      <section className="pb-24 px-6">
+        <div className="max-w-[1400px] mx-auto bg-white rounded-2xl shadow p-6 md:p-8 border-l-4 border-[#FFD700]/80">
+          <div className="mb-5">
+            <h4 className="text-xl font-extrabold">Dúvidas rápidas</h4>
+          </div>
+
+          <div className="space-y-3">
+            {FAQ.map((item, idx) => {
+              const open = faqOpen === idx;
+              return (
+                <div
+                  key={item.q}
+                  className="rounded-2xl border border-[#5A3A22]/10 overflow-hidden"
+                >
+                  <button
+                    type="button"
+                    onClick={() => setFaqOpen(open ? null : idx)}
+                    className="
+                      w-full text-left
+                      px-4 py-4
+                      bg-[#FFF8F0] hover:brightness-105 transition
+                      flex items-center justify-between gap-3
+                    "
+                    aria-expanded={open}
+                  >
+                    <span className="font-bold text-[#5A3A22]">{item.q}</span>
+                    <span className="text-[#5A3A22]/70 font-bold">
+                      {open ? "−" : "+"}
+                    </span>
+                  </button>
+
+                  <AnimatePresence initial={false}>
+                    {open && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="px-4"
+                      >
+                        <p className="py-4 text-sm md:text-base text-[#5A3A22]/85 leading-relaxed">
+                          {item.a}
+                        </p>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* ✅ CTA final (simples e forte) */}
+      <div className="px-6 pb-8">
+        <div className="max-w-[1400px] mx-auto rounded-2xl bg-[#5A3A22] text-white p-6 md:p-8 shadow-lg flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <p className="text-lg md:text-xl font-extrabold">
+              Quer ajuda com o comportamento do seu pet?
+            </p>
+            <p className="text-sm text-white/85 mt-1">
+              Clique e agende no WhatsApp. Mensagem pronta e rastreável.
+            </p>
+          </div>
+
+          <a
+            href={waStickyLink}
+            target="_blank"
+            rel="noreferrer"
+            onClick={() =>
+              trackClick("cta_whatsapp_click", { page: "comportamento", pos: "final" })
+            }
+            className="
+              inline-flex items-center justify-center gap-2
+              bg-[#FFD700] text-[#5A3A22]
+              px-5 py-3 rounded-xl font-extrabold
+              shadow-md hover:brightness-105 transition
+              focus:outline-none focus:ring-2 focus:ring-white/70
+              w-full md:w-auto
+            "
+          >
+            Agendar no WhatsApp
+          </a>
+        </div>
+      </div>
+
       {/* MODAL */}
       <AnimatePresence>
         {openPalestra && (
@@ -343,9 +510,7 @@ export default function ComportamentoAnimal() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 bg-black/50 z-[999] flex items-center justify-center px-4"
-            onClick={(e) =>
-              e.target === e.currentTarget && setOpenPalestra(false)
-            }
+            onClick={(e) => e.target === e.currentTarget && setOpenPalestra(false)}
           >
             <motion.div
               ref={dialogRef}
@@ -356,9 +521,7 @@ export default function ComportamentoAnimal() {
               className="bg-white w-full max-w-2xl rounded-2xl shadow-xl p-6"
             >
               <div className="flex items-center justify-between mb-4">
-                <h4 className="text-xl font-bold">
-                  Solicitar Orçamento de Palestra
-                </h4>
+                <h4 className="text-xl font-bold">Solicitar Orçamento de Palestra</h4>
                 <button
                   onClick={() => setOpenPalestra(false)}
                   className="text-[#5A3A22]/70 hover:text-[#5A3A22] text-xl font-bold"
@@ -383,26 +546,14 @@ export default function ComportamentoAnimal() {
                   placeholder="Empresa / Instituição"
                   className="input"
                 />
-                <input
-                  name="cidade"
-                  placeholder="Cidade / Estado"
-                  className="input"
-                />
+                <input name="cidade" placeholder="Cidade / Estado" className="input" />
                 <input
                   name="publico"
                   placeholder="Público-alvo"
                   className="input sm:col-span-2"
                 />
-                <input
-                  name="tamanho"
-                  placeholder="Tamanho do público"
-                  className="input"
-                />
-                <input
-                  name="duracao"
-                  placeholder="Duração desejada"
-                  className="input"
-                />
+                <input name="tamanho" placeholder="Tamanho do público" className="input" />
+                <input name="duracao" placeholder="Duração desejada" className="input" />
                 <select name="formato" className="input">
                   <option>Presencial</option>
                   <option>Online</option>
@@ -436,6 +587,11 @@ export default function ComportamentoAnimal() {
                   </button>
                 </div>
               </form>
+
+              <p className="mt-4 text-[12px] text-[#5A3A22]/70">
+                Dica: esses pedidos ficam salvos em{" "}
+                <span className="font-semibold">localStorage</span> (leads_palestras).
+              </p>
             </motion.div>
           </motion.div>
         )}
