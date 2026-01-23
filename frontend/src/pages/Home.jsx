@@ -132,7 +132,7 @@ export default function Home() {
                   <div className="flex items-center justify-between gap-3 mb-3">
                     <p className="text-white font-semibold">Comece a buscar agora</p>
 
-                    {/* botão "Como funciona?" maior e com destaque (vai para /sobre#como-funciona) */}
+                    {/* ✅ Troca: "Como funciona?" -> "Conheça a PeloCaramelo" */}
                     <Link
                       to="/sobre#como-funciona"
                       className="
@@ -142,10 +142,10 @@ export default function Home() {
                         shadow-md hover:brightness-105 transition
                         focus:outline-none focus:ring-2 focus:ring-white/70
                       "
-                      aria-label="Ver como funciona"
-                      title="Como funciona"
+                      aria-label="Conheça a PeloCaramelo"
+                      title="Conheça a PeloCaramelo"
                     >
-                      Como funciona?
+                      Conheça a PeloCaramelo
                     </Link>
                   </div>
 
@@ -236,7 +236,7 @@ export default function Home() {
                     Dica: você pode preencher só “Bairro/Cidade” e buscar mesmo sem datas.
                   </p>
 
-                  {/* ✅ Agora vira um botão discreto (transparente, estilo do card) */}
+                  {/* botão discreto (transparente, estilo do card) */}
                   <div className="mt-3 flex justify-center">
                     <Link
                       to="/register"
@@ -254,7 +254,7 @@ export default function Home() {
                     </Link>
                   </div>
 
-                  {/* "Como funciona?" no mobile também, com destaque */}
+                  {/* ✅ no mobile também: "Conheça a PeloCaramelo" */}
                   <div className="mt-3 flex justify-center sm:hidden">
                     <Link
                       to="/sobre#como-funciona"
@@ -266,7 +266,7 @@ export default function Home() {
                         focus:outline-none focus:ring-2 focus:ring-white/70
                       "
                     >
-                      Como funciona?
+                      Conheça a PeloCaramelo
                     </Link>
                   </div>
                 </form>
