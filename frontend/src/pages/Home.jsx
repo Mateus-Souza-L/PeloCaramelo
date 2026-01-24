@@ -119,14 +119,14 @@ export default function Home() {
             <div className="relative w-full h-full max-w-6xl mx-auto px-4 sm:px-6 text-center text-white">
               {/* ✅ MOBILE: conteúdo mais pra cima e mais organizado */}
               <div className="pt-2 sm:pt-3">
-                {/* ✅ Ajuste MOBILE: garante “seu pet 🐾” junto e reduz pra caber ~3 linhas */}
+                {/* ✅ WEB: sobe ~1cm (somente sm+) para liberar mais a imagem central */}
                 <h1
                   className="
                     font-bold text-white
                     text-[31px] leading-[1.06] tracking-tight
                     sm:text-5xl sm:leading-tight
                     relative
-                    top-0 sm:top-5
+                    top-0 sm:top-[-5px]
                   "
                   style={{ textShadow: "2px 2px 10px rgba(0,0,0,0.55)" }}
                 >
@@ -229,24 +229,43 @@ export default function Home() {
                     text-left
                   "
                 >
-                  {/* header (web mantém) */}
+                  {/* header (WEB: agora com 2 botões lado a lado, mesmo tamanho) */}
                   <div className="hidden sm:flex items-center justify-between gap-3 mb-3">
                     <p className="text-white font-semibold">Comece a buscar agora</p>
 
-                    <Link
-                      to="/sobre#como-funciona"
-                      className="
-                        hidden sm:inline-flex items-center justify-center
-                        px-4 py-2 rounded-xl font-semibold
-                        bg-[#FFD700] text-[#5A3A22]
-                        shadow-md hover:brightness-105 transition
-                        focus:outline-none focus:ring-2 focus:ring-white/70
-                      "
-                      aria-label="Conheça a PeloCaramelo"
-                      title="Conheça a PeloCaramelo"
-                    >
-                      Conheça a PeloCaramelo
-                    </Link>
+                    <div className="hidden sm:flex items-center gap-3">
+                      <Link
+                        to="/sobre#como-funciona"
+                        className="
+                          inline-flex items-center justify-center
+                          h-10 min-w-[240px]
+                          px-4 rounded-xl font-semibold
+                          bg-[#FFD700] text-[#5A3A22]
+                          shadow-md hover:brightness-105 transition
+                          focus:outline-none focus:ring-2 focus:ring-white/70
+                        "
+                        aria-label="Conheça a PeloCaramelo"
+                        title="Conheça a PeloCaramelo"
+                      >
+                        Conheça a PeloCaramelo
+                      </Link>
+
+                      <Link
+                        to="/register"
+                        className="
+                          inline-flex items-center justify-center
+                          h-10 min-w-[240px]
+                          px-4 rounded-xl font-semibold
+                          bg-white/10 hover:bg-white/15
+                          border border-white/25 text-white
+                          shadow-sm transition
+                          focus:outline-none focus:ring-2 focus:ring-white/70
+                          backdrop-blur-sm
+                        "
+                      >
+                        Quero me cadastrar como cuidador(a)
+                      </Link>
+                    </div>
                   </div>
 
                   {/* ✅ MOBILE: versão “sanduíche” (mais compacta) */}
@@ -468,23 +487,6 @@ export default function Home() {
                     <p className="mt-2 text-[11px] text-white/80">
                       Dica: você pode preencher só “Bairro/Cidade” e buscar mesmo sem datas.
                     </p>
-
-                    <div className="mt-3 flex justify-center">
-                      <Link
-                        to="/register"
-                        className="
-                          inline-flex items-center justify-center
-                          px-4 py-2 rounded-xl font-semibold text-sm
-                          bg-white/10 hover:bg-white/15
-                          border border-white/25 text-white
-                          shadow-sm transition
-                          focus:outline-none focus:ring-2 focus:ring-white/70
-                          backdrop-blur-sm
-                        "
-                      >
-                        Quero me cadastrar como cuidador(a)
-                      </Link>
-                    </div>
                   </div>
                 </form>
               </div>
