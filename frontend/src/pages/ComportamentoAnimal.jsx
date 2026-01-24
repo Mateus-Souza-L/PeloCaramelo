@@ -609,7 +609,7 @@ export default function ComportamentoAnimal() {
               "
             >
               <div className="flex items-center justify-between mb-4">
-                <h4 className="text-xl font-bold">Solicitar Orçamento de Palestra</h4>
+                <h4 className="text-xl font-bold">Orçamento de Palestra</h4>
                 <button
                   onClick={() => setOpenPalestra(false)}
                   className="text-[#5A3A22]/70 hover:text-[#5A3A22] text-xl font-bold"
