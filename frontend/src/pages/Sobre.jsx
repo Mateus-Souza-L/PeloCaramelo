@@ -139,7 +139,7 @@ export default function Sobre() {
             const safe = Number.isFinite(h) && h > 40 ? h : 90;
 
             // offset menor (só navbar + folga mínima)
-            const offset = Math.round(safe +8);
+            const offset = Math.round(safe + 0);
             const y = el.getBoundingClientRect().top + window.scrollY - offset;
 
             window.scrollTo({
