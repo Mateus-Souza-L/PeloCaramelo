@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Instagram } from "lucide-react";
+import { Instagram, Mail } from "lucide-react";
 import { useToast } from "../components/ToastProvider";
 import { trackEvent } from "../utils/analytics";
 
@@ -425,6 +425,7 @@ export default function ComportamentoAnimal() {
               Falar com a especialista
             </a>
 
+            {/* ✅ mantém tamanho / só adiciona ícone de e-mail no início */}
             <button
               onClick={() => setOpenPalestra(true)}
               className="
@@ -433,7 +434,8 @@ export default function ComportamentoAnimal() {
                 px-6 py-3 rounded-xl font-semibold shadow-md transition
               "
             >
-              Orçamento de Palestra
+              <Mail size={18} className="text-white" />
+              Solicitar Orçamento de Palestra
             </button>
           </div>
 
@@ -524,11 +526,7 @@ export default function ComportamentoAnimal() {
                         transition={{ duration: 0.2 }}
                         className="px-4"
                       >
-                        <p className="
-  bg-white w-full max-w-2xl rounded-2xl shadow-xl p-6
-  max-h-[85vh] overflow-y-auto
-  sm:max-h-none sm:overflow-visible
-">
+                        <p className="py-4 text-sm md:text-base text-[#5A3A22]/85 leading-relaxed">
                           {item.a}
                         </p>
                       </motion.div>
@@ -584,7 +582,14 @@ export default function ComportamentoAnimal() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/50 z-[999] flex items-center justify-center px-4"
+            // ✅ MOBILE: overlay rola + alinha no topo (não "estoura" tela)
+            // ✅ WEB: mantém centralizado como já estava
+            className="
+              fixed inset-0 bg-black/50 z-[999]
+              flex items-start sm:items-center justify-center
+              px-4 py-6 sm:py-0
+              overflow-y-auto
+            "
             onClick={(e) => e.target === e.currentTarget && setOpenPalestra(false)}
           >
             <motion.div
@@ -593,7 +598,15 @@ export default function ComportamentoAnimal() {
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
               transition={{ duration: 0.2 }}
-              className="bg-white w-full max-w-2xl rounded-2xl shadow-xl p-6"
+              // ✅ MOBILE: altura máxima + scroll interno
+              // ✅ WEB: volta ao normal (sem max-height / sem scroll)
+              className="
+                bg-white w-full max-w-2xl rounded-2xl shadow-xl
+                p-4 sm:p-6
+                my-0 sm:my-0
+                max-h-[calc(100vh-3rem)] overflow-y-auto
+                sm:max-h-none sm:overflow-visible
+              "
             >
               <div className="flex items-center justify-between mb-4">
                 <h4 className="text-xl font-bold">Solicitar Orçamento de Palestra</h4>
