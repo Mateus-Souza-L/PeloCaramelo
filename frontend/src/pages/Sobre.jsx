@@ -125,9 +125,33 @@ export default function Sobre() {
       tries += 1;
 
       if (targetId) {
-        // ✅ ALTERAÇÃO SOMENTE NO MOBILE:
-        // quando vem da Home em /sobre#como-funciona, queremos ver o título no topo.
-        if (isMobile() && targetId === "como-funciona") {
+        // ✅ ALTERAÇÃO SOMENTE NO MOBILE (FAQ):
+        // Alinhar o título "Perguntas frequentes ?" sem “subir demais”.
+        if (isMobile() && targetId === "faq") {
+          const el = document.getElementById("faq");
+          if (el) {
+            const nav =
+              document.querySelector("header") ||
+              document.querySelector("nav") ||
+              document.getElementById("navbar");
+
+            const h = nav?.getBoundingClientRect?.().height;
+            const safe = Number.isFinite(h) && h > 40 ? h : 90;
+
+            // offset menor (só navbar + folga mínima)
+            const offset = Math.round(safe + 12);
+            const y = el.getBoundingClientRect().top + window.scrollY - offset;
+
+            window.scrollTo({
+              top: Math.max(0, y),
+              behavior: prefersReducedMotion() ? "auto" : "smooth",
+            });
+
+            if (tries >= 2) return;
+          }
+        }
+        // ✅ MANTÉM (como estava): scroll do "Conheça" no MOBILE
+        else if (isMobile() && targetId === "como-funciona") {
           window.scrollTo({
             top: 0,
             behavior: prefersReducedMotion() ? "auto" : "smooth",
