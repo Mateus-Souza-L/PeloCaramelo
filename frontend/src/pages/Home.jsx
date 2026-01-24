@@ -79,32 +79,26 @@ export default function Home() {
     <div className="bg-[#EBCBA9] min-h-screen overflow-x-hidden">
       {/* HERO */}
       <section className="relative overflow-hidden">
-        {/* ✅ No mobile: hero menor (não ocupa a tela toda) */}
-        <div className="relative w-full h-[78svh] sm:h-[calc(100svh-72px)]">
-          {/* ✅ Imagem diferente no mobile sem trocar a do web */}
-          <picture className="absolute inset-0">
-            <source
-              media="(max-width: 639px)"
-              srcSet="/images/Gato_e_cachorro_Home_9x16.png"
-            />
-            <img
-              src="/images/Gato_e_cachorro_Home.png"
-              alt=""
-              className="w-full h-full object-cover"
-              loading="lazy"
-              decoding="async"
-            />
-          </picture>
-
+        <div
+          className="relative w-full h-[calc(100svh-48px)] sm:h-[calc(100svh-72px)]"
+          style={{
+            minHeight: "640px",
+            maxHeight: "760px",
+            backgroundImage: "url('/images/Gato_e_cachorro_Home.png')",
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            backgroundRepeat: "no-repeat",
+          }}
+        >
           {/* Overlay p/ legibilidade */}
           <div className="absolute inset-0 bg-black/30" />
 
           <div className="absolute inset-0">
             <div className="relative w-full h-full max-w-6xl mx-auto px-4 sm:px-6 text-center text-white">
-              {/* TEXTO */}
-              <div className="pt-3 sm:pt-3">
+              {/* TEXTO (mais limpo: só headline no centro) */}
+              <div className="pt-2 sm:pt-3">
                 <h1
-                  className="font-bold text-white text-[28px] leading-tight sm:text-5xl"
+                  className="font-bold text-white text-3xl leading-tight sm:text-5xl relative top-6 sm:top-5"
                   style={{ textShadow: "2px 2px 10px rgba(0,0,0,0.55)" }}
                 >
                   <span className="block max-w-[26rem] mx-auto sm:max-w-none">
@@ -117,173 +111,174 @@ export default function Home() {
                 </h1>
               </div>
 
-              {/* BLOCO INFERIOR */}
+              {/* BLOCO INFERIOR (onde antes ficavam os cards) */}
               <div className="absolute inset-x-4 sm:inset-x-6 bottom-3">
-                <div className="mx-auto w-full max-w-3xl">
-                  {/* Texto de apoio + "sem taxas" */}
-                  <p
-                    className="mb-3 text-white/90 text-sm sm:text-base text-center"
-                    style={{ textShadow: "2px 2px 10px rgba(0,0,0,0.45)" }}
-                  >
-                    Busque por bairro/cidade, selecione as datas e o serviço — e já veja os
-                    cuidadores disponíveis.{" "}
-                    <span className="font-semibold text-white">
-                      Sem taxas para tutores e cuidadores.
-                    </span>
+                {/* Texto de apoio + "sem taxas" */}
+                <p
+                  className="mb-3 text-white/90 text-sm sm:text-base text-center"
+                  style={{ textShadow: "2px 2px 10px rgba(0,0,0,0.45)" }}
+                >
+                  Busque por bairro/cidade, selecione as datas e o serviço — e já veja os
+                  cuidadores disponíveis.{" "}
+                  <span className="font-semibold text-white">
+                    Sem taxas para tutores e cuidadores.
+                  </span>
+                </p>
+
+                <form
+                  onSubmit={handleSearchSubmit}
+                  className="
+                    w-full
+                    rounded-2xl
+                    bg-white/18
+                    backdrop-blur-md
+                    border border-white/20
+                    shadow-lg
+                    p-4 sm:p-5
+                    text-left
+                  "
+                >
+                  <div className="flex items-center justify-between gap-3 mb-3">
+                    <p className="text-white font-semibold">Comece a buscar agora</p>
+
+                    {/* ✅ Troca: "Como funciona?" -> "Conheça a PeloCaramelo" */}
+                    <Link
+                      to="/sobre#como-funciona"
+                      className="
+                        hidden sm:inline-flex items-center justify-center
+                        px-4 py-2 rounded-xl font-semibold
+                        bg-[#FFD700] text-[#5A3A22]
+                        shadow-md hover:brightness-105 transition
+                        focus:outline-none focus:ring-2 focus:ring-white/70
+                      "
+                      aria-label="Conheça a PeloCaramelo"
+                      title="Conheça a PeloCaramelo"
+                    >
+                      Conheça a PeloCaramelo
+                    </Link>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                    <div className="sm:col-span-5 min-w-0">
+                      <label className="block text-[11px] text-white/85 mb-1">
+                        Bairro/Cidade
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Ex: Savassi, Belo Horizonte…"
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        className="
+                          w-full border border-white/25 bg-white/90
+                          rounded-lg px-3 py-2 text-[#5A3A22]
+                          focus:outline-none focus:ring-2 focus:ring-white/70
+                        "
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2 min-w-0">
+                      <label className="block text-[11px] text-white/85 mb-1">Início</label>
+                      <input
+                        type="date"
+                        value={startDateKey}
+                        onChange={(e) => setStartDateKey(e.target.value)}
+                        className="
+                          w-full border border-white/25 bg-white/90
+                          rounded-lg px-3 py-2 text-[#5A3A22]
+                          focus:outline-none focus:ring-2 focus:ring-white/70
+                        "
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2 min-w-0">
+                      <label className="block text-[11px] text-white/85 mb-1">Fim</label>
+                      <input
+                        type="date"
+                        value={endDateKey}
+                        onChange={(e) => setEndDateKey(e.target.value)}
+                        className="
+                          w-full border border-white/25 bg-white/90
+                          rounded-lg px-3 py-2 text-[#5A3A22]
+                          focus:outline-none focus:ring-2 focus:ring-white/70
+                        "
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2 min-w-0">
+                      <label className="block text-[11px] text-white/85 mb-1">Serviço</label>
+                      <select
+                        value={svc}
+                        onChange={(e) => setSvc(e.target.value)}
+                        className="
+                          w-full border border-white/25 bg-white/90
+                          rounded-lg px-3 py-2 text-[#5A3A22]
+                          focus:outline-none focus:ring-2 focus:ring-white/70
+                        "
+                      >
+                        <option value="todos">Todos</option>
+                        <option value="hospedagem">Hospedagem</option>
+                        <option value="creche">Creche</option>
+                        <option value="petSitter">Pet Sitter</option>
+                        <option value="passeios">Passeios</option>
+                      </select>
+                    </div>
+
+                    <div className="sm:col-span-1 flex items-end min-w-0">
+                      <button
+                        type="submit"
+                        disabled={!canSubmit}
+                        className="
+                          w-full
+                          rounded-lg font-semibold shadow-lg transition
+                          px-4 py-2
+                          bg-[#95301F] hover:brightness-110 text-white
+                          disabled:opacity-60 disabled:cursor-not-allowed
+                          focus:outline-none focus:ring-2 focus:ring-white/70
+                        "
+                      >
+                        Buscar
+                      </button>
+                    </div>
+                  </div>
+
+                  <p className="mt-2 text-[11px] text-white/80">
+                    Dica: você pode preencher só “Bairro/Cidade” e buscar mesmo sem datas.
                   </p>
 
-                  <form
-                    onSubmit={handleSearchSubmit}
-                    className="
-                      w-full
-                      rounded-2xl
-                      bg-white/18
-                      backdrop-blur-md
-                      border border-white/20
-                      shadow-lg
-                      p-3 sm:p-5
-                      text-left
-                    "
-                  >
-                    <div className="flex items-center justify-between gap-3 mb-3">
-                      <p className="text-white font-semibold">Comece a buscar agora</p>
+                  {/* botão discreto (transparente, estilo do card) */}
+                  <div className="mt-3 flex justify-center">
+                    <Link
+                      to="/register"
+                      className="
+                        inline-flex items-center justify-center
+                        px-4 py-2 rounded-xl font-semibold text-sm
+                        bg-white/10 hover:bg-white/15
+                        border border-white/25 text-white
+                        shadow-sm transition
+                        focus:outline-none focus:ring-2 focus:ring-white/70
+                        backdrop-blur-sm
+                      "
+                    >
+                      Quero me cadastrar como cuidador(a)
+                    </Link>
+                  </div>
 
-                      <Link
-                        to="/sobre#como-funciona"
-                        className="
-                          hidden sm:inline-flex items-center justify-center
-                          px-4 py-2 rounded-xl font-semibold
-                          bg-[#FFD700] text-[#5A3A22]
-                          shadow-md hover:brightness-105 transition
-                          focus:outline-none focus:ring-2 focus:ring-white/70
-                        "
-                        aria-label="Conheça a PeloCaramelo"
-                        title="Conheça a PeloCaramelo"
-                      >
-                        Conheça a PeloCaramelo
-                      </Link>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
-                      <div className="sm:col-span-5 min-w-0">
-                        <label className="block text-[11px] text-white/85 mb-1">
-                          Bairro/Cidade
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="Ex: Savassi, Belo Horizonte…"
-                          value={query}
-                          onChange={(e) => setQuery(e.target.value)}
-                          className="
-                            w-full border border-white/25 bg-white/90
-                            rounded-lg px-3 py-2 text-[#5A3A22]
-                            focus:outline-none focus:ring-2 focus:ring-white/70
-                          "
-                        />
-                      </div>
-
-                      <div className="sm:col-span-2 min-w-0">
-                        <label className="block text-[11px] text-white/85 mb-1">Início</label>
-                        <input
-                          type="date"
-                          value={startDateKey}
-                          onChange={(e) => setStartDateKey(e.target.value)}
-                          className="
-                            w-full border border-white/25 bg-white/90
-                            rounded-lg px-3 py-2 text-[#5A3A22]
-                            focus:outline-none focus:ring-2 focus:ring-white/70
-                          "
-                        />
-                      </div>
-
-                      <div className="sm:col-span-2 min-w-0">
-                        <label className="block text-[11px] text-white/85 mb-1">Fim</label>
-                        <input
-                          type="date"
-                          value={endDateKey}
-                          onChange={(e) => setEndDateKey(e.target.value)}
-                          className="
-                            w-full border border-white/25 bg-white/90
-                            rounded-lg px-3 py-2 text-[#5A3A22]
-                            focus:outline-none focus:ring-2 focus:ring-white/70
-                          "
-                        />
-                      </div>
-
-                      <div className="sm:col-span-2 min-w-0">
-                        <label className="block text-[11px] text-white/85 mb-1">Serviço</label>
-                        <select
-                          value={svc}
-                          onChange={(e) => setSvc(e.target.value)}
-                          className="
-                            w-full border border-white/25 bg-white/90
-                            rounded-lg px-3 py-2 text-[#5A3A22]
-                            focus:outline-none focus:ring-2 focus:ring-white/70
-                          "
-                        >
-                          <option value="todos">Todos</option>
-                          <option value="hospedagem">Hospedagem</option>
-                          <option value="creche">Creche</option>
-                          <option value="petSitter">Pet Sitter</option>
-                          <option value="passeios">Passeios</option>
-                        </select>
-                      </div>
-
-                      <div className="sm:col-span-1 flex items-end min-w-0">
-                        <button
-                          type="submit"
-                          disabled={!canSubmit}
-                          className="
-                            w-full
-                            rounded-lg font-semibold shadow-lg transition
-                            px-4 py-3 sm:py-2
-                            bg-[#95301F] hover:brightness-110 text-white
-                            disabled:opacity-60 disabled:cursor-not-allowed
-                            focus:outline-none focus:ring-2 focus:ring-white/70
-                          "
-                        >
-                          Buscar
-                        </button>
-                      </div>
-                    </div>
-
-                    <p className="mt-2 text-[11px] text-white/80">
-                      Dica: você pode preencher só “Bairro/Cidade” e buscar mesmo sem datas.
-                    </p>
-
-                    <div className="mt-3 flex flex-col sm:flex-row gap-2 sm:gap-3 justify-center">
-                      <Link
-                        to="/register"
-                        className="
-                          inline-flex items-center justify-center
-                          w-full sm:w-auto
-                          px-4 py-3 sm:py-2 rounded-xl font-semibold text-sm
-                          bg-white/10 hover:bg-white/15
-                          border border-white/25 text-white
-                          shadow-sm transition
-                          focus:outline-none focus:ring-2 focus:ring-white/70
-                          backdrop-blur-sm
-                        "
-                      >
-                        Quero me cadastrar como cuidador(a)
-                      </Link>
-
-                      <Link
-                        to="/sobre#como-funciona"
-                        className="
-                          inline-flex items-center justify-center
-                          w-full sm:hidden
-                          px-4 py-3 rounded-xl font-semibold
-                          bg-[#FFD700] text-[#5A3A22]
-                          shadow-md hover:brightness-105 transition
-                          focus:outline-none focus:ring-2 focus:ring-white/70
-                        "
-                      >
-                        Conheça a PeloCaramelo
-                      </Link>
-                    </div>
-                  </form>
-                </div>
+                  {/* ✅ no mobile também: "Conheça a PeloCaramelo" */}
+                  <div className="mt-3 flex justify-center sm:hidden">
+                    <Link
+                      to="/sobre#como-funciona"
+                      className="
+                        inline-flex items-center justify-center
+                        px-4 py-2 rounded-xl font-semibold
+                        bg-[#FFD700] text-[#5A3A22]
+                        shadow-md hover:brightness-105 transition
+                        focus:outline-none focus:ring-2 focus:ring-white/70
+                      "
+                    >
+                      Conheça a PeloCaramelo
+                    </Link>
+                  </div>
+                </form>
               </div>
               {/* fim bloco inferior */}
             </div>
@@ -394,13 +389,11 @@ export default function Home() {
                         ))}
                       </div>
 
-                      {/* MOBILE: CAROUSEL (✅ sem “pedaços” dos lados) */}
-                      <div className="sm:hidden overflow-hidden">
+                      {/* MOBILE: CAROUSEL (setas + dots tocáveis) */}
+                      <div className="sm:hidden">
                         <Carousel
                           className="mt-1"
-                          itemClassName="w-full"
-                          gapClassName="gap-0"
-                          viewportClassName="px-0 pb-2"
+                          itemClassName="w-[88%]"
                           arrows
                           dots
                         >
@@ -431,7 +424,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* CTA FAQ */}
+      {/* ✅ CTA discreto para FAQ (leva para /sobre#faq) */}
       <section className="px-4 sm:px-6 pb-14">
         <div className="max-w-[1400px] mx-auto">
           <div className="bg-white/60 backdrop-blur-sm rounded-2xl shadow-md border border-white/30 p-6 sm:p-8 text-center">
