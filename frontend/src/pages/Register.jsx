@@ -128,7 +128,7 @@ export default function Register() {
               Crie sua conta
             </h1>
             <p className="text-center text-[#5A3A22] mb-8 opacity-90">
-              Escolha como deseja usar o PeloCaramelo:
+              Escolha como deseja usar a PeloCaramelo:
             </p>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

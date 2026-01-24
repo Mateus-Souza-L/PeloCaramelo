@@ -73,7 +73,7 @@ export default function Sobre() {
   const faqs = useMemo(
     () => [
       {
-        q: "O PeloCaramelo cobra taxas para tutores e cuidadores?",
+        q: "A PeloCaramelo cobra taxas para tutores e cuidadores?",
         a: "Não. No momento, não há taxas para tutores nem para cuidadores. Você pode buscar e entrar em contato pela plataforma sem cobranças.",
       },
       {
@@ -81,12 +81,12 @@ export default function Sobre() {
         a: "Na busca, informe bairro/cidade e, se quiser, selecione as datas e o serviço (hospedagem, creche, pet sitter ou passeios). Você verá os cuidadores disponíveis.",
       },
       {
-        q: "Quais serviços posso encontrar no PeloCaramelo?",
+        q: "Quais serviços posso encontrar na PeloCaramelo?",
         a: "Você encontra opções de hospedagem, creche, pet sitter e passeios. A disponibilidade e detalhes variam por cuidador.",
       },
       {
         q: "Como funciona a segurança e a confiança na plataforma?",
-        a: "A plataforma organiza perfis e informações do cuidador para ajudar você a escolher com clareza. Além disso, o objetivo é manter a comunicação e o fluxo dentro do PeloCaramelo.",
+        a: "A plataforma organiza perfis e informações do cuidador para ajudar você a escolher com clareza. Além disso, o objetivo é manter a comunicação e o fluxo dentro da PeloCaramelo.",
       },
     ],
     []
@@ -369,7 +369,7 @@ export default function Sobre() {
             </h2>
 
             <p className="text-[#5A3A22]/80 text-sm md:text-base text-center mb-6">
-              Respostas rápidas para você começar a usar o PeloCaramelo com confiança.
+              Respostas rápidas para você começar a usar a PeloCaramelo com confiança.
             </p>
 
             <div className="space-y-4">

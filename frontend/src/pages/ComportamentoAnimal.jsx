@@ -254,7 +254,7 @@ export default function ComportamentoAnimal() {
             <span className="font-bold bg-[#5A3A22] px-2 py-0.5 rounded-md">
               <span className="text-white">Pelo</span>
               <span className="text-yellow-400">Caramelo</span>
-            </span>{" "}
+            </span>{" "},
             acreditamos que compreender o comportamento do seu pet é o primeiro
             passo para uma convivência saudável, feliz e sem traumas.
           </motion.p>

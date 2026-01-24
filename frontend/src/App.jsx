@@ -114,7 +114,7 @@ export default function App() {
         "Conteúdos sobre comportamento de cães e gatos para ajudar você a entender seu pet e escolher o cuidado ideal.";
     } else if (pathname === "/sobre") {
       description =
-        "Conheça o PeloCaramelo: uma plataforma para conectar tutores e cuidadores com foco em confiança e bem-estar animal.";
+        "Conheça a PeloCaramelo: uma plataforma para conectar tutores e cuidadores com foco em confiança e bem-estar animal.";
     } else if (pathname.startsWith("/caregiver/")) {
       description =
         "Veja detalhes do cuidador: serviços, disponibilidade e informações para escolher a melhor opção para seu pet.";
@@ -123,13 +123,13 @@ export default function App() {
     // ✅ institucionais (indexáveis)
     else if (pathname === "/privacidade") {
       description =
-        "Política de Privacidade do PeloCaramelo (LGPD): dados coletados, finalidades, segurança e seus direitos.";
+        "Política de Privacidade da PeloCaramelo (LGPD): dados coletados, finalidades, segurança e seus direitos.";
     } else if (pathname === "/termos") {
       description =
-        "Termos de Uso do PeloCaramelo: regras da plataforma, responsabilidades e condições de utilização.";
+        "Termos de Uso da PeloCaramelo: regras da plataforma, responsabilidades e condições de utilização.";
     } else if (pathname === "/seguranca") {
       description =
-        "Diretrizes de Segurança do PeloCaramelo: boas práticas para Tutores e Cuidadores terem uma experiência segura.";
+        "Diretrizes de Segurança da PeloCaramelo: boas práticas para Tutores e Cuidadores terem uma experiência segura.";
     }
 
     // ✅ noindex para auth + áreas privadas

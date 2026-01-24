@@ -31,7 +31,7 @@ export default function Footer() {
         </nav>
 
         <p className="text-center text-xs opacity-70 mt-3">
-          Todos os direitos reservados. PeloCaramelo é uma plataforma de conexão entre tutores e cuidadores. 🐾
+          Todos os direitos reservados. A PeloCaramelo é uma plataforma de conexão entre tutores e cuidadores. 🐾
         </p>
       </div>
     </footer>
