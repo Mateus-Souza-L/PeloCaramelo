@@ -429,13 +429,20 @@ export default function ComportamentoAnimal() {
             <button
               onClick={() => setOpenPalestra(true)}
               className="
-                inline-flex items-center justify-center gap-2
-                bg-[#5A3A22] hover:bg-[#95301F] text-white
-                px-6 py-3 rounded-xl font-semibold shadow-md transition
-              "
+    inline-flex items-center justify-center gap-2
+    bg-[#5A3A22] hover:bg-[#95301F] text-white
+    px-6 py-3 rounded-xl font-semibold shadow-md transition
+  "
             >
               <Mail size={18} className="text-white" />
-              Solicitar Orçamento de Palestra
+
+              {/* Mobile */}
+              <span className="sm:hidden">Orçamento de Palestra</span>
+
+              {/* Web */}
+              <span className="hidden sm:inline">
+                Solicitar Orçamento de Palestra
+              </span>
             </button>
           </div>
 
@@ -609,7 +616,7 @@ export default function ComportamentoAnimal() {
               "
             >
               <div className="flex items-center justify-between mb-4">
-                <h4 className="text-xl font-bold">Orçamento de Palestra</h4>
+                <h4 className="text-xl font-bold">Solicitar Orçamento de Palestra</h4>
                 <button
                   onClick={() => setOpenPalestra(false)}
                   className="text-[#5A3A22]/70 hover:text-[#5A3A22] text-xl font-bold"
