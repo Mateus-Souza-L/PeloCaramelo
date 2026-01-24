@@ -258,7 +258,7 @@ export default function ComportamentoAnimal() {
             acreditamos que compreender o comportamento do seu pet é o primeiro
             passo para uma convivência saudável, feliz e sem traumas.
           </motion.p>
-         
+
           {/* ✅ Frase discreta no rodapé da imagem (sem atrapalhar visual) */}
           <p className="absolute bottom-6 left-0 right-0 px-4 text-[12px] sm:text-sm text-white/90 drop-shadow-[0_0_6px_rgba(0,0,0,0.55)]">
             Atendimento com abordagem positiva e orientações práticas para o seu
@@ -433,7 +433,7 @@ export default function ComportamentoAnimal() {
                 px-6 py-3 rounded-xl font-semibold shadow-md transition
               "
             >
-              Solicitar Orçamento de Palestra
+              Orçamento de Palestra
             </button>
           </div>
 
@@ -524,7 +524,11 @@ export default function ComportamentoAnimal() {
                         transition={{ duration: 0.2 }}
                         className="px-4"
                       >
-                        <p className="py-4 text-sm md:text-base text-[#5A3A22]/85 leading-relaxed">
+                        <p className="
+  bg-white w-full max-w-2xl rounded-2xl shadow-xl p-6
+  max-h-[85vh] overflow-y-auto
+  sm:max-h-none sm:overflow-visible
+">
                           {item.a}
                         </p>
                       </motion.div>
