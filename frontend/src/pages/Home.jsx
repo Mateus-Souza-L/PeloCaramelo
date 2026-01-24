@@ -118,19 +118,19 @@ export default function Home() {
           <div className="absolute inset-0">
             <div className="relative w-full h-full max-w-6xl mx-auto px-4 sm:px-6 text-center text-white">
               {/* ✅ MOBILE: conteúdo mais pra cima e mais organizado */}
-              <div className="pt-4 sm:pt-3">
+              <div className="pt-2 sm:pt-3">
                 {/* ✅ Ajuste MOBILE: garante “seu pet 🐾” junto e reduz pra caber ~3 linhas */}
                 <h1
                   className="
                     font-bold text-white
-                    text-[32px] leading-[1.06] tracking-tight
+                    text-[31px] leading-[1.06] tracking-tight
                     sm:text-5xl sm:leading-tight
                     relative
                     top-0 sm:top-5
                   "
                   style={{ textShadow: "2px 2px 10px rgba(0,0,0,0.55)" }}
                 >
-                  <span className="block mx-auto max-w-[24.5rem] sm:max-w-none">
+                  <span className="block mx-auto max-w-[26rem] sm:max-w-none">
                     Encontre cuidadores com{" "}
                     <span className="text-white">carinho</span>,{" "}
                     <span className="text-white">segurança</span> e{" "}
