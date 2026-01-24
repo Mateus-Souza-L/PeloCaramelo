@@ -11,6 +11,15 @@ function prefersReducedMotion() {
   }
 }
 
+// ✅ MOBILE detect (não afeta web)
+function isMobile() {
+  try {
+    return window.matchMedia?.("(max-width: 639px)")?.matches === true; // < sm
+  } catch {
+    return false;
+  }
+}
+
 function getNavbarOffsetPx() {
   // tenta achar algo do tipo navbar/header/nav e pega a altura real
   const nav =
@@ -25,7 +34,9 @@ function getNavbarOffsetPx() {
   return Math.round(safe + 115);
 }
 
-// ✅ NOVO: offset só da navbar (pra evitar descer demais quando vem com hash)
+// ✅ MANTIDO como estava “na prática” no seu código atual:
+// (o retorno efetivo era safe + 215)
+// Isso garante que o WEB não muda.
 function getNavbarOnlyOffsetPx() {
   const nav =
     document.querySelector("header") ||
@@ -35,10 +46,8 @@ function getNavbarOnlyOffsetPx() {
   const h = nav?.getBoundingClientRect?.().height;
   const safe = Number.isFinite(h) && h > 40 ? h : 90;
 
-  // apenas navbar + uma folga mínima
+  // apenas navbar + uma folga mínima (no seu código anterior estava 215)
   return Math.round(safe + 215);
-  // apenas navbar + folga mínima (pra não ficar colado e compensar scroll-mt/padding)
-  return Math.round(safe + 12);
 }
 
 // ✅ Alterado: agora dá pra escolher o tipo de offset
@@ -100,9 +109,9 @@ export default function Sobre() {
 
   // ✅ Scroll suave ao acessar /sobre
   // - com hash (#faq / #como-funciona): rola para a âncora
-  //   ✅ #como-funciona -> mantém como estava (navbarOnly)
-  //   ✅ #faq -> ajuste SOMENTE NO MOBILE (sem mexer no comportamento do web)
-  // - sem hash: mantém o comportamento atual (offset completo)
+  //   ✅ MOBILE: #como-funciona -> vai pro TOPO (pra mostrar o título "Sobre a PeloCaramelo")
+  //   ✅ WEB: mantém exatamente como já estava (navbarOnly com offset antigo)
+  // - sem hash: mantém o comportamento atual
   useEffect(() => {
     if (location.pathname !== "/sobre") return;
 
@@ -112,51 +121,20 @@ export default function Sobre() {
     let raf = 0;
     let tries = 0;
 
-    // ✅ detecta mobile sem criar state/dependência (não mexe no timing do Conheça)
-    const isMobileNow = () => {
-      try {
-        return window.matchMedia?.("(max-width: 639px)")?.matches === true;
-      } catch {
-        return false;
-      }
-    };
-
-    // ✅ ajuste exclusivo pro FAQ no MOBILE (alinha no título do bloco)
-    const scrollToFaqMobile = () => {
-      const el = document.getElementById("faq");
-      if (!el) return false;
-
-      const nav =
-        document.querySelector("header") ||
-        document.querySelector("nav") ||
-        document.getElementById("navbar");
-
-      const h = nav?.getBoundingClientRect?.().height;
-      const safe = Number.isFinite(h) && h > 40 ? h : 90;
-
-      // offset menor que o "full" (safe+115) para não parar acima do título
-      const offset = Math.round(safe + 18);
-
-      const y = el.getBoundingClientRect().top + window.scrollY - offset;
-
-      window.scrollTo({
-        top: Math.max(0, y),
-        behavior: prefersReducedMotion() ? "auto" : "smooth",
-      });
-
-      return true;
-    };
-
     const run = () => {
       tries += 1;
 
       if (targetId) {
-        // ✅ ÚNICA mudança: se for FAQ e estiver no MOBILE, usa scroll especial
-        if (targetId === "faq" && isMobileNow()) {
-          const ok = scrollToFaqMobile();
-          if (ok && tries >= 3) return;
+        // ✅ ALTERAÇÃO SOMENTE NO MOBILE:
+        // quando vem da Home em /sobre#como-funciona, queremos ver o título no topo.
+        if (isMobile() && targetId === "como-funciona") {
+          window.scrollTo({
+            top: 0,
+            behavior: prefersReducedMotion() ? "auto" : "smooth",
+          });
+          if (tries >= 2) return;
         } else {
-          // ✅ TODO O RESTO fica exatamente igual ao seu comportamento atual
+          // ✅ WEB permanece igual ao seu atual
           const mode = targetId === "como-funciona" ? "navbarOnly" : "full";
           const ok = scrollToId(targetId, mode);
           if (ok && tries >= 3) return;
@@ -197,6 +175,7 @@ export default function Sobre() {
       {/* ✅ Schema.org FAQ (JSON-LD) */}
       <script
         type="application/ld+json"
+        include=""
         dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
       />
 
