@@ -11,11 +11,11 @@ export default function Home() {
     document.title = "PeloCaramelo | Início";
   }, []);
 
-  // ✅ MOBILE ONLY: detectar viewport (para trocar imagem 9x16 e ajustar alturas)
+  // ✅ apenas para trocar a imagem no MOBILE sem encostar no WEB
   const [isMobile, setIsMobile] = useState(false);
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const mq = window.matchMedia("(max-width: 639px)"); // Tailwind sm = 640
+    const mq = window.matchMedia("(max-width: 639px)");
     const apply = () => setIsMobile(!!mq.matches);
     apply();
     if (mq.addEventListener) mq.addEventListener("change", apply);
@@ -37,7 +37,6 @@ export default function Home() {
 
   function parseLocalKeySafe(key) {
     try {
-      // YYYY-MM-DD -> Date local
       const [y, m, d] = String(key)
         .split("-")
         .map((x) => Number(x));
@@ -50,7 +49,6 @@ export default function Home() {
     }
   }
 
-  // limpa end se ficar antes do start
   useEffect(() => {
     if (!isValidKey(startDateKey) || !isValidKey(endDateKey)) return;
     const ds = parseLocalKeySafe(startDateKey);
@@ -95,29 +93,29 @@ export default function Home() {
       {/* HERO */}
       <section className="relative overflow-hidden">
         <div
-          // ✅ MOBILE ONLY: hero menor (não toma a tela toda)
-          className="relative w-full h-[78svh] sm:h-[calc(100svh-72px)]"
+          // ✅ MOBILE: altura menor (não toma a tela)
+          // ✅ WEB: mantém exatamente o que você já tinha (sm:h...)
+          className="relative w-full h-[72svh] sm:h-[calc(100svh-72px)]"
           style={{
-            // ✅ MOBILE ONLY: remove min/max height no mobile, mantém no web
-            minHeight: isMobile ? undefined : "640px",
-            maxHeight: isMobile ? undefined : "760px",
+            // ✅ NÃO mexe no min/max do web
+            minHeight: "640px",
+            maxHeight: "760px",
 
-            // ✅ MOBILE ONLY: troca a imagem apenas no mobile
+            // ✅ só troca a imagem no mobile
             backgroundImage: isMobile
               ? "url('/images/Gato_e_cachorro_Home_9x16.png')"
               : "url('/images/Gato_e_cachorro_Home.png')",
-
             backgroundSize: "cover",
             backgroundPosition: "center",
             backgroundRepeat: "no-repeat",
           }}
         >
-          {/* Overlay p/ legibilidade */}
+          {/* Overlay */}
           <div className="absolute inset-0 bg-black/30" />
 
           <div className="absolute inset-0">
             <div className="relative w-full h-full max-w-6xl mx-auto px-4 sm:px-6 text-center text-white">
-              {/* TEXTO (web igual / mobile só um ajuste leve de espaçamento) */}
+              {/* TEXTO (idêntico ao seu original) */}
               <div className="pt-2 sm:pt-3">
                 <h1
                   className="font-bold text-white text-3xl leading-tight sm:text-5xl relative top-6 sm:top-5"
@@ -133,183 +131,296 @@ export default function Home() {
                 </h1>
               </div>
 
-              {/* BLOCO INFERIOR (onde antes ficavam os cards) */}
-              <div className="absolute inset-x-4 sm:inset-x-6 bottom-3">
-                {/* ✅ MOBILE ONLY: limitar largura da busca só no mobile (web permanece full) */}
-                <div className="w-full max-w-[520px] mx-auto sm:max-w-none sm:mx-0">
-                  {/* Texto de apoio + "sem taxas" */}
-                  <p
-                    className="mb-3 text-white/90 text-sm sm:text-base text-center"
-                    style={{ textShadow: "2px 2px 10px rgba(0,0,0,0.45)" }}
-                  >
-                    Busque por bairro/cidade, selecione as datas e o serviço — e já veja os
-                    cuidadores disponíveis.{" "}
-                    <span className="font-semibold text-white">
-                      Sem taxas para tutores e cuidadores.
-                    </span>
+              {/* ✅ DESKTOP: SEU BLOCO ORIGINAL (NÃO MUDA) */}
+              <div className="hidden sm:block absolute inset-x-6 bottom-3">
+                <p
+                  className="mb-3 text-white/90 text-sm sm:text-base text-center"
+                  style={{ textShadow: "2px 2px 10px rgba(0,0,0,0.45)" }}
+                >
+                  Busque por bairro/cidade, selecione as datas e o serviço — e já veja os
+                  cuidadores disponíveis.{" "}
+                  <span className="font-semibold text-white">
+                    Sem taxas para tutores e cuidadores.
+                  </span>
+                </p>
+
+                <form
+                  onSubmit={handleSearchSubmit}
+                  className="
+                    w-full
+                    rounded-2xl
+                    bg-white/18
+                    backdrop-blur-md
+                    border border-white/20
+                    shadow-lg
+                    p-4 sm:p-5
+                    text-left
+                  "
+                >
+                  <div className="flex items-center justify-between gap-3 mb-3">
+                    <p className="text-white font-semibold">Comece a buscar agora</p>
+
+                    <Link
+                      to="/sobre#como-funciona"
+                      className="
+                        hidden sm:inline-flex items-center justify-center
+                        px-4 py-2 rounded-xl font-semibold
+                        bg-[#FFD700] text-[#5A3A22]
+                        shadow-md hover:brightness-105 transition
+                        focus:outline-none focus:ring-2 focus:ring-white/70
+                      "
+                      aria-label="Conheça a PeloCaramelo"
+                      title="Conheça a PeloCaramelo"
+                    >
+                      Conheça a PeloCaramelo
+                    </Link>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                    <div className="sm:col-span-5 min-w-0">
+                      <label className="block text-[11px] text-white/85 mb-1">
+                        Bairro/Cidade
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Ex: Savassi, Belo Horizonte…"
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        className="
+                          w-full border border-white/25 bg-white/90
+                          rounded-lg px-3 py-2 text-[#5A3A22]
+                          focus:outline-none focus:ring-2 focus:ring-white/70
+                        "
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2 min-w-0">
+                      <label className="block text-[11px] text-white/85 mb-1">Início</label>
+                      <input
+                        type="date"
+                        value={startDateKey}
+                        onChange={(e) => setStartDateKey(e.target.value)}
+                        className="
+                          w-full border border-white/25 bg-white/90
+                          rounded-lg px-3 py-2 text-[#5A3A22]
+                          focus:outline-none focus:ring-2 focus:ring-white/70
+                        "
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2 min-w-0">
+                      <label className="block text-[11px] text-white/85 mb-1">Fim</label>
+                      <input
+                        type="date"
+                        value={endDateKey}
+                        onChange={(e) => setEndDateKey(e.target.value)}
+                        className="
+                          w-full border border-white/25 bg-white/90
+                          rounded-lg px-3 py-2 text-[#5A3A22]
+                          focus:outline-none focus:ring-2 focus:ring-white/70
+                        "
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2 min-w-0">
+                      <label className="block text-[11px] text-white/85 mb-1">Serviço</label>
+                      <select
+                        value={svc}
+                        onChange={(e) => setSvc(e.target.value)}
+                        className="
+                          w-full border border-white/25 bg-white/90
+                          rounded-lg px-3 py-2 text-[#5A3A22]
+                          focus:outline-none focus:ring-2 focus:ring-white/70
+                        "
+                      >
+                        <option value="todos">Todos</option>
+                        <option value="hospedagem">Hospedagem</option>
+                        <option value="creche">Creche</option>
+                        <option value="petSitter">Pet Sitter</option>
+                        <option value="passeios">Passeios</option>
+                      </select>
+                    </div>
+
+                    <div className="sm:col-span-1 flex items-end min-w-0">
+                      <button
+                        type="submit"
+                        disabled={!canSubmit}
+                        className="
+                          w-full
+                          rounded-lg font-semibold shadow-lg transition
+                          px-4 py-2
+                          bg-[#95301F] hover:brightness-110 text-white
+                          disabled:opacity-60 disabled:cursor-not-allowed
+                          focus:outline-none focus:ring-2 focus:ring-white/70
+                        "
+                      >
+                        Buscar
+                      </button>
+                    </div>
+                  </div>
+
+                  <p className="mt-2 text-[11px] text-white/80">
+                    Dica: você pode preencher só “Bairro/Cidade” e buscar mesmo sem datas.
                   </p>
 
-                  <form
-                    onSubmit={handleSearchSubmit}
-                    className="
-                      w-full
-                      rounded-2xl
-                      bg-white/18
-                      backdrop-blur-md
-                      border border-white/20
-                      shadow-lg
-                      p-4 sm:p-5
-                      text-left
-                    "
-                  >
-                    <div className="flex items-center justify-between gap-3 mb-3">
-                      <p className="text-white font-semibold">Comece a buscar agora</p>
-
-                      {/* WEB (inalterado) */}
-                      <Link
-                        to="/sobre#como-funciona"
-                        className="
-                          hidden sm:inline-flex items-center justify-center
-                          px-4 py-2 rounded-xl font-semibold
-                          bg-[#FFD700] text-[#5A3A22]
-                          shadow-md hover:brightness-105 transition
-                          focus:outline-none focus:ring-2 focus:ring-white/70
-                        "
-                        aria-label="Conheça a PeloCaramelo"
-                        title="Conheça a PeloCaramelo"
-                      >
-                        Conheça a PeloCaramelo
-                      </Link>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
-                      <div className="sm:col-span-5 min-w-0">
-                        <label className="block text-[11px] text-white/85 mb-1">
-                          Bairro/Cidade
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="Ex: Savassi, Belo Horizonte…"
-                          value={query}
-                          onChange={(e) => setQuery(e.target.value)}
-                          className="
-                            w-full border border-white/25 bg-white/90
-                            rounded-lg px-3 py-2 text-[#5A3A22]
-                            focus:outline-none focus:ring-2 focus:ring-white/70
-                          "
-                        />
-                      </div>
-
-                      <div className="sm:col-span-2 min-w-0">
-                        <label className="block text-[11px] text-white/85 mb-1">Início</label>
-                        <input
-                          type="date"
-                          value={startDateKey}
-                          onChange={(e) => setStartDateKey(e.target.value)}
-                          className="
-                            w-full border border-white/25 bg-white/90
-                            rounded-lg px-3 py-2 text-[#5A3A22]
-                            focus:outline-none focus:ring-2 focus:ring-white/70
-                          "
-                        />
-                      </div>
-
-                      <div className="sm:col-span-2 min-w-0">
-                        <label className="block text-[11px] text-white/85 mb-1">Fim</label>
-                        <input
-                          type="date"
-                          value={endDateKey}
-                          onChange={(e) => setEndDateKey(e.target.value)}
-                          className="
-                            w-full border border-white/25 bg-white/90
-                            rounded-lg px-3 py-2 text-[#5A3A22]
-                            focus:outline-none focus:ring-2 focus:ring-white/70
-                          "
-                        />
-                      </div>
-
-                      <div className="sm:col-span-2 min-w-0">
-                        <label className="block text-[11px] text-white/85 mb-1">Serviço</label>
-                        <select
-                          value={svc}
-                          onChange={(e) => setSvc(e.target.value)}
-                          className="
-                            w-full border border-white/25 bg-white/90
-                            rounded-lg px-3 py-2 text-[#5A3A22]
-                            focus:outline-none focus:ring-2 focus:ring-white/70
-                          "
-                        >
-                          <option value="todos">Todos</option>
-                          <option value="hospedagem">Hospedagem</option>
-                          <option value="creche">Creche</option>
-                          <option value="petSitter">Pet Sitter</option>
-                          <option value="passeios">Passeios</option>
-                        </select>
-                      </div>
-
-                      <div className="sm:col-span-1 flex items-end min-w-0">
-                        <button
-                          type="submit"
-                          disabled={!canSubmit}
-                          className="
-                            w-full
-                            rounded-lg font-semibold shadow-lg transition
-                            px-4 py-3 sm:py-2
-                            bg-[#95301F] hover:brightness-110 text-white
-                            disabled:opacity-60 disabled:cursor-not-allowed
-                            focus:outline-none focus:ring-2 focus:ring-white/70
-                          "
-                        >
-                          Buscar
-                        </button>
-                      </div>
-                    </div>
-
-                    <p className="mt-2 text-[11px] text-white/80">
-                      Dica: você pode preencher só “Bairro/Cidade” e buscar mesmo sem datas.
-                    </p>
-
-                    {/* botão discreto (transparente, estilo do card) */}
-                    <div className="mt-3 flex justify-center">
-                      <Link
-                        to="/register"
-                        className="
-                          inline-flex items-center justify-center
-                          px-4 py-3 sm:py-2 rounded-xl font-semibold text-sm
-                          bg-white/10 hover:bg-white/15
-                          border border-white/25 text-white
-                          shadow-sm transition
-                          focus:outline-none focus:ring-2 focus:ring-white/70
-                          backdrop-blur-sm
-                          w-full sm:w-auto
-                        "
-                      >
-                        Quero me cadastrar como cuidador(a)
-                      </Link>
-                    </div>
-
-                    {/* MOBILE (inalterado visualmente, só botão 100% width já fica melhor) */}
-                    <div className="mt-3 flex justify-center sm:hidden">
-                      <Link
-                        to="/sobre#como-funciona"
-                        className="
-                          inline-flex items-center justify-center
-                          w-full
-                          px-4 py-3 rounded-xl font-semibold
-                          bg-[#FFD700] text-[#5A3A22]
-                          shadow-md hover:brightness-105 transition
-                          focus:outline-none focus:ring-2 focus:ring-white/70
-                        "
-                      >
-                        Conheça a PeloCaramelo
-                      </Link>
-                    </div>
-                  </form>
-                </div>
+                  <div className="mt-3 flex justify-center">
+                    <Link
+                      to="/register"
+                      className="
+                        inline-flex items-center justify-center
+                        px-4 py-2 rounded-xl font-semibold text-sm
+                        bg-white/10 hover:bg-white/15
+                        border border-white/25 text-white
+                        shadow-sm transition
+                        focus:outline-none focus:ring-2 focus:ring-white/70
+                        backdrop-blur-sm
+                      "
+                    >
+                      Quero me cadastrar como cuidador(a)
+                    </Link>
+                  </div>
+                </form>
               </div>
-              {/* fim bloco inferior */}
+              {/* ✅ FIM DESKTOP */}
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* ✅ MOBILE ONLY: BUSCA FORA DO HERO (não ocupa a tela, não invade) */}
+      <section className="sm:hidden px-4 -mt-10 pb-10">
+        <div className="max-w-[520px] mx-auto">
+          <form
+            onSubmit={handleSearchSubmit}
+            className="
+              w-full
+              rounded-2xl
+              bg-white/18
+              backdrop-blur-md
+              border border-white/20
+              shadow-lg
+              p-4
+              text-left
+            "
+            style={{ backgroundColor: "rgba(255,255,255,0.18)" }}
+          >
+            <p className="text-white font-semibold mb-2">Comece a buscar agora</p>
+
+            <div className="grid grid-cols-1 gap-3">
+              <div className="min-w-0">
+                <label className="block text-[11px] text-white/85 mb-1">Bairro/Cidade</label>
+                <input
+                  type="text"
+                  placeholder="Ex: Savassi, Belo Horizonte…"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  className="
+                    w-full border border-white/25 bg-white/90
+                    rounded-lg px-3 py-2 text-[#5A3A22]
+                    focus:outline-none focus:ring-2 focus:ring-white/70
+                  "
+                />
+              </div>
+
+              <div className="min-w-0">
+                <label className="block text-[11px] text-white/85 mb-1">Início</label>
+                <input
+                  type="date"
+                  value={startDateKey}
+                  onChange={(e) => setStartDateKey(e.target.value)}
+                  className="
+                    w-full border border-white/25 bg-white/90
+                    rounded-lg px-3 py-2 text-[#5A3A22]
+                    focus:outline-none focus:ring-2 focus:ring-white/70
+                  "
+                />
+              </div>
+
+              <div className="min-w-0">
+                <label className="block text-[11px] text-white/85 mb-1">Fim</label>
+                <input
+                  type="date"
+                  value={endDateKey}
+                  onChange={(e) => setEndDateKey(e.target.value)}
+                  className="
+                    w-full border border-white/25 bg-white/90
+                    rounded-lg px-3 py-2 text-[#5A3A22]
+                    focus:outline-none focus:ring-2 focus:ring-white/70
+                  "
+                />
+              </div>
+
+              <div className="min-w-0">
+                <label className="block text-[11px] text-white/85 mb-1">Serviço</label>
+                <select
+                  value={svc}
+                  onChange={(e) => setSvc(e.target.value)}
+                  className="
+                    w-full border border-white/25 bg-white/90
+                    rounded-lg px-3 py-2 text-[#5A3A22]
+                    focus:outline-none focus:ring-2 focus:ring-white/70
+                  "
+                >
+                  <option value="todos">Todos</option>
+                  <option value="hospedagem">Hospedagem</option>
+                  <option value="creche">Creche</option>
+                  <option value="petSitter">Pet Sitter</option>
+                  <option value="passeios">Passeios</option>
+                </select>
+              </div>
+
+              <button
+                type="submit"
+                disabled={!canSubmit}
+                className="
+                  w-full
+                  rounded-lg font-semibold shadow-lg transition
+                  px-4 py-3
+                  bg-[#95301F] hover:brightness-110 text-white
+                  disabled:opacity-60 disabled:cursor-not-allowed
+                  focus:outline-none focus:ring-2 focus:ring-white/70
+                "
+              >
+                Buscar
+              </button>
+            </div>
+
+            <p className="mt-2 text-[11px] text-white/80">
+              Dica: você pode preencher só “Bairro/Cidade” e buscar mesmo sem datas.
+            </p>
+
+            <div className="mt-3 flex flex-col gap-2">
+              <Link
+                to="/register"
+                className="
+                  inline-flex items-center justify-center
+                  w-full
+                  px-4 py-3 rounded-xl font-semibold text-sm
+                  bg-white/10 hover:bg-white/15
+                  border border-white/25 text-white
+                  shadow-sm transition
+                  focus:outline-none focus:ring-2 focus:ring-white/70
+                  backdrop-blur-sm
+                "
+              >
+                Quero me cadastrar como cuidador(a)
+              </Link>
+
+              <Link
+                to="/sobre#como-funciona"
+                className="
+                  inline-flex items-center justify-center
+                  w-full
+                  px-4 py-3 rounded-xl font-semibold
+                  bg-[#FFD700] text-[#5A3A22]
+                  shadow-md hover:brightness-105 transition
+                  focus:outline-none focus:ring-2 focus:ring-white/70
+                "
+              >
+                Conheça a PeloCaramelo
+              </Link>
+            </div>
+          </form>
         </div>
       </section>
 
@@ -375,7 +486,6 @@ export default function Home() {
                     </div>
                   </div>
 
-                  {/* imagem gato */}
                   <div className="md:pt-6">
                     <div className="rounded-2xl overflow-hidden shadow-md border border-[#5A3A22]/10 mt-4 md:mt-0">
                       <LazyImage
@@ -389,7 +499,6 @@ export default function Home() {
 
                 {/* Coluna direita */}
                 <div className="flex flex-col gap-6 md:gap-0 md:justify-between min-w-0">
-                  {/* imagem cachorro */}
                   <div>
                     <div className="rounded-2xl overflow-hidden shadow-md border border-[#5A3A22]/10 mb-4 md:mb-0">
                       <LazyImage
@@ -400,10 +509,8 @@ export default function Home() {
                     </div>
                   </div>
 
-                  {/* Card interno (borda amarela) */}
                   <div className="relative md:pt-6">
                     <div className="w-full bg-white rounded-2xl shadow-md p-6 border border-[#5A3A22]/10 border-r-4 border-r-[#FFD700]">
-                      {/* DESKTOP/TABLET */}
                       <div className="hidden sm:grid grid-cols-1 sm:grid-cols-2 gap-4">
                         {behaviorCards.map((x) => (
                           <div
@@ -416,7 +523,6 @@ export default function Home() {
                         ))}
                       </div>
 
-                      {/* ✅ MOBILE: 1 card por vez (sem mostrar pedaços) */}
                       <div className="sm:hidden overflow-hidden">
                         <Carousel
                           className="mt-1"
@@ -453,7 +559,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ✅ CTA discreto para FAQ (leva para /sobre#faq) */}
+      {/* CTA FAQ */}
       <section className="px-4 sm:px-6 pb-14">
         <div className="max-w-[1400px] mx-auto">
           <div className="bg-white/60 backdrop-blur-sm rounded-2xl shadow-md border border-white/30 p-6 sm:p-8 text-center">
