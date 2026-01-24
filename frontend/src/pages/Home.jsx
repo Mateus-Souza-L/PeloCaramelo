@@ -449,6 +449,36 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      {/* ✅ CTA discreto para FAQ (leva para /sobre#faq) */}
+      <section className="px-6 pb-14">
+        <div className="max-w-[1400px] mx-auto">
+          <div className="bg-white/60 backdrop-blur-sm rounded-2xl shadow-md border border-white/30 p-6 sm:p-8 text-center">
+            <p className="text-[#5A3A22] font-semibold">
+              Ficou com alguma dúvida?
+            </p>
+            <p className="mt-1 text-[#5A3A22]/80">
+              Veja as perguntas frequentes sobre a plataforma.
+            </p>
+
+            <div className="mt-4 flex justify-center">
+              <Link
+                to="/sobre#faq"
+                className="
+                  inline-flex items-center justify-center
+                  px-6 py-3 rounded-xl font-semibold
+                  bg-transparent border-2 border-[#5A3A22]
+                  text-[#5A3A22]
+                  hover:bg-[#5A3A22]/10 transition
+                  focus:outline-none focus:ring-2 focus:ring-[#5A3A22]/30
+                "
+              >
+                Perguntas frequentes
+              </Link>
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

@@ -57,12 +57,16 @@ body {
   color: #fff;
 }
 
+/* ✅ IMPORTANTE:
+   Você controla o "hoje" via pc-cal-today no tileClassName.
+   Neutralizamos o estilo nativo do react-calendar (--now) pra não brigar. */
 .react-calendar__tile--now {
-  background: var(--cor-destaque) !important;
-  color: #fff !important;
-  font-weight: bold;
+  background: transparent !important;
+  color: inherit !important;
+  font-weight: inherit !important;
 }
 
+/* Mantém os estados de range/active caso você use range em algum lugar */
 .react-calendar__tile--active,
 .react-calendar__tile--range,
 .react-calendar__tile--rangeStart,
@@ -70,49 +74,6 @@ body {
 .react-calendar__tile--rangeBothEnds {
   background: var(--cor-acento) !important;
   color: #fff !important;
-}
-
-/* ===================================================== */
-/* ✅ PELOCARAMELO CALENDAR FIX (pintura por classes)     */
-/* Use com tileClassName retornando:                      */
-/* pc-cal / pc-cal--today / pc-cal--saved / --adding / --removing */
-/* ===================================================== */
-
-/* Base */
-.react-calendar__tile.pc-cal {
-  border-radius: 9999px !important;
-}
-
-/* Hoje (se você usar pc-cal--today no Dashboard) */
-.react-calendar__tile.pc-cal--today {
-  background: var(--cor-destaque) !important;
-  color: #fff !important;
-  font-weight: 700 !important;
-}
-
-/* Salvo no servidor */
-.react-calendar__tile.pc-cal--saved {
-  background: #15803d !important; /* green-700 */
-  color: #fff !important;
-}
-
-/* Vai remover (estava salvo, mas desmarcou) */
-.react-calendar__tile.pc-cal--removing {
-  background: #f87171 !important; /* red-400 */
-  color: #fff !important;
-  text-decoration: line-through !important;
-}
-
-/* Vai adicionar (não estava salvo, mas marcou) */
-.react-calendar__tile.pc-cal--adding {
-  background: #22c55e !important; /* green-500 */
-  color: #fff !important;
-  font-weight: 700 !important;
-}
-
-/* Hover suave */
-.react-calendar__tile.pc-cal:enabled:hover {
-  filter: brightness(0.97);
 }
 
 /* Dias indisponíveis com X visual */
@@ -178,6 +139,7 @@ input[type="password"]::-webkit-credentials-auto-fill-button {
 
 /* ============================= */
 /* PELOCARAMELO - REACT CALENDAR STATES (Dashboard) */
+/* (✅ ESTE É O PADRÃO QUE VOCÊ USA NO tileClassName) */
 /* ============================= */
 
 /* garante que o tile aceite nosso estilo (mesmo com CSS do react-calendar) */
@@ -240,3 +202,9 @@ input[type="password"]::-webkit-credentials-auto-fill-button {
 .react-calendar__tile:enabled.pc-cal-today:hover {
   filter: brightness(0.95);
 }
+
+/* ============================= */
+/* UTIL: esconder scrollbar (carrosséis) */
+/* ============================= */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }

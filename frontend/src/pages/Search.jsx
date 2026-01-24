@@ -5,6 +5,9 @@ import { normalizeCaregiver, serviceLabel } from "../utils/normalize";
 import { useAuth } from "../context/AuthContext";
 import { toLocalKey, parseLocalKey } from "../utils/date";
 
+// ✅ Analytics
+import { trackEvent } from "../utils/analytics";
+
 const DEFAULT_IMG = "/paw.png";
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:4000";
 
@@ -295,6 +298,72 @@ export default function Search() {
   const availabilityReqAbortRef = useRef(null);
   const availabilityReqIdRef = useRef(0);
 
+  // ✅ Analytics: debounce + dedupe
+  const searchTrackTimerRef = useRef(null);
+  const lastSearchPayloadRef = useRef("");
+
+  // ✅ SEO (title + description + canonical)
+  useEffect(() => {
+    document.title = "PeloCaramelo | Buscar cuidadores";
+
+    const ensureMetaByName = (name) => {
+      let el = document.querySelector(`meta[name="${name}"]`);
+      if (!el) {
+        el = document.createElement("meta");
+        el.setAttribute("name", name);
+        document.head.appendChild(el);
+      }
+      return el;
+    };
+
+    ensureMetaByName("description").setAttribute(
+      "content",
+      "Busque cuidadores na sua cidade e encontre o melhor match para o seu pet. Filtre por datas e serviço, veja preços e avaliações."
+    );
+
+    let canonical = document.querySelector('link[rel="canonical"]');
+    if (!canonical) {
+      canonical = document.createElement("link");
+      canonical.setAttribute("rel", "canonical");
+      document.head.appendChild(canonical);
+    }
+    canonical.setAttribute("href", `${window.location.origin}/buscar`);
+  }, []);
+
+  // ✅ Schema.org (BreadcrumbList + ItemList)
+  const schemaJsonLd = useMemo(() => {
+    const origin = window.location.origin;
+
+    const itemList =
+      !loading && !filteringDates && Array.isArray(filteredAsync)
+        ? filteredAsync
+            .filter((c) => c && c.id != null)
+            .slice(0, 50)
+            .map((c, i) => ({
+              "@type": "ListItem",
+              position: i + 1,
+              name: String(c.name || "Cuidador"),
+              url: `${origin}/caregiver/${c.id}`,
+            }))
+        : [];
+
+    return {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "BreadcrumbList",
+          itemListElement: [
+            { "@type": "ListItem", position: 1, name: "Início", item: `${origin}/` },
+            { "@type": "ListItem", position: 2, name: "Buscar cuidadores", item: `${origin}/buscar` },
+          ],
+        },
+        ...(itemList.length
+          ? [{ "@type": "ItemList", name: "Resultados de cuidadores", itemListElement: itemList }]
+          : []),
+      ],
+    };
+  }, [loading, filteringDates, filteredAsync]);
+
   // ✅ lê filtros vindos via URL (para Home -> /buscar com parâmetros)
   useEffect(() => {
     const sp = new URLSearchParams(location.search || "");
@@ -339,7 +408,6 @@ export default function Search() {
     setQuery(nextQuery);
     setStartDateKey(nextStart);
 
-    // se end < start, limpa end
     if (nextStart && nextEnd) {
       const ds = parseLocalKey(nextStart);
       const de = parseLocalKey(nextEnd);
@@ -560,6 +628,57 @@ export default function Search() {
     return parts.join(" • ");
   }, [query, startDateKey, endDateKey, svc]);
 
+  // ✅ Evento GA4: "busca" (debounce + dedupe)
+  useEffect(() => {
+    // só mede “busca” quando existe intenção (algum filtro ativo)
+    if (!hasActiveFilters && !showResultsHint) return;
+
+    // não dispara durante carregamento/filtro assíncrono
+    if (loading || filteringDates) return;
+
+    // debounce
+    if (searchTrackTimerRef.current) {
+      clearTimeout(searchTrackTimerRef.current);
+    }
+
+    searchTrackTimerRef.current = setTimeout(() => {
+      const payload = {
+        q: String(query || "").trim().slice(0, 80),
+        svc: String(svc || "todos"),
+        start: isValidKey(startDateKey) ? startDateKey : "",
+        end: isValidKey(endDateKey) ? endDateKey : "",
+        sort: String(sort || "preco"),
+        results_count: Number(filtered?.length || 0),
+        from_url: showResultsHint ? 1 : 0,
+      };
+
+      const fingerprint = JSON.stringify(payload);
+      if (lastSearchPayloadRef.current === fingerprint) return;
+
+      lastSearchPayloadRef.current = fingerprint;
+
+      trackEvent("search", payload);
+    }, 650);
+
+    return () => {
+      if (searchTrackTimerRef.current) {
+        clearTimeout(searchTrackTimerRef.current);
+        searchTrackTimerRef.current = null;
+      }
+    };
+  }, [
+    query,
+    svc,
+    startDateKey,
+    endDateKey,
+    sort,
+    filtered?.length,
+    loading,
+    filteringDates,
+    hasActiveFilters,
+    showResultsHint,
+  ]);
+
   // pílulas de filtros ativos
   const activePills = useMemo(() => {
     const pills = [];
@@ -615,6 +734,12 @@ export default function Search() {
 
   return (
     <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] py-8 px-6">
+      {/* ✅ SEO Structured Data */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(schemaJsonLd) }}
+      />
+
       <div className="max-w-[1400px] mx-auto bg-white rounded-2xl shadow p-6 border-l-4 border-[#FFD700]/80">
         {/* ✅ Destaque rápido (antes do título) */}
         <div className="mb-5 rounded-2xl border border-[#5A3A22]/10 bg-[#FFF8F0] p-4 sm:p-5 shadow-sm">
@@ -774,7 +899,7 @@ export default function Search() {
             💬 Chat pelo app
           </span>
           <span className="text-xs px-3 py-1 rounded-full bg-[#FFF6CC] text-[#5A3A22] border border-[#5A3A22]/10">
-            ⭐ Avaliações 
+            ⭐ Avaliações
           </span>
         </div>
 
@@ -871,16 +996,12 @@ export default function Search() {
                       {Object.entries(c.services || {})
                         .filter(([, v]) => v)
                         .map(([k]) => (
-                          <span
-                            key={k}
-                            className="text-xs px-2 py-1 rounded-full bg-[#FFF6CC]"
-                          >
+                          <span key={k} className="text-xs px-2 py-1 rounded-full bg-[#FFF6CC]">
                             {serviceLabel(k)}
                           </span>
                         ))}
                     </div>
 
-                    {/* CTA consistente (sem “Conversar” por enquanto) */}
                     <Link
                       to={`/caregiver/${c.id}`}
                       className="

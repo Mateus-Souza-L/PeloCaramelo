@@ -6,6 +6,9 @@ import { useToast } from "../components/ToastProvider";
 import { toLocalKey, parseLocalKey, formatDateBR } from "../utils/date";
 import { authRequest } from "../services/api";
 
+// ✅ Analytics
+import { trackEvent } from "../utils/analytics";
+
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:4000";
 
 /* ===========================
@@ -172,7 +175,6 @@ export default function CaregiverDetail() {
     };
   }, [availableKeys, todayKey]);
 
-
   // ---------------- helpers ----------------
   const normalizeKey = (value) => {
     if (!value) return null;
@@ -244,14 +246,14 @@ export default function CaregiverDetail() {
       rv.reviewer_role ||
       rv.role ||
       (rv.reviewer_id &&
-        rv.tutor_id &&
-        String(rv.reviewer_id) === String(rv.tutor_id)
+      rv.tutor_id &&
+      String(rv.reviewer_id) === String(rv.tutor_id)
         ? "tutor"
         : rv.reviewer_id &&
           rv.caregiver_id &&
           String(rv.reviewer_id) === String(rv.caregiver_id)
-          ? "caregiver"
-          : null);
+        ? "caregiver"
+        : null);
 
     const authorName =
       rv.author_name ||
@@ -263,10 +265,10 @@ export default function CaregiverDetail() {
     const createdAt = rv.created_at
       ? String(rv.created_at)
       : rv.createdAt
-        ? String(rv.createdAt)
-        : rv.date
-          ? String(rv.date)
-          : null;
+      ? String(rv.createdAt)
+      : rv.date
+      ? String(rv.date)
+      : null;
 
     const rating = Number(rv.rating ?? rv.stars ?? rv.nota ?? 0);
 
@@ -282,9 +284,9 @@ export default function CaregiverDetail() {
     return {
       id: toStr(
         rv.id ||
-        rv.review_id ||
-        rv.reviewId ||
-        `${Date.now()}_${Math.random().toString(16).slice(2)}`
+          rv.review_id ||
+          rv.reviewId ||
+          `${Date.now()}_${Math.random().toString(16).slice(2)}`
       ),
       reservationId: reservationId != null ? String(reservationId) : null,
       authorRole: authorRole ? String(authorRole) : null,
@@ -411,8 +413,7 @@ export default function CaregiverDetail() {
       const keys = listA
         .filter((x) => {
           if (!x) return false;
-          const flag =
-            x.is_available ?? x.isAvailable ?? x.available ?? x.isAvailableDay;
+          const flag = x.is_available ?? x.isAvailable ?? x.available ?? x.isAvailableDay;
           return flag === true;
         })
         .map((x) =>
@@ -431,6 +432,30 @@ export default function CaregiverDetail() {
     return [];
   };
 
+  // ✅ Analytics: ver perfil (1x por cuidador carregado)
+  const viewedProfileRef = useRef(new Set());
+  useEffect(() => {
+    if (!caregiverLoaded) return;
+    if (!caregiver) return;
+
+    const cid = String(caregiver?.id ?? id ?? "");
+    if (!cid) return;
+
+    if (viewedProfileRef.current.has(cid)) return;
+    viewedProfileRef.current.add(cid);
+
+    const servicesCount = Object.entries(caregiver?.services || {}).filter(([, v]) => !!v).length;
+
+    trackEvent("view_profile", {
+      caregiver_id: cid,
+      caregiver_name: String(caregiver?.name || "").slice(0, 80),
+      location: String(caregiver?.displayLocation || "").slice(0, 80),
+      min_price: caregiver?.minPrice != null ? Number(caregiver.minPrice) : null,
+      has_prices: servicesCount > 0 ? 1 : 0,
+      services_count: servicesCount,
+    });
+  }, [caregiverLoaded, caregiver, id]);
+
   // ---------------- LOAD reservations + caregiver + availability ----------------
   useEffect(() => {
     let cancelled = false;
@@ -442,8 +467,8 @@ export default function CaregiverDetail() {
             user.role === "tutor"
               ? "/reservations/tutor"
               : user.role === "caregiver"
-                ? "/reservations/caregiver"
-                : null;
+              ? "/reservations/caregiver"
+              : null;
 
           if (endpoint) {
             const data = await authRequest(endpoint, token);
@@ -681,10 +706,10 @@ export default function CaregiverDetail() {
       const listRaw = Array.isArray(data?.reviews)
         ? data.reviews
         : Array.isArray(data?.data)
-          ? data.data
-          : Array.isArray(data)
-            ? data
-            : [];
+        ? data.data
+        : Array.isArray(data)
+        ? data
+        : [];
       return listRaw.map(normalizeReviewItem).filter(Boolean);
     };
 
@@ -884,10 +909,10 @@ export default function CaregiverDetail() {
       const listRaw = Array.isArray(data?.reviews)
         ? data.reviews
         : Array.isArray(data?.data)
-          ? data.data
-          : Array.isArray(data)
-            ? data
-            : [];
+        ? data.data
+        : Array.isArray(data)
+        ? data
+        : [];
 
       const normalized = listRaw.map(normalizeReviewItem).filter(Boolean);
 
@@ -945,8 +970,8 @@ export default function CaregiverDetail() {
           const list = Array.isArray(data?.pets)
             ? data.pets
             : Array.isArray(data)
-              ? data
-              : [];
+            ? data
+            : [];
 
           const normalized = list
             .map((p) => ({ ...p, id: p?.id }))
@@ -1080,8 +1105,7 @@ export default function CaregiverDetail() {
 
     const start = parseLocalKey(startKey);
     const end = parseLocalKey(endKey);
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()))
-      return false;
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return false;
     if (end < start) return false;
 
     const set = new Set(availableKeys);
@@ -1229,9 +1253,7 @@ export default function CaregiverDetail() {
       setSaving(true);
 
       const selectedIdSet = new Set((selectedPetIds || []).map(String));
-      const selectedPets = (pets || []).filter((p) =>
-        selectedIdSet.has(String(p?.id))
-      );
+      const selectedPets = (pets || []).filter((p) => selectedIdSet.has(String(p?.id)));
 
       const petsSummary = selectedPets
         .map((p) => p?.name)
@@ -1385,7 +1407,6 @@ export default function CaregiverDetail() {
     );
   }
 
-
   const pricedServices = Object.keys(caregiver.services || {}).filter(
     (k) => caregiver.services[k] && (svcPriceMap[k] ?? 0) > 0
   );
@@ -1401,9 +1422,7 @@ export default function CaregiverDetail() {
             className="w-24 h-24 rounded-full object-cover border-4 border-[#FFD700]"
           />
           <div className="flex-1">
-            <h1 className="text-2xl font-bold text-[#5A3A22]">
-              {caregiver.name}
-            </h1>
+            <h1 className="text-2xl font-bold text-[#5A3A22]">{caregiver.name}</h1>
             <p className="text-[#5A3A22]/80">
               {caregiver.displayLocation || "Local não informado"}
             </p>
@@ -1418,8 +1437,7 @@ export default function CaregiverDetail() {
 
           <div className="text-right">
             <p className="text-sm text-[#5A3A22]">
-              ⭐ <b>{(ratingSummary.avg || 0).toFixed(1)}</b> (
-              {ratingSummary.count})
+              ⭐ <b>{(ratingSummary.avg || 0).toFixed(1)}</b> ({ratingSummary.count})
             </p>
             {caregiver.minPrice != null && (
               <p className="text-sm text-[#5A3A22]">
@@ -1471,7 +1489,6 @@ export default function CaregiverDetail() {
                 else if (parsed && typeof parsed === "object")
                   coursesList = Object.values(parsed);
               } else {
-                // string simples: "Curso A, Curso B"
                 coursesList = txt
                   .split(",")
                   .map((s) => s.trim())
@@ -1486,7 +1503,6 @@ export default function CaregiverDetail() {
             if (typeof rawCourses === "string" && rawCourses.trim())
               coursesList = [rawCourses.trim()];
           }
-
 
           coursesList = coursesList
             .map((c) => (c == null ? "" : String(c).trim()))
@@ -1614,31 +1630,29 @@ export default function CaregiverDetail() {
                   <button
                     type="button"
                     onClick={toggleAllPets}
-                    className={`mb-3 px-3 py-1 rounded-full text-xs font-semibold border transition ${allPetsSelected
-                      ? "bg-[#5A3A22] text-white border-[#5A3A22]"
-                      : "bg-white text-[#5A3A22] border-[#D2A679] hover:bg-[#FFF3D0]"
-                      }`}
+                    className={`mb-3 px-3 py-1 rounded-full text-xs font-semibold border transition ${
+                      allPetsSelected
+                        ? "bg-[#5A3A22] text-white border-[#5A3A22]"
+                        : "bg-white text-[#5A3A22] border-[#D2A679] hover:bg-[#FFF3D0]"
+                    }`}
                   >
-                    {allPetsSelected
-                      ? "Desmarcar todos"
-                      : "Selecionar todos os pets"}
+                    {allPetsSelected ? "Desmarcar todos" : "Selecionar todos os pets"}
                   </button>
 
                   <div className="flex flex-wrap gap-2">
                     {pets.map((pet) => {
-                      const active = selectedPetIds
-                        .map(String)
-                        .includes(String(pet.id));
+                      const active = selectedPetIds.map(String).includes(String(pet.id));
 
                       return (
                         <button
                           key={pet.id}
                           type="button"
                           onClick={() => togglePet(pet.id)}
-                          className={`px-3 py-2 rounded-xl text-xs md:text-sm border flex items-center gap-2 transition ${active
-                            ? "bg-[#5A3A22] text-white border-[#5A3A22]"
-                            : "bg-white text-[#5A3A22] border-[#D2A679] hover:bg-[#FFF3D0]"
-                            }`}
+                          className={`px-3 py-2 rounded-xl text-xs md:text-sm border flex items-center gap-2 transition ${
+                            active
+                              ? "bg-[#5A3A22] text-white border-[#5A3A22]"
+                              : "bg-white text-[#5A3A22] border-[#D2A679] hover:bg-[#FFF3D0]"
+                          }`}
                         >
                           <img
                             src={pickPetImage(pet) || "/paw.png"}
@@ -1661,8 +1675,8 @@ export default function CaregiverDetail() {
           )}
 
           <p className="text-xs text-[#5A3A22] mt-2">
-            * O endereço completo só é exibido após a reserva ser <b>Aceita</b>.
-            Antes disso, apenas <b>bairro</b> e <b>cidade</b> ficam visíveis.
+            * O endereço completo só é exibido após a reserva ser <b>Aceita</b>. Antes disso,
+            apenas <b>bairro</b> e <b>cidade</b> ficam visíveis.
           </p>
         </section>
 
@@ -1678,9 +1692,8 @@ export default function CaregiverDetail() {
         </div>
 
         <p className="text-xs text-[#5A3A22] opacity-80 mb-8">
-          O chat interno fica disponível nos <b>detalhes da reserva</b> assim que ela
-          for <b>Aceita</b> e permanece liberado por até{" "}
-          <b>24 horas após o término</b>. Depois disso, para iniciar uma nova
+          O chat interno fica disponível nos <b>detalhes da reserva</b> assim que ela for <b>Aceita</b> e
+          permanece liberado por até <b>24 horas após o término</b>. Depois disso, para iniciar uma nova
           conversa, é preciso fazer uma nova reserva com este cuidador.
         </p>
 
@@ -1727,14 +1740,12 @@ export default function CaregiverDetail() {
             </div>
           ) : filteredReviews.length === 0 ? (
             <p className="text-[#5A3A22]">
-              Ainda não há avaliações
-              {reviewSvcFilter !== "todos" ? " para esse serviço" : ""}.
+              Ainda não há avaliações{reviewSvcFilter !== "todos" ? " para esse serviço" : ""}.
             </p>
           ) : (
             <>
               <p className="text-xs text-[#5A3A22] opacity-70 mb-3">
-                Mostrando <b>{filteredReviews.length}</b> de{" "}
-                <b>{listReviews.length}</b> avaliações
+                Mostrando <b>{filteredReviews.length}</b> de <b>{listReviews.length}</b> avaliações
                 {reviewSvcFilter !== "todos" ? (
                   <>
                     {" "}
@@ -1761,21 +1772,15 @@ export default function CaregiverDetail() {
                     return (
                       <div
                         key={rv.id}
-                        className={`pc-card pc-card-accent transition-all duration-300 ${revealed
-                          ? "opacity-100 translate-y-0"
-                          : "opacity-0 translate-y-1"
-                          }`}
+                        className={`pc-card pc-card-accent transition-all duration-300 ${
+                          revealed ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1"
+                        }`}
                       >
                         <p className="text-sm text-[#5A3A22]/80">
                           <b>{rv.authorName || "Usuário"}</b> — {rv.rating} ★ —{" "}
-                          {rv.createdAt
-                            ? formatDateBR(String(rv.createdAt).slice(0, 10))
-                            : ""}
+                          {rv.createdAt ? formatDateBR(String(rv.createdAt).slice(0, 10)) : ""}
                           {rv.service ? (
-                            <span className="opacity-70">
-                              {" "}
-                              • {serviceLabel(String(rv.service))}
-                            </span>
+                            <span className="opacity-70"> • {serviceLabel(String(rv.service))}</span>
                           ) : null}
                         </p>
                         {rv.comment && <p className="mt-1">{rv.comment}</p>}
@@ -1786,9 +1791,7 @@ export default function CaregiverDetail() {
 
               <div className="mt-4 flex flex-col items-center gap-2">
                 {reviewsLoadingMore && (
-                  <p className="text-xs text-[#5A3A22] opacity-70">
-                    Carregando mais…
-                  </p>
+                  <p className="text-xs text-[#5A3A22] opacity-70">Carregando mais…</p>
                 )}
 
                 {reviewsHasMore && reviewSvcFilter === "todos" && (
@@ -1802,13 +1805,9 @@ export default function CaregiverDetail() {
                   </button>
                 )}
 
-                {!reviewsHasMore &&
-                  listReviews.length > 0 &&
-                  reviewSvcFilter === "todos" && (
-                    <p className="text-xs text-[#5A3A22] opacity-60">
-                      Você chegou ao fim das avaliações.
-                    </p>
-                  )}
+                {!reviewsHasMore && listReviews.length > 0 && reviewSvcFilter === "todos" && (
+                  <p className="text-xs text-[#5A3A22] opacity-60">Você chegou ao fim das avaliações.</p>
+                )}
 
                 {reviewSvcFilter !== "todos" && (
                   <p className="text-xs text-[#5A3A22] opacity-60">

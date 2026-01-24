@@ -4,29 +4,16 @@ import { useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Instagram } from "lucide-react";
 import { useToast } from "../components/ToastProvider";
+import { trackEvent } from "../utils/analytics";
 
 const BRAND_UTM = "utm_source=pelocaramelo&utm_medium=cta&utm_campaign=comportamento";
-const WHATSAPP_NUMBER = "5531999999999"; // ✅ troque aqui
+const WHATSAPP_NUMBER = "5531999999999"; // ✅ troque aqui depois
 
 function buildWhatsAppLink({ text, content = "hero" }) {
   const base = `https://wa.me/${WHATSAPP_NUMBER}`;
   const utm = `${BRAND_UTM}&utm_content=${encodeURIComponent(content)}`;
   const msg = `${text}\n\n(${utm})`;
   return `${base}?text=${encodeURIComponent(msg)}`;
-}
-
-function trackClick(eventName, payload) {
-  try {
-    // opcional: você pode depois trocar por sua solução (GA, etc.)
-    const data = {
-      id: Date.now(),
-      event: eventName,
-      ...payload,
-      ts: new Date().toISOString(),
-    };
-    const arr = JSON.parse(localStorage.getItem("pc_events") || "[]");
-    localStorage.setItem("pc_events", JSON.stringify([...arr, data]));
-  } catch {}
 }
 
 const FAQ = [
@@ -59,8 +46,72 @@ export default function ComportamentoAnimal() {
   const dialogRef = useRef(null);
   const location = useLocation();
 
+  // ✅ SEO (title já existia) + description + canonical
   useEffect(() => {
     document.title = "PeloCaramelo | Comportamento Animal";
+
+    // meta description (SPA-safe)
+    const ensureMetaByName = (name) => {
+      let el = document.querySelector(`meta[name="${name}"]`);
+      if (!el) {
+        el = document.createElement("meta");
+        el.setAttribute("name", name);
+        document.head.appendChild(el);
+      }
+      return el;
+    };
+
+    ensureMetaByName("description").setAttribute(
+      "content",
+      "Comportamento animal para cães e gatos: conteúdos e consultas com abordagem positiva para melhorar rotina, reduzir ansiedade e promover bem-estar."
+    );
+
+    // canonical
+    let canonical = document.querySelector('link[rel="canonical"]');
+    if (!canonical) {
+      canonical = document.createElement("link");
+      canonical.setAttribute("rel", "canonical");
+      document.head.appendChild(canonical);
+    }
+    canonical.setAttribute("href", `${window.location.origin}/comportamento`);
+  }, []);
+
+  // ✅ Schema.org (Breadcrumb + FAQPage)
+  const schemaJsonLd = useMemo(() => {
+    const origin = window.location.origin;
+    return {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "BreadcrumbList",
+          itemListElement: [
+            {
+              "@type": "ListItem",
+              position: 1,
+              name: "Início",
+              item: `${origin}/`,
+            },
+            {
+              "@type": "ListItem",
+              position: 2,
+              name: "Comportamento Animal",
+              item: `${origin}/comportamento`,
+            },
+          ],
+        },
+        {
+          "@type": "FAQPage",
+          mainEntity: FAQ.map((f) => ({
+            "@type": "Question",
+            name: f.q,
+            acceptedAnswer: {
+              "@type": "Answer",
+              text: f.a,
+            },
+          })),
+        },
+      ],
+    };
   }, []);
 
   // ✅ Scroll suave ao abrir a página (mantido)
@@ -117,16 +168,17 @@ export default function ComportamentoAnimal() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // ✅ Links WA (com texto ajustado para "Falar com a especialista" + Extra)
   const waHeroLink = useMemo(() => {
     const txt =
-      "Olá, Dra. Laíse! Vim pela PeloCaramelo e gostaria de agendar uma consulta comportamental. Posso te explicar rapidinho o caso do meu pet?";
+      "Olá, Dra. Laíse! Vim pela PeloCaramelo e gostaria de uma orientação sobre o comportamento do meu pet. Posso te contar o caso rapidinho?";
     return buildWhatsAppLink({ text: txt, content: "hero" });
   }, []);
 
   const waStickyLink = useMemo(() => {
     const txt =
-      "Olá, Dra. Laíse! Vim pela PeloCaramelo. Quero agendar uma consulta comportamental — qual o melhor horário para conversarmos?";
-    return buildWhatsAppLink({ text: txt, content: "sticky" });
+      "Olá, Dra. Laíse! Vim pela PeloCaramelo e gostaria de uma orientação sobre o comportamento do meu pet. Posso te contar o caso rapidinho?";
+    return buildWhatsAppLink({ text: txt, content: "final" });
   }, []);
 
   const handleSubmitLead = (e) => {
@@ -167,6 +219,12 @@ export default function ComportamentoAnimal() {
 
   return (
     <div className="bg-[#EBCBA9] min-h-screen text-[#5A3A22]">
+      {/* ✅ SEO Structured Data */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(schemaJsonLd) }}
+      />
+
       {/* HERO */}
       <section className="relative text-white text-center overflow-hidden">
         <img
@@ -200,10 +258,11 @@ export default function ComportamentoAnimal() {
             acreditamos que compreender o comportamento do seu pet é o primeiro
             passo para uma convivência saudável, feliz e sem traumas.
           </motion.p>
-
+         
           {/* ✅ Frase discreta no rodapé da imagem (sem atrapalhar visual) */}
           <p className="absolute bottom-6 left-0 right-0 px-4 text-[12px] sm:text-sm text-white/90 drop-shadow-[0_0_6px_rgba(0,0,0,0.55)]">
-            Atendimento com abordagem positiva e orientações práticas para o seu dia a dia.
+            Atendimento com abordagem positiva e orientações práticas para o seu
+            dia a dia.
           </p>
         </div>
       </section>
@@ -261,7 +320,9 @@ export default function ComportamentoAnimal() {
                   className="rounded-2xl bg-white border border-[#5A3A22]/10 p-4 shadow-sm"
                 >
                   <p className="font-extrabold text-[#5A3A22]">{x.t}</p>
-                  <p className="text-sm text-[#5A3A22]/75 mt-1 leading-relaxed">{x.d}</p>
+                  <p className="text-sm text-[#5A3A22]/75 mt-1 leading-relaxed">
+                    {x.d}
+                  </p>
                 </div>
               ))}
             </div>
@@ -331,18 +392,21 @@ export default function ComportamentoAnimal() {
             </span>
           </div>
 
-          {/* ✅ CTA padronizada: "Agendar no WhatsApp" */}
+          {/* ✅ CTA padronizada: "Falar com a especialista" + Extra */}
           <div className="flex flex-col sm:flex-row justify-center gap-4 w-full">
             <a
               href={buildWhatsAppLink({
                 text:
-                  "Olá, Dra. Laíse! Vim pela PeloCaramelo e gostaria de agendar uma consulta comportamental. Posso te contar o caso do meu pet?",
+                  "Olá, Dra. Laíse! Vim pela PeloCaramelo e gostaria de uma orientação sobre o comportamento do meu pet. Posso te contar o caso rapidinho?",
                 content: "perfil",
               })}
               target="_blank"
               rel="noreferrer"
               onClick={() =>
-                trackClick("cta_whatsapp_click", { page: "comportamento", pos: "perfil" })
+                trackEvent("click_specialist_whatsapp", {
+                  page: "comportamento",
+                  position: "perfil",
+                })
               }
               className="
                 inline-flex items-center justify-center gap-2
@@ -351,10 +415,14 @@ export default function ComportamentoAnimal() {
                 focus:outline-none focus:ring-2 focus:ring-[#5A3A22]/20
               "
             >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" className="w-5 h-5 fill-current">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 32 32"
+                className="w-5 h-5 fill-current"
+              >
                 <path d="M16 .395c-8.822 0-16 7.178-16 16 0 2.822.744 5.563 2.155 7.967L0 32l8.864-2.321A15.86 15.86 0 0 0 16 32c8.822 0 16-7.178 16-16s-7.178-15.605-16-15.605zm0 29.333a13.24 13.24 0 0 1-6.76-1.844l-.489-.289-5.26 1.375 1.406-5.146-.344-.533a13.213 13.213 0 1 1 11.447 6.437zm7.036-9.51c-.385-.193-2.273-1.12-2.626-1.247-.354-.128-.611-.192-.867.193-.257.386-.994 1.247-1.219 1.503-.225.257-.45.289-.835.096-.386-.193-1.628-.6-3.104-1.918-1.147-1.013-1.92-2.267-2.146-2.632-.225-.365-.024-.6.17-.793.175-.176.386-.45.579-.676.193-.225.257-.386.386-.643.128-.257.064-.48-.032-.676-.096-.193-.867-2.08-1.2-2.859-.32-.75-.644-.643-.867-.643h-.74c-.257 0-.675.096-1.025.482-.354.386-1.353 1.32-1.353 3.219s1.386 3.736 1.578 3.993c.193.257 2.736 4.176 6.632 5.85 3.896 1.643 3.896 1.098 4.596 1.031.7-.064 2.273-.932 2.603-1.834.321-.9 .321-1.672 .225-1.834-.096-.161-.354-.257-.74-.45z" />
               </svg>
-              Agendar no WhatsApp
+              Falar com a especialista
             </a>
 
             <button
@@ -477,7 +545,7 @@ export default function ComportamentoAnimal() {
               Quer ajuda com o comportamento do seu pet?
             </p>
             <p className="text-sm text-white/85 mt-1">
-              Clique e agende no WhatsApp. Mensagem pronta e rastreável.
+              Clique e fale com a especialista no WhatsApp. Mensagem pronta e rastreável.
             </p>
           </div>
 
@@ -486,7 +554,10 @@ export default function ComportamentoAnimal() {
             target="_blank"
             rel="noreferrer"
             onClick={() =>
-              trackClick("cta_whatsapp_click", { page: "comportamento", pos: "final" })
+              trackEvent("click_specialist_whatsapp", {
+                page: "comportamento",
+                position: "final",
+              })
             }
             className="
               inline-flex items-center justify-center gap-2
@@ -497,7 +568,7 @@ export default function ComportamentoAnimal() {
               w-full md:w-auto
             "
           >
-            Agendar no WhatsApp
+            Falar com a especialista
           </a>
         </div>
       </div>
@@ -535,17 +606,8 @@ export default function ComportamentoAnimal() {
                 className="grid grid-cols-1 sm:grid-cols-2 gap-4"
               >
                 <input name="nome" placeholder="Nome completo *" className="input" />
-                <input
-                  name="email"
-                  type="email"
-                  placeholder="E-mail *"
-                  className="input"
-                />
-                <input
-                  name="empresa"
-                  placeholder="Empresa / Instituição"
-                  className="input"
-                />
+                <input name="email" type="email" placeholder="E-mail *" className="input" />
+                <input name="empresa" placeholder="Empresa / Instituição" className="input" />
                 <input name="cidade" placeholder="Cidade / Estado" className="input" />
                 <input
                   name="publico"
