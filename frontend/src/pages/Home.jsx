@@ -96,15 +96,10 @@ export default function Home() {
       {/* HERO */}
       <section className="relative overflow-hidden">
         <div
-          className="
-            relative w-full
-            sm:h-[calc(100svh-72px)]
-          "
+          className="relative w-full sm:h-[calc(100svh-72px)]"
           style={{
-            // ✅ web mantém seu comportamento original
             minHeight: isMobile ? undefined : "640px",
             maxHeight: isMobile ? undefined : "760px",
-
             backgroundImage: isMobile
               ? "url('/images/Gato_e_cachorro_Home_9x16.png')"
               : "url('/images/Gato_e_cachorro_Home.png')",
@@ -113,7 +108,7 @@ export default function Home() {
             backgroundRepeat: "no-repeat",
           }}
         >
-          {/* ✅ MOBILE: trava a “área principal” em 9:16 sem mexer no web */}
+          {/* ✅ MOBILE: trava área principal em 9:16 */}
           <div className="sm:hidden w-full aspect-[9/16]" />
 
           {/* Overlay */}
@@ -121,13 +116,14 @@ export default function Home() {
 
           <div className="absolute inset-0">
             <div className="relative w-full h-full max-w-6xl mx-auto px-4 sm:px-6 text-center text-white">
-              {/* ✅ MOBILE: título menor, 2 linhas, e frase curta abaixo */}
-              <div className="sm:hidden pt-[86px]">
+              {/* ✅ MOBILE: título menor + mais pra cima (2 linhas) */}
+              <div className="sm:hidden pt-[64px]">
                 <h1
-                  className="font-extrabold text-white text-[30px] leading-[1.05]"
+                  className="font-extrabold text-white text-[28px] leading-[1.03]"
                   style={{ textShadow: "2px 2px 10px rgba(0,0,0,0.55)" }}
                 >
-                  <span className="block max-w-[18rem] mx-auto">
+                  {/* max-w menor força 2 linhas */}
+                  <span className="block max-w-[16.8rem] mx-auto">
                     Encontre cuidadores com carinho, segurança e{" "}
                     <span className="text-yellow-400 drop-shadow-md">confiança</span>{" "}
                     para o seu pet 🐾
@@ -135,7 +131,7 @@ export default function Home() {
                 </h1>
 
                 <p
-                  className="mt-3 text-white/90 text-sm max-w-[20rem] mx-auto"
+                  className="mt-2 text-white/90 text-sm max-w-[19rem] mx-auto"
                   style={{ textShadow: "2px 2px 10px rgba(0,0,0,0.45)" }}
                 >
                   Veja os cuidadores disponíveis.{" "}
@@ -145,7 +141,7 @@ export default function Home() {
                 </p>
               </div>
 
-              {/* ✅ WEB: mantém do jeito que estava (não mexe) */}
+              {/* ✅ WEB: mantém exatamente como estava */}
               <div className="hidden sm:block pt-3">
                 <h1
                   className="font-bold text-white text-3xl leading-tight sm:text-5xl"
@@ -161,7 +157,7 @@ export default function Home() {
                 </h1>
               </div>
 
-              {/* ✅ DESKTOP: idêntico ao seu (não mexe no web) */}
+              {/* ✅ DESKTOP: idêntico ao seu */}
               <div className="hidden sm:block absolute inset-x-6 bottom-3">
                 <p
                   className="mb-3 text-white/90 text-sm sm:text-base text-center"
@@ -312,8 +308,24 @@ export default function Home() {
                 </form>
               </div>
 
-              {/* ✅ MOBILE: “sanduíche” overlay (mesmo de antes) */}
-              <div className="sm:hidden absolute left-4 right-4 bottom-4">
+              {/* ✅ MOBILE: botão “Conheça” fora do card + card subindo */}
+              <div className="sm:hidden absolute left-4 right-4 bottom-7">
+                {/* botão discreto FORA do card */}
+                <div className="mb-2 flex justify-center">
+                  <Link
+                    to="/sobre#como-funciona"
+                    className="
+                      inline-flex items-center justify-center
+                      px-4 py-2 rounded-xl font-semibold text-sm
+                      bg-[#FFD700]/90 text-[#5A3A22]
+                      shadow-sm hover:brightness-105 transition
+                      focus:outline-none focus:ring-2 focus:ring-white/70
+                    "
+                  >
+                    Conheça a PeloCaramelo
+                  </Link>
+                </div>
+
                 <form
                   onSubmit={handleSearchSubmit}
                   className="
@@ -436,7 +448,7 @@ export default function Home() {
                         </div>
                       </div>
 
-                      <div className="mt-3 flex flex-col gap-2">
+                      <div className="mt-3">
                         <Link
                           to="/register"
                           className="
@@ -451,20 +463,6 @@ export default function Home() {
                           "
                         >
                           Quero me cadastrar como cuidador(a)
-                        </Link>
-
-                        <Link
-                          to="/sobre#como-funciona"
-                          className="
-                            inline-flex items-center justify-center
-                            w-full
-                            px-4 py-3 rounded-xl font-semibold
-                            bg-[#FFD700] text-[#5A3A22]
-                            shadow-md hover:brightness-105 transition
-                            focus:outline-none focus:ring-2 focus:ring-white/70
-                          "
-                        >
-                          Conheça a PeloCaramelo
                         </Link>
                       </div>
                     </div>
@@ -576,12 +574,13 @@ export default function Home() {
                         ))}
                       </div>
 
+                      {/* ✅ MOBILE: evita setas em cima do texto */}
                       <div className="sm:hidden overflow-hidden">
                         <Carousel
                           className="mt-1"
                           itemClassName="w-full"
-                          gapClassName="gap-0"
-                          viewportClassName="px-0"
+                          // dá "respiro" pros botões laterais não cobrirem o conteúdo
+                          viewportClassName="px-12"
                           arrows
                           dots
                         >
