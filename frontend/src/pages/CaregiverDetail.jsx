@@ -246,14 +246,14 @@ export default function CaregiverDetail() {
       rv.reviewer_role ||
       rv.role ||
       (rv.reviewer_id &&
-      rv.tutor_id &&
-      String(rv.reviewer_id) === String(rv.tutor_id)
+        rv.tutor_id &&
+        String(rv.reviewer_id) === String(rv.tutor_id)
         ? "tutor"
         : rv.reviewer_id &&
           rv.caregiver_id &&
           String(rv.reviewer_id) === String(rv.caregiver_id)
-        ? "caregiver"
-        : null);
+          ? "caregiver"
+          : null);
 
     const authorName =
       rv.author_name ||
@@ -265,10 +265,10 @@ export default function CaregiverDetail() {
     const createdAt = rv.created_at
       ? String(rv.created_at)
       : rv.createdAt
-      ? String(rv.createdAt)
-      : rv.date
-      ? String(rv.date)
-      : null;
+        ? String(rv.createdAt)
+        : rv.date
+          ? String(rv.date)
+          : null;
 
     const rating = Number(rv.rating ?? rv.stars ?? rv.nota ?? 0);
 
@@ -284,9 +284,9 @@ export default function CaregiverDetail() {
     return {
       id: toStr(
         rv.id ||
-          rv.review_id ||
-          rv.reviewId ||
-          `${Date.now()}_${Math.random().toString(16).slice(2)}`
+        rv.review_id ||
+        rv.reviewId ||
+        `${Date.now()}_${Math.random().toString(16).slice(2)}`
       ),
       reservationId: reservationId != null ? String(reservationId) : null,
       authorRole: authorRole ? String(authorRole) : null,
@@ -467,8 +467,8 @@ export default function CaregiverDetail() {
             user.role === "tutor"
               ? "/reservations/tutor"
               : user.role === "caregiver"
-              ? "/reservations/caregiver"
-              : null;
+                ? "/reservations/caregiver"
+                : null;
 
           if (endpoint) {
             const data = await authRequest(endpoint, token);
@@ -706,10 +706,10 @@ export default function CaregiverDetail() {
       const listRaw = Array.isArray(data?.reviews)
         ? data.reviews
         : Array.isArray(data?.data)
-        ? data.data
-        : Array.isArray(data)
-        ? data
-        : [];
+          ? data.data
+          : Array.isArray(data)
+            ? data
+            : [];
       return listRaw.map(normalizeReviewItem).filter(Boolean);
     };
 
@@ -909,10 +909,10 @@ export default function CaregiverDetail() {
       const listRaw = Array.isArray(data?.reviews)
         ? data.reviews
         : Array.isArray(data?.data)
-        ? data.data
-        : Array.isArray(data)
-        ? data
-        : [];
+          ? data.data
+          : Array.isArray(data)
+            ? data
+            : [];
 
       const normalized = listRaw.map(normalizeReviewItem).filter(Boolean);
 
@@ -970,8 +970,8 @@ export default function CaregiverDetail() {
           const list = Array.isArray(data?.pets)
             ? data.pets
             : Array.isArray(data)
-            ? data
-            : [];
+              ? data
+              : [];
 
           const normalized = list
             .map((p) => ({ ...p, id: p?.id }))
@@ -1414,14 +1414,36 @@ export default function CaregiverDetail() {
   return (
     <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] py-8 px-6">
       <div className="max-w-[1400px] mx-auto bg-white rounded-2xl shadow p-6 border-l-4 border-[#FFD700]/80">
-        {/* Header */}
-        <div className="flex items-start gap-4 mb-6">
-          <img
-            src={caregiver.image || DEFAULT_IMG}
-            alt={caregiver.name}
-            className="w-24 h-24 rounded-full object-cover border-4 border-[#FFD700]"
-          />
-          <div className="flex-1">
+        {/* Header (ajustado no mobile, web intacto) */}
+        <div className="flex flex-col sm:flex-row sm:items-start gap-4 mb-6">
+          <div className="flex items-start gap-4">
+            <img
+              src={caregiver.image || DEFAULT_IMG}
+              alt={caregiver.name}
+              className="w-20 h-20 sm:w-24 sm:h-24 rounded-full object-cover border-4 border-[#FFD700]"
+            />
+
+            {/* Nome + Local (mobile fica mais “clean”) */}
+            <div className="flex-1 min-w-0 sm:hidden">
+              <h1 className="text-xl font-bold text-[#5A3A22] leading-tight break-words">
+                {caregiver.name}
+              </h1>
+
+              <p className="text-sm text-[#5A3A22]/80 leading-snug mt-1">
+                {caregiver.displayLocation || "Local não informado"}
+              </p>
+
+              {hasAddressAccess && caregiver.address && (
+                <p className="text-xs text-[#5A3A22] mt-2 leading-snug">
+                  <b>Endereço completo: </b>
+                  <span className="break-words">{caregiver.address}</span>
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Web (mantém exatamente o layout antigo: infos no meio e bloco na direita) */}
+          <div className="hidden sm:block flex-1">
             <h1 className="text-2xl font-bold text-[#5A3A22]">{caregiver.name}</h1>
             <p className="text-[#5A3A22]/80">
               {caregiver.displayLocation || "Local não informado"}
@@ -1435,12 +1457,28 @@ export default function CaregiverDetail() {
             )}
           </div>
 
-          <div className="text-right">
-            <p className="text-sm text-[#5A3A22]">
+          {/* Nota + Preço
+      - Mobile: vira uma barra alinhada (sem quebrar tudo)
+      - Web: segue como era (coluna à direita) */}
+          <div
+            className="
+      w-full sm:w-auto
+      flex items-center justify-between
+      sm:block sm:text-right
+      gap-4
+      mt-1 sm:mt-0
+      px-3 py-2 sm:px-0 sm:py-0
+      rounded-xl sm:rounded-none
+      bg-[#FFF8F0] sm:bg-transparent
+      border border-[#5A3A22]/10 sm:border-0
+    "
+          >
+            <p className="text-sm text-[#5A3A22] whitespace-nowrap">
               ⭐ <b>{(ratingSummary.avg || 0).toFixed(1)}</b> ({ratingSummary.count})
             </p>
+
             {caregiver.minPrice != null && (
-              <p className="text-sm text-[#5A3A22]">
+              <p className="text-sm text-[#5A3A22] whitespace-nowrap">
                 A partir de <b>R$ {Number(caregiver.minPrice).toFixed(2)}</b>
               </p>
             )}
@@ -1630,11 +1668,10 @@ export default function CaregiverDetail() {
                   <button
                     type="button"
                     onClick={toggleAllPets}
-                    className={`mb-3 px-3 py-1 rounded-full text-xs font-semibold border transition ${
-                      allPetsSelected
+                    className={`mb-3 px-3 py-1 rounded-full text-xs font-semibold border transition ${allPetsSelected
                         ? "bg-[#5A3A22] text-white border-[#5A3A22]"
                         : "bg-white text-[#5A3A22] border-[#D2A679] hover:bg-[#FFF3D0]"
-                    }`}
+                      }`}
                   >
                     {allPetsSelected ? "Desmarcar todos" : "Selecionar todos os pets"}
                   </button>
@@ -1648,11 +1685,10 @@ export default function CaregiverDetail() {
                           key={pet.id}
                           type="button"
                           onClick={() => togglePet(pet.id)}
-                          className={`px-3 py-2 rounded-xl text-xs md:text-sm border flex items-center gap-2 transition ${
-                            active
+                          className={`px-3 py-2 rounded-xl text-xs md:text-sm border flex items-center gap-2 transition ${active
                               ? "bg-[#5A3A22] text-white border-[#5A3A22]"
                               : "bg-white text-[#5A3A22] border-[#D2A679] hover:bg-[#FFF3D0]"
-                          }`}
+                            }`}
                         >
                           <img
                             src={pickPetImage(pet) || "/paw.png"}
@@ -1772,9 +1808,8 @@ export default function CaregiverDetail() {
                     return (
                       <div
                         key={rv.id}
-                        className={`pc-card pc-card-accent transition-all duration-300 ${
-                          revealed ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1"
-                        }`}
+                        className={`pc-card pc-card-accent transition-all duration-300 ${revealed ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1"
+                          }`}
                       >
                         <p className="text-sm text-[#5A3A22]/80">
                           <b>{rv.authorName || "Usuário"}</b> — {rv.rating} ★ —{" "}
