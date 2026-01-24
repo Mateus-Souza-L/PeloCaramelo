@@ -1,5 +1,5 @@
 // src/pages/Sobre.jsx
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 
@@ -57,49 +57,8 @@ function scrollToId(id, mode = "full") {
   return true;
 }
 
-/**
- * ✅ MOBILE ONLY: scroll do FAQ com offset menor (pra alinhar no título)
- * - NÃO altera nada do web, porque só é chamado quando isMobile === true.
- */
-function scrollToFaqMobile() {
-  const el = document.getElementById("faq");
-  if (!el) return false;
-
-  const nav =
-    document.querySelector("header") ||
-    document.querySelector("nav") ||
-    document.getElementById("navbar");
-
-  const h = nav?.getBoundingClientRect?.().height;
-  const safe = Number.isFinite(h) && h > 40 ? h : 90;
-
-  // ✅ ajuste fino do MOBILE:
-  // menor que o "full" (safe + 115), pra não parar acima do título
-  const offset = Math.round(safe + 18);
-
-  const y = el.getBoundingClientRect().top + window.scrollY - offset;
-
-  window.scrollTo({
-    top: Math.max(0, y),
-    behavior: prefersReducedMotion() ? "auto" : "smooth",
-  });
-
-  return true;
-}
-
 export default function Sobre() {
   const location = useLocation();
-
-  // ✅ NOVO (sem mexer no web): detecta mobile
-  const [isMobile, setIsMobile] = useState(false);
-
-  useEffect(() => {
-    const mq = window.matchMedia("(max-width: 639px)"); // < sm
-    const apply = () => setIsMobile(!!mq.matches);
-    apply();
-    mq.addEventListener?.("change", apply);
-    return () => mq.removeEventListener?.("change", apply);
-  }, []);
 
   // FAQ (visível) + Schema.org (SEO)
   const faqs = useMemo(
@@ -141,8 +100,8 @@ export default function Sobre() {
 
   // ✅ Scroll suave ao acessar /sobre
   // - com hash (#faq / #como-funciona): rola para a âncora
-  //   ✅ #como-funciona -> mantém seu comportamento atual
-  //   ✅ #faq -> AJUSTA SOMENTE NO MOBILE (web fica intacto)
+  //   ✅ #como-funciona -> mantém como estava (navbarOnly)
+  //   ✅ #faq -> ajuste SOMENTE NO MOBILE (sem mexer no comportamento do web)
   // - sem hash: mantém o comportamento atual (offset completo)
   useEffect(() => {
     if (location.pathname !== "/sobre") return;
@@ -153,20 +112,53 @@ export default function Sobre() {
     let raf = 0;
     let tries = 0;
 
+    // ✅ detecta mobile sem criar state/dependência (não mexe no timing do Conheça)
+    const isMobileNow = () => {
+      try {
+        return window.matchMedia?.("(max-width: 639px)")?.matches === true;
+      } catch {
+        return false;
+      }
+    };
+
+    // ✅ ajuste exclusivo pro FAQ no MOBILE (alinha no título do bloco)
+    const scrollToFaqMobile = () => {
+      const el = document.getElementById("faq");
+      if (!el) return false;
+
+      const nav =
+        document.querySelector("header") ||
+        document.querySelector("nav") ||
+        document.getElementById("navbar");
+
+      const h = nav?.getBoundingClientRect?.().height;
+      const safe = Number.isFinite(h) && h > 40 ? h : 90;
+
+      // offset menor que o "full" (safe+115) para não parar acima do título
+      const offset = Math.round(safe + 18);
+
+      const y = el.getBoundingClientRect().top + window.scrollY - offset;
+
+      window.scrollTo({
+        top: Math.max(0, y),
+        behavior: prefersReducedMotion() ? "auto" : "smooth",
+      });
+
+      return true;
+    };
+
     const run = () => {
       tries += 1;
 
       if (targetId) {
-        // ✅ SOMENTE MOBILE: se for FAQ, usa scroll específico (não mexe no web)
-        if (isMobile && targetId === "faq") {
+        // ✅ ÚNICA mudança: se for FAQ e estiver no MOBILE, usa scroll especial
+        if (targetId === "faq" && isMobileNow()) {
           const ok = scrollToFaqMobile();
           if (ok && tries >= 3) return;
         } else {
-          // ✅ WEB/TABLET e qualquer outra âncora: mantém exatamente como estava
+          // ✅ TODO O RESTO fica exatamente igual ao seu comportamento atual
           const mode = targetId === "como-funciona" ? "navbarOnly" : "full";
           const ok = scrollToId(targetId, mode);
-
-          // se achou e rolou, ainda tentamos mais 1-2 vezes pra “fixar” caso layout mude
           if (ok && tries >= 3) return;
         }
       } else {
@@ -190,7 +182,7 @@ export default function Sobre() {
       clearTimeout(t);
       if (raf) cancelAnimationFrame(raf);
     };
-  }, [location.pathname, location.hash, isMobile]);
+  }, [location.pathname, location.hash]);
 
   // Animação padrão para os cards
   const cardMotion = {
