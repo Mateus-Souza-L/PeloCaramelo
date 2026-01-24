@@ -1,6 +1,8 @@
 // src/pages/Home.jsx
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import Carousel from "../components/Carousel";
+import LazyImage from "../components/LazyImage";
 
 export default function Home() {
   const navigate = useNavigate();
@@ -66,8 +68,15 @@ export default function Home() {
     navigate(`/buscar?${sp.toString()}`);
   }
 
+  const behaviorCards = [
+    { t: "🎆 Fogos e barulho", d: "Como acalmar e preparar seu pet com segurança." },
+    { t: "🕒 Rotina", d: "Ajustes simples que melhoram o comportamento." },
+    { t: "🐾 Passeio", d: "Dicas para passear melhor e com menos estresse." },
+    { t: "💛 Ansiedade", d: "Sinais comuns e o que fazer no dia a dia." },
+  ];
+
   return (
-    <div className="bg-[#EBCBA9] min-h-screen">
+    <div className="bg-[#EBCBA9] min-h-screen overflow-x-hidden">
       {/* HERO */}
       <section className="relative overflow-hidden">
         <div
@@ -85,7 +94,7 @@ export default function Home() {
           <div className="absolute inset-0 bg-black/30" />
 
           <div className="absolute inset-0">
-            <div className="relative w-full h-full max-w-6xl mx-auto px-6 text-center text-white">
+            <div className="relative w-full h-full max-w-6xl mx-auto px-4 sm:px-6 text-center text-white">
               {/* TEXTO (mais limpo: só headline no centro) */}
               <div className="pt-2 sm:pt-3">
                 <h1
@@ -103,7 +112,7 @@ export default function Home() {
               </div>
 
               {/* BLOCO INFERIOR (onde antes ficavam os cards) */}
-              <div className="absolute left-6 right-6 bottom-3">
+              <div className="absolute inset-x-4 sm:inset-x-6 bottom-3">
                 {/* Texto de apoio + "sem taxas" */}
                 <p
                   className="mb-3 text-white/90 text-sm sm:text-base text-center"
@@ -150,7 +159,7 @@ export default function Home() {
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
-                    <div className="sm:col-span-5">
+                    <div className="sm:col-span-5 min-w-0">
                       <label className="block text-[11px] text-white/85 mb-1">
                         Bairro/Cidade
                       </label>
@@ -167,7 +176,7 @@ export default function Home() {
                       />
                     </div>
 
-                    <div className="sm:col-span-2">
+                    <div className="sm:col-span-2 min-w-0">
                       <label className="block text-[11px] text-white/85 mb-1">Início</label>
                       <input
                         type="date"
@@ -181,7 +190,7 @@ export default function Home() {
                       />
                     </div>
 
-                    <div className="sm:col-span-2">
+                    <div className="sm:col-span-2 min-w-0">
                       <label className="block text-[11px] text-white/85 mb-1">Fim</label>
                       <input
                         type="date"
@@ -195,7 +204,7 @@ export default function Home() {
                       />
                     </div>
 
-                    <div className="sm:col-span-2">
+                    <div className="sm:col-span-2 min-w-0">
                       <label className="block text-[11px] text-white/85 mb-1">Serviço</label>
                       <select
                         value={svc}
@@ -214,7 +223,7 @@ export default function Home() {
                       </select>
                     </div>
 
-                    <div className="sm:col-span-1 flex items-end">
+                    <div className="sm:col-span-1 flex items-end min-w-0">
                       <button
                         type="submit"
                         disabled={!canSubmit}
@@ -277,8 +286,8 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Seção Comportamento (mantida como no seu código anterior) */}
-      <section className="px-6 py-14 md:py-4">
+      {/* Seção Comportamento */}
+      <section className="px-4 sm:px-6 py-14 md:py-4">
         <div className="max-w-[1400px] mx-auto md:aspect-[16/9]">
           <div className="w-full h-full flex items-center justify-center md:min-h-[calc(100vh-220px)]">
             <div
@@ -292,9 +301,9 @@ export default function Home() {
                 border-l-4 border-l-[#5A3A22]
               "
             >
-              <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-8 p-8 md:p-10">
+              <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-8 p-6 sm:p-8 md:p-10">
                 {/* Coluna esquerda */}
-                <div className="flex flex-col gap-6 md:gap-0 md:justify-between">
+                <div className="flex flex-col gap-6 md:gap-0 md:justify-between min-w-0">
                   <div>
                     <span className="inline-flex items-center gap-2 w-fit px-4 py-2 rounded-full bg-[#EBCBA9] text-[#5A3A22] text-sm font-semibold border border-[#5A3A22]/10">
                       🧠 Comportamento Animal
@@ -342,28 +351,24 @@ export default function Home() {
                   {/* imagem gato */}
                   <div className="md:pt-6">
                     <div className="rounded-2xl overflow-hidden shadow-md border border-[#5A3A22]/10 mt-4 md:mt-0">
-                      <img
+                      <LazyImage
                         src="/images/Gatil.png"
                         alt="Gato (Gatil)"
                         className="w-full h-full object-cover"
-                        loading="lazy"
-                        decoding="async"
                       />
                     </div>
                   </div>
                 </div>
 
                 {/* Coluna direita */}
-                <div className="flex flex-col gap-6 md:gap-0 md:justify-between">
+                <div className="flex flex-col gap-6 md:gap-0 md:justify-between min-w-0">
                   {/* imagem cachorro */}
                   <div>
                     <div className="rounded-2xl overflow-hidden shadow-md border border-[#5A3A22]/10 mb-4 md:mb-0">
-                      <img
+                      <LazyImage
                         src="/images/Guia_cachorro.png"
                         alt="Cachorro (Guia)"
                         className="w-full h-full object-cover"
-                        loading="lazy"
-                        decoding="async"
                       />
                     </div>
                   </div>
@@ -373,69 +378,38 @@ export default function Home() {
                     <div className="w-full bg-white rounded-2xl shadow-md p-6 border border-[#5A3A22]/10 border-r-4 border-r-[#FFD700]">
                       {/* DESKTOP/TABLET */}
                       <div className="hidden sm:grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div className="rounded-xl bg-[#FFF8F0] border border-[#5A3A22]/10 p-4">
-                          <p className="font-bold text-[#5A3A22]">🎆 Fogos e barulho</p>
-                          <p className="text-sm text-[#5A3A22]/80 mt-1">
-                            Como acalmar e preparar seu pet com segurança.
-                          </p>
-                        </div>
-
-                        <div className="rounded-xl bg-[#FFF8F0] border border-[#5A3A22]/10 p-4">
-                          <p className="font-bold text-[#5A3A22]">🕒 Rotina</p>
-                          <p className="text-sm text-[#5A3A22]/80 mt-1">
-                            Ajustes simples que melhoram o comportamento.
-                          </p>
-                        </div>
-
-                        <div className="rounded-xl bg-[#FFF8F0] border border-[#5A3A22]/10 p-4">
-                          <p className="font-bold text-[#5A3A22]">🐾 Passeio</p>
-                          <p className="text-sm text-[#5A3A22]/80 mt-1">
-                            Dicas para passear melhor e com menos estresse.
-                          </p>
-                        </div>
-
-                        <div className="rounded-xl bg-[#FFF8F0] border border-[#5A3A22]/10 p-4">
-                          <p className="font-bold text-[#5A3A22]">💛 Ansiedade</p>
-                          <p className="text-sm text-[#5A3A22]/80 mt-1">
-                            Sinais comuns e o que fazer no dia a dia.
-                          </p>
-                        </div>
+                        {behaviorCards.map((x) => (
+                          <div
+                            key={x.t}
+                            className="rounded-xl bg-[#FFF8F0] border border-[#5A3A22]/10 p-4"
+                          >
+                            <p className="font-bold text-[#5A3A22]">{x.t}</p>
+                            <p className="text-sm text-[#5A3A22]/80 mt-1">{x.d}</p>
+                          </div>
+                        ))}
                       </div>
 
-                      {/* MOBILE: CAROUSEL */}
+                      {/* MOBILE: CAROUSEL (setas + dots tocáveis) */}
                       <div className="sm:hidden">
-                        <div
-                          className="
-                            flex gap-4
-                            overflow-x-auto
-                            snap-x snap-mandatory
-                            pb-2
-                            -mx-1
-                            px-1
-                            [-webkit-overflow-scrolling:touch]
-                          "
-                          aria-label="Conteúdos de comportamento"
+                        <Carousel
+                          className="mt-1"
+                          itemClassName="w-[88%]"
+                          arrows
+                          dots
                         >
-                          {[
-                            {
-                              t: "🎆 Fogos e barulho",
-                              d: "Como acalmar e preparar seu pet com segurança.",
-                            },
-                            { t: "🕒 Rotina", d: "Ajustes simples que melhoram o comportamento." },
-                            { t: "🐾 Passeio", d: "Dicas para passear melhor e com menos estresse." },
-                            { t: "💛 Ansiedade", d: "Sinais comuns e o que fazer no dia a dia." },
-                          ].map((x) => (
-                            <div key={x.t} className="snap-center shrink-0 w-full">
-                              <div className="rounded-xl bg-[#FFF8F0] border border-[#5A3A22]/10 p-4">
-                                <p className="font-bold text-[#5A3A22]">{x.t}</p>
-                                <p className="text-sm text-[#5A3A22]/80 mt-1">{x.d}</p>
-                              </div>
+                          {behaviorCards.map((x) => (
+                            <div
+                              key={x.t}
+                              className="rounded-xl bg-[#FFF8F0] border border-[#5A3A22]/10 p-4"
+                            >
+                              <p className="font-bold text-[#5A3A22]">{x.t}</p>
+                              <p className="text-sm text-[#5A3A22]/80 mt-1">{x.d}</p>
                             </div>
                           ))}
-                        </div>
+                        </Carousel>
 
                         <p className="mt-1 text-[11px] text-[#5A3A22]/70">
-                          Deslize para o lado para ver os cards →
+                          Deslize para o lado ou use as setas.
                         </p>
                       </div>
                     </div>
@@ -451,12 +425,10 @@ export default function Home() {
       </section>
 
       {/* ✅ CTA discreto para FAQ (leva para /sobre#faq) */}
-      <section className="px-6 pb-14">
+      <section className="px-4 sm:px-6 pb-14">
         <div className="max-w-[1400px] mx-auto">
           <div className="bg-white/60 backdrop-blur-sm rounded-2xl shadow-md border border-white/30 p-6 sm:p-8 text-center">
-            <p className="text-[#5A3A22] font-semibold">
-              Ficou com alguma dúvida?
-            </p>
+            <p className="text-[#5A3A22] font-semibold">Ficou com alguma dúvida?</p>
             <p className="mt-1 text-[#5A3A22]/80">
               Veja as perguntas frequentes sobre a plataforma.
             </p>
