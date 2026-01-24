@@ -32,6 +32,9 @@ export default function Home() {
   const [endDateKey, setEndDateKey] = useState("");
   const [svc, setSvc] = useState("todos");
 
+  // ✅ mobile: abre/fecha painel de filtros
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+
   const isValidKey = (key) =>
     typeof key === "string" && /^\d{4}-\d{2}-\d{2}$/.test(key);
 
@@ -49,6 +52,7 @@ export default function Home() {
     }
   }
 
+  // limpa end se ficar antes do start
   useEffect(() => {
     if (!isValidKey(startDateKey) || !isValidKey(endDateKey)) return;
     const ds = parseLocalKeySafe(startDateKey);
@@ -78,6 +82,9 @@ export default function Home() {
 
     if (svc && svc !== "todos") sp.set("svc", svc);
 
+    // ✅ fecha filtros no mobile ao buscar
+    setMobileFiltersOpen(false);
+
     navigate(`/buscar?${sp.toString()}`);
   }
 
@@ -93,15 +100,12 @@ export default function Home() {
       {/* HERO */}
       <section className="relative overflow-hidden">
         <div
-          // ✅ MOBILE: altura menor (não toma a tela)
-          // ✅ WEB: mantém exatamente o que você já tinha (sm:h...)
-          className="relative w-full h-[72svh] sm:h-[calc(100svh-72px)]"
+          className="relative w-full h-[78svh] sm:h-[calc(100svh-72px)]"
           style={{
-            // ✅ NÃO mexe no min/max do web
-            minHeight: "640px",
-            maxHeight: "760px",
+            // ✅ só aplica min/max no WEB; no mobile deixa livre
+            minHeight: isMobile ? undefined : "640px",
+            maxHeight: isMobile ? undefined : "760px",
 
-            // ✅ só troca a imagem no mobile
             backgroundImage: isMobile
               ? "url('/images/Gato_e_cachorro_Home_9x16.png')"
               : "url('/images/Gato_e_cachorro_Home.png')",
@@ -115,10 +119,10 @@ export default function Home() {
 
           <div className="absolute inset-0">
             <div className="relative w-full h-full max-w-6xl mx-auto px-4 sm:px-6 text-center text-white">
-              {/* TEXTO (idêntico ao seu original) */}
-              <div className="pt-2 sm:pt-3">
+              {/* TEXTO */}
+              <div className="pt-3 sm:pt-3">
                 <h1
-                  className="font-bold text-white text-3xl leading-tight sm:text-5xl relative top-6 sm:top-5"
+                  className="font-bold text-white text-3xl leading-tight sm:text-5xl"
                   style={{ textShadow: "2px 2px 10px rgba(0,0,0,0.55)" }}
                 >
                   <span className="block max-w-[26rem] mx-auto sm:max-w-none">
@@ -131,7 +135,7 @@ export default function Home() {
                 </h1>
               </div>
 
-              {/* ✅ DESKTOP: SEU BLOCO ORIGINAL (NÃO MUDA) */}
+              {/* ✅ DESKTOP: idêntico ao seu (não mexe no web) */}
               <div className="hidden sm:block absolute inset-x-6 bottom-3">
                 <p
                   className="mb-3 text-white/90 text-sm sm:text-base text-center"
@@ -281,146 +285,171 @@ export default function Home() {
                   </div>
                 </form>
               </div>
-              {/* ✅ FIM DESKTOP */}
-            </div>
-          </div>
-        </div>
-      </section>
 
-      {/* ✅ MOBILE ONLY: BUSCA FORA DO HERO (não ocupa a tela, não invade) */}
-      <section className="sm:hidden px-4 -mt-10 pb-10">
-        <div className="max-w-[520px] mx-auto">
-          <form
-            onSubmit={handleSearchSubmit}
-            className="
-              w-full
-              rounded-2xl
-              bg-white/18
-              backdrop-blur-md
-              border border-white/20
-              shadow-lg
-              p-4
-              text-left
-            "
-            style={{ backgroundColor: "rgba(255,255,255,0.18)" }}
-          >
-            <p className="text-white font-semibold mb-2">Comece a buscar agora</p>
-
-            <div className="grid grid-cols-1 gap-3">
-              <div className="min-w-0">
-                <label className="block text-[11px] text-white/85 mb-1">Bairro/Cidade</label>
-                <input
-                  type="text"
-                  placeholder="Ex: Savassi, Belo Horizonte…"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
+              {/* ✅ MOBILE: “sanduíche” overlay (compacto) */}
+              <div className="sm:hidden absolute left-4 right-4 bottom-4">
+                <form
+                  onSubmit={handleSearchSubmit}
                   className="
-                    w-full border border-white/25 bg-white/90
-                    rounded-lg px-3 py-2 text-[#5A3A22]
-                    focus:outline-none focus:ring-2 focus:ring-white/70
-                  "
-                />
-              </div>
-
-              <div className="min-w-0">
-                <label className="block text-[11px] text-white/85 mb-1">Início</label>
-                <input
-                  type="date"
-                  value={startDateKey}
-                  onChange={(e) => setStartDateKey(e.target.value)}
-                  className="
-                    w-full border border-white/25 bg-white/90
-                    rounded-lg px-3 py-2 text-[#5A3A22]
-                    focus:outline-none focus:ring-2 focus:ring-white/70
-                  "
-                />
-              </div>
-
-              <div className="min-w-0">
-                <label className="block text-[11px] text-white/85 mb-1">Fim</label>
-                <input
-                  type="date"
-                  value={endDateKey}
-                  onChange={(e) => setEndDateKey(e.target.value)}
-                  className="
-                    w-full border border-white/25 bg-white/90
-                    rounded-lg px-3 py-2 text-[#5A3A22]
-                    focus:outline-none focus:ring-2 focus:ring-white/70
-                  "
-                />
-              </div>
-
-              <div className="min-w-0">
-                <label className="block text-[11px] text-white/85 mb-1">Serviço</label>
-                <select
-                  value={svc}
-                  onChange={(e) => setSvc(e.target.value)}
-                  className="
-                    w-full border border-white/25 bg-white/90
-                    rounded-lg px-3 py-2 text-[#5A3A22]
-                    focus:outline-none focus:ring-2 focus:ring-white/70
+                    rounded-2xl
+                    bg-white/20
+                    backdrop-blur-md
+                    border border-white/25
+                    shadow-lg
+                    text-left
+                    overflow-hidden
                   "
                 >
-                  <option value="todos">Todos</option>
-                  <option value="hospedagem">Hospedagem</option>
-                  <option value="creche">Creche</option>
-                  <option value="petSitter">Pet Sitter</option>
-                  <option value="passeios">Passeios</option>
-                </select>
+                  {/* topo compacto */}
+                  <div className="p-3">
+                    <p className="text-white font-semibold mb-2">Buscar cuidador</p>
+
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        placeholder="Bairro/Cidade..."
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        className="
+                          flex-1 min-w-0
+                          border border-white/25 bg-white/90
+                          rounded-xl px-3 py-2 text-[#5A3A22]
+                          focus:outline-none focus:ring-2 focus:ring-white/70
+                        "
+                      />
+
+                      <button
+                        type="button"
+                        onClick={() => setMobileFiltersOpen((v) => !v)}
+                        className="
+                          shrink-0
+                          px-3 py-2 rounded-xl font-semibold
+                          bg-white/10 hover:bg-white/15
+                          border border-white/25 text-white
+                          transition
+                          focus:outline-none focus:ring-2 focus:ring-white/70
+                        "
+                        aria-expanded={mobileFiltersOpen ? "true" : "false"}
+                      >
+                        {mobileFiltersOpen ? "Fechar" : "Filtros"}
+                      </button>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={!canSubmit}
+                      className="
+                        mt-2
+                        w-full
+                        rounded-xl font-semibold shadow-lg transition
+                        px-4 py-3
+                        bg-[#95301F] hover:brightness-110 text-white
+                        disabled:opacity-60 disabled:cursor-not-allowed
+                        focus:outline-none focus:ring-2 focus:ring-white/70
+                      "
+                    >
+                      Buscar
+                    </button>
+
+                    <p className="mt-2 text-[11px] text-white/80">
+                      Dica: dá pra buscar só com “Bairro/Cidade”.
+                    </p>
+                  </div>
+
+                  {/* painel expandível */}
+                  {mobileFiltersOpen && (
+                    <div className="px-3 pb-3">
+                      <div className="grid grid-cols-1 gap-2">
+                        <div className="min-w-0">
+                          <label className="block text-[11px] text-white/85 mb-1">
+                            Início
+                          </label>
+                          <input
+                            type="date"
+                            value={startDateKey}
+                            onChange={(e) => setStartDateKey(e.target.value)}
+                            className="
+                              w-full border border-white/25 bg-white/90
+                              rounded-xl px-3 py-2 text-[#5A3A22]
+                              focus:outline-none focus:ring-2 focus:ring-white/70
+                            "
+                          />
+                        </div>
+
+                        <div className="min-w-0">
+                          <label className="block text-[11px] text-white/85 mb-1">Fim</label>
+                          <input
+                            type="date"
+                            value={endDateKey}
+                            onChange={(e) => setEndDateKey(e.target.value)}
+                            className="
+                              w-full border border-white/25 bg-white/90
+                              rounded-xl px-3 py-2 text-[#5A3A22]
+                              focus:outline-none focus:ring-2 focus:ring-white/70
+                            "
+                          />
+                        </div>
+
+                        <div className="min-w-0">
+                          <label className="block text-[11px] text-white/85 mb-1">
+                            Serviço
+                          </label>
+                          <select
+                            value={svc}
+                            onChange={(e) => setSvc(e.target.value)}
+                            className="
+                              w-full border border-white/25 bg-white/90
+                              rounded-xl px-3 py-2 text-[#5A3A22]
+                              focus:outline-none focus:ring-2 focus:ring-white/70
+                            "
+                          >
+                            <option value="todos">Todos</option>
+                            <option value="hospedagem">Hospedagem</option>
+                            <option value="creche">Creche</option>
+                            <option value="petSitter">Pet Sitter</option>
+                            <option value="passeios">Passeios</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 flex flex-col gap-2">
+                        <Link
+                          to="/register"
+                          className="
+                            inline-flex items-center justify-center
+                            w-full
+                            px-4 py-3 rounded-xl font-semibold text-sm
+                            bg-white/10 hover:bg-white/15
+                            border border-white/25 text-white
+                            shadow-sm transition
+                            focus:outline-none focus:ring-2 focus:ring-white/70
+                            backdrop-blur-sm
+                          "
+                        >
+                          Quero me cadastrar como cuidador(a)
+                        </Link>
+
+                        <Link
+                          to="/sobre#como-funciona"
+                          className="
+                            inline-flex items-center justify-center
+                            w-full
+                            px-4 py-3 rounded-xl font-semibold
+                            bg-[#FFD700] text-[#5A3A22]
+                            shadow-md hover:brightness-105 transition
+                            focus:outline-none focus:ring-2 focus:ring-white/70
+                          "
+                        >
+                          Conheça a PeloCaramelo
+                        </Link>
+                      </div>
+                    </div>
+                  )}
+                </form>
               </div>
-
-              <button
-                type="submit"
-                disabled={!canSubmit}
-                className="
-                  w-full
-                  rounded-lg font-semibold shadow-lg transition
-                  px-4 py-3
-                  bg-[#95301F] hover:brightness-110 text-white
-                  disabled:opacity-60 disabled:cursor-not-allowed
-                  focus:outline-none focus:ring-2 focus:ring-white/70
-                "
-              >
-                Buscar
-              </button>
+              {/* ✅ fim mobile overlay */}
             </div>
-
-            <p className="mt-2 text-[11px] text-white/80">
-              Dica: você pode preencher só “Bairro/Cidade” e buscar mesmo sem datas.
-            </p>
-
-            <div className="mt-3 flex flex-col gap-2">
-              <Link
-                to="/register"
-                className="
-                  inline-flex items-center justify-center
-                  w-full
-                  px-4 py-3 rounded-xl font-semibold text-sm
-                  bg-white/10 hover:bg-white/15
-                  border border-white/25 text-white
-                  shadow-sm transition
-                  focus:outline-none focus:ring-2 focus:ring-white/70
-                  backdrop-blur-sm
-                "
-              >
-                Quero me cadastrar como cuidador(a)
-              </Link>
-
-              <Link
-                to="/sobre#como-funciona"
-                className="
-                  inline-flex items-center justify-center
-                  w-full
-                  px-4 py-3 rounded-xl font-semibold
-                  bg-[#FFD700] text-[#5A3A22]
-                  shadow-md hover:brightness-105 transition
-                  focus:outline-none focus:ring-2 focus:ring-white/70
-                "
-              >
-                Conheça a PeloCaramelo
-              </Link>
-            </div>
-          </form>
+          </div>
         </div>
       </section>
 
@@ -511,6 +540,7 @@ export default function Home() {
 
                   <div className="relative md:pt-6">
                     <div className="w-full bg-white rounded-2xl shadow-md p-6 border border-[#5A3A22]/10 border-r-4 border-r-[#FFD700]">
+                      {/* desktop */}
                       <div className="hidden sm:grid grid-cols-1 sm:grid-cols-2 gap-4">
                         {behaviorCards.map((x) => (
                           <div
@@ -523,6 +553,7 @@ export default function Home() {
                         ))}
                       </div>
 
+                      {/* mobile: não “vaza” pro lado */}
                       <div className="sm:hidden overflow-hidden">
                         <Carousel
                           className="mt-1"
