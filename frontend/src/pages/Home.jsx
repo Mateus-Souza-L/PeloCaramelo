@@ -52,7 +52,6 @@ export default function Home() {
     }
   }
 
-  // limpa end se ficar antes do start
   useEffect(() => {
     if (!isValidKey(startDateKey) || !isValidKey(endDateKey)) return;
     const ds = parseLocalKeySafe(startDateKey);
@@ -79,12 +78,9 @@ export default function Home() {
 
     if (isValidKey(startDateKey)) sp.set("start", startDateKey);
     if (isValidKey(endDateKey)) sp.set("end", endDateKey);
-
     if (svc && svc !== "todos") sp.set("svc", svc);
 
-    // ✅ fecha filtros no mobile ao buscar
     setMobileFiltersOpen(false);
-
     navigate(`/buscar?${sp.toString()}`);
   }
 
@@ -100,9 +96,12 @@ export default function Home() {
       {/* HERO */}
       <section className="relative overflow-hidden">
         <div
-          className="relative w-full h-[78svh] sm:h-[calc(100svh-72px)]"
+          className="
+            relative w-full
+            sm:h-[calc(100svh-72px)]
+          "
           style={{
-            // ✅ só aplica min/max no WEB; no mobile deixa livre
+            // ✅ web mantém seu comportamento original
             minHeight: isMobile ? undefined : "640px",
             maxHeight: isMobile ? undefined : "760px",
 
@@ -114,13 +113,40 @@ export default function Home() {
             backgroundRepeat: "no-repeat",
           }}
         >
+          {/* ✅ MOBILE: trava a “área principal” em 9:16 sem mexer no web */}
+          <div className="sm:hidden w-full aspect-[9/16]" />
+
           {/* Overlay */}
           <div className="absolute inset-0 bg-black/30" />
 
           <div className="absolute inset-0">
             <div className="relative w-full h-full max-w-6xl mx-auto px-4 sm:px-6 text-center text-white">
-              {/* TEXTO */}
-              <div className="pt-3 sm:pt-3">
+              {/* ✅ MOBILE: título menor, 2 linhas, e frase curta abaixo */}
+              <div className="sm:hidden pt-[86px]">
+                <h1
+                  className="font-extrabold text-white text-[30px] leading-[1.05]"
+                  style={{ textShadow: "2px 2px 10px rgba(0,0,0,0.55)" }}
+                >
+                  <span className="block max-w-[18rem] mx-auto">
+                    Encontre cuidadores com carinho, segurança e{" "}
+                    <span className="text-yellow-400 drop-shadow-md">confiança</span>{" "}
+                    para o seu pet 🐾
+                  </span>
+                </h1>
+
+                <p
+                  className="mt-3 text-white/90 text-sm max-w-[20rem] mx-auto"
+                  style={{ textShadow: "2px 2px 10px rgba(0,0,0,0.45)" }}
+                >
+                  Veja os cuidadores disponíveis.{" "}
+                  <span className="font-semibold text-white">
+                    Sem taxas para tutores e cuidadores.
+                  </span>
+                </p>
+              </div>
+
+              {/* ✅ WEB: mantém do jeito que estava (não mexe) */}
+              <div className="hidden sm:block pt-3">
                 <h1
                   className="font-bold text-white text-3xl leading-tight sm:text-5xl"
                   style={{ textShadow: "2px 2px 10px rgba(0,0,0,0.55)" }}
@@ -286,7 +312,7 @@ export default function Home() {
                 </form>
               </div>
 
-              {/* ✅ MOBILE: “sanduíche” overlay (compacto) */}
+              {/* ✅ MOBILE: “sanduíche” overlay (mesmo de antes) */}
               <div className="sm:hidden absolute left-4 right-4 bottom-4">
                 <form
                   onSubmit={handleSearchSubmit}
@@ -300,7 +326,6 @@ export default function Home() {
                     overflow-hidden
                   "
                 >
-                  {/* topo compacto */}
                   <div className="p-3">
                     <p className="text-white font-semibold mb-2">Buscar cuidador</p>
 
@@ -356,7 +381,6 @@ export default function Home() {
                     </p>
                   </div>
 
-                  {/* painel expandível */}
                   {mobileFiltersOpen && (
                     <div className="px-3 pb-3">
                       <div className="grid grid-cols-1 gap-2">
@@ -447,7 +471,7 @@ export default function Home() {
                   )}
                 </form>
               </div>
-              {/* ✅ fim mobile overlay */}
+              {/* fim mobile overlay */}
             </div>
           </div>
         </div>
@@ -540,7 +564,6 @@ export default function Home() {
 
                   <div className="relative md:pt-6">
                     <div className="w-full bg-white rounded-2xl shadow-md p-6 border border-[#5A3A22]/10 border-r-4 border-r-[#FFD700]">
-                      {/* desktop */}
                       <div className="hidden sm:grid grid-cols-1 sm:grid-cols-2 gap-4">
                         {behaviorCards.map((x) => (
                           <div
@@ -553,7 +576,6 @@ export default function Home() {
                         ))}
                       </div>
 
-                      {/* mobile: não “vaza” pro lado */}
                       <div className="sm:hidden overflow-hidden">
                         <Carousel
                           className="mt-1"
