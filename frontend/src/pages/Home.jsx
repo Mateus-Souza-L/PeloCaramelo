@@ -263,7 +263,7 @@ export default function Home() {
                           backdrop-blur-sm
                         "
                       >
-                        Quero me cadastrar como cuidador(a)
+                        Cadastre‑se como cuidador(a)
                       </Link>
                     </div>
                   </div>

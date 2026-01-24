@@ -168,7 +168,7 @@ export default function ComportamentoAnimal() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // ✅ Links WA (com texto ajustado para "Falar com a especialista" + Extra)
+  // ✅ Links WA (com texto ajustado para "Consultar especialista" + Extra)
   const waHeroLink = useMemo(() => {
     const txt =
       "Olá, Dra. Laíse! Vim pela PeloCaramelo e gostaria de uma orientação sobre o comportamento do meu pet. Posso te contar o caso rapidinho?";
@@ -392,7 +392,7 @@ export default function ComportamentoAnimal() {
             </span>
           </div>
 
-          {/* ✅ CTA padronizada: "Falar com a especialista" + Extra */}
+          {/* ✅ CTA padronizada: "Consultar especialista" + Extra */}
           <div className="flex flex-col sm:flex-row justify-center gap-4 w-full">
             <a
               href={buildWhatsAppLink({
@@ -422,7 +422,7 @@ export default function ComportamentoAnimal() {
               >
                 <path d="M16 .395c-8.822 0-16 7.178-16 16 0 2.822.744 5.563 2.155 7.967L0 32l8.864-2.321A15.86 15.86 0 0 0 16 32c8.822 0 16-7.178 16-16s-7.178-15.605-16-15.605zm0 29.333a13.24 13.24 0 0 1-6.76-1.844l-.489-.289-5.26 1.375 1.406-5.146-.344-.533a13.213 13.213 0 1 1 11.447 6.437zm7.036-9.51c-.385-.193-2.273-1.12-2.626-1.247-.354-.128-.611-.192-.867.193-.257.386-.994 1.247-1.219 1.503-.225.257-.45.289-.835.096-.386-.193-1.628-.6-3.104-1.918-1.147-1.013-1.92-2.267-2.146-2.632-.225-.365-.024-.6.17-.793.175-.176.386-.45.579-.676.193-.225.257-.386.386-.643.128-.257.064-.48-.032-.676-.096-.193-.867-2.08-1.2-2.859-.32-.75-.644-.643-.867-.643h-.74c-.257 0-.675.096-1.025.482-.354.386-1.353 1.32-1.353 3.219s1.386 3.736 1.578 3.993c.193.257 2.736 4.176 6.632 5.85 3.896 1.643 3.896 1.098 4.596 1.031.7-.064 2.273-.932 2.603-1.834.321-.9 .321-1.672 .225-1.834-.096-.161-.354-.257-.74-.45z" />
               </svg>
-              Falar com a especialista
+              Consultar especialista
             </a>
 
             {/* ✅ mantém tamanho / ícone e-mail / mobile sem "Solicitar" */}
@@ -575,7 +575,7 @@ export default function ComportamentoAnimal() {
               w-full md:w-auto
             "
           >
-            Falar com a especialista
+            Consultar especialista
           </a>
         </div>
       </div>
