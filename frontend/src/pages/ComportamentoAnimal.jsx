@@ -425,24 +425,22 @@ export default function ComportamentoAnimal() {
               Falar com a especialista
             </a>
 
-            {/* ✅ mantém tamanho / só adiciona ícone de e-mail no início */}
+            {/* ✅ mantém tamanho / ícone e-mail / mobile sem "Solicitar" */}
             <button
               onClick={() => setOpenPalestra(true)}
               className="
-    inline-flex items-center justify-center gap-2
-    bg-[#5A3A22] hover:bg-[#95301F] text-white
-    px-6 py-3 rounded-xl font-semibold shadow-md transition
-  "
+                inline-flex items-center justify-center gap-2
+                bg-[#5A3A22] hover:bg-[#95301F] text-white
+                px-6 py-3 rounded-xl font-semibold shadow-md transition
+              "
             >
               <Mail size={18} className="text-white" />
 
-              {/* Mobile */}
-              <span className="sm:hidden">Orçamento de Palestra</span>
+              {/* Mobile (sem “Solicitar”) */}
+              <span className="sm:hidden whitespace-nowrap">Orçamento de Palestra</span>
 
-              {/* Web */}
-              <span className="hidden sm:inline">
-                Solicitar Orçamento de Palestra
-              </span>
+              {/* Web (mantém como estava) */}
+              <span className="hidden sm:inline">Solicitar Orçamento de Palestra</span>
             </button>
           </div>
 
@@ -589,8 +587,8 @@ export default function ComportamentoAnimal() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            // ✅ MOBILE: overlay rola + alinha no topo (não "estoura" tela)
-            // ✅ WEB: mantém centralizado como já estava
+            // ✅ MOBILE: overlay rola + alinha no topo
+            // ✅ WEB: mantém centralizado
             className="
               fixed inset-0 bg-black/50 z-[999]
               flex items-start sm:items-center justify-center
@@ -605,21 +603,32 @@ export default function ComportamentoAnimal() {
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
               transition={{ duration: 0.2 }}
-              // ✅ MOBILE: altura máxima + scroll interno
-              // ✅ WEB: volta ao normal (sem max-height / sem scroll)
+              // ✅ MOBILE: max-height com dvh (melhor em mobile) + scroll interno
+              // ✅ WEB: volta ao normal
               className="
                 bg-white w-full max-w-2xl rounded-2xl shadow-xl
                 p-4 sm:p-6
-                my-0 sm:my-0
-                max-h-[calc(100vh-3rem)] overflow-y-auto
+                max-h-[calc(100dvh-2.5rem)] overflow-y-auto
                 sm:max-h-none sm:overflow-visible
               "
             >
-              <div className="flex items-center justify-between mb-4">
-                <h4 className="text-xl font-bold">Solicitar Orçamento de Palestra</h4>
+              <div className="flex items-start sm:items-center justify-between gap-3 mb-4">
+                {/* ✅ MOBILE: título mais legível/compacto | WEB: mantém */}
+                <h4 className="text-lg sm:text-xl font-bold leading-snug">
+                  Solicitar Orçamento de Palestra
+                </h4>
+
+                {/* ✅ MOBILE: botão fechar mais “thumb-friendly” | WEB: mantém */}
                 <button
                   onClick={() => setOpenPalestra(false)}
-                  className="text-[#5A3A22]/70 hover:text-[#5A3A22] text-xl font-bold"
+                  className="
+                    text-[#5A3A22]/70 hover:text-[#5A3A22] font-bold
+                    w-10 h-10 sm:w-auto sm:h-auto
+                    inline-flex items-center justify-center
+                    rounded-full hover:bg-black/5
+                    text-2xl sm:text-xl
+                  "
+                  aria-label="Fechar"
                 >
                   ×
                 </button>
@@ -657,24 +666,37 @@ export default function ComportamentoAnimal() {
                   className="textarea sm:col-span-2"
                 />
 
-                <div className="sm:col-span-2 flex justify-end gap-3 mt-2">
+                {/* ✅ MOBILE: botões grandes e empilhados | WEB: iguais (lado a lado, à direita) */}
+                <div className="sm:col-span-2 flex flex-col sm:flex-row sm:justify-end gap-3 mt-2">
                   <button
                     type="button"
                     onClick={() => setOpenPalestra(false)}
-                    className="px-5 py-2 bg-gray-300 rounded-lg font-semibold text-[#5A3A22] hover:bg-gray-400"
+                    className="
+                      w-full sm:w-auto
+                      px-5 py-3 sm:py-2
+                      min-h-[48px]
+                      bg-gray-300 rounded-xl font-semibold text-[#5A3A22]
+                      hover:bg-gray-400
+                    "
                   >
                     Cancelar
                   </button>
                   <button
                     type="submit"
-                    className="px-5 py-2 bg-[#5A3A22] text-white rounded-lg font-semibold shadow-md hover:bg-[#95301F]"
+                    className="
+                      w-full sm:w-auto
+                      px-5 py-3 sm:py-2
+                      min-h-[48px]
+                      bg-[#5A3A22] text-white rounded-xl font-semibold shadow-md
+                      hover:bg-[#95301F]
+                    "
                   >
                     Enviar pedido
                   </button>
                 </div>
               </form>
 
-              <p className="mt-4 text-[12px] text-[#5A3A22]/70">
+              <p className="mt-4 text-[12px] text-[#5A3A22]/70 leading-relaxed">
                 Dica: esses pedidos ficam salvos em{" "}
                 <span className="font-semibold">localStorage</span> (leads_palestras).
               </p>
