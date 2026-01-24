@@ -1,7 +1,6 @@
 // src/pages/Home.jsx
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import Carousel from "../components/Carousel";
 import LazyImage from "../components/LazyImage";
 
 export default function Home() {
@@ -11,20 +10,20 @@ export default function Home() {
     document.title = "PeloCaramelo | Início";
   }, []);
 
-  // ✅ apenas para trocar a imagem no MOBILE sem encostar no WEB
+  // ======= mobile detect (sem mexer no web) =======
   const [isMobile, setIsMobile] = useState(false);
+
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const mq = window.matchMedia("(max-width: 639px)");
+    const mq = window.matchMedia("(max-width: 639px)"); // < sm
     const apply = () => setIsMobile(!!mq.matches);
     apply();
-    if (mq.addEventListener) mq.addEventListener("change", apply);
-    else mq.addListener(apply);
-    return () => {
-      if (mq.removeEventListener) mq.removeEventListener("change", apply);
-      else mq.removeListener(apply);
-    };
+    mq.addEventListener?.("change", apply);
+    return () => mq.removeEventListener?.("change", apply);
   }, []);
+
+  const heroBg = isMobile
+    ? "/images/Gato_e_cachorro_Home_9x16.png"
+    : "/images/Gato_e_cachorro_Home.png";
 
   // filtros (Home -> /buscar)
   const [query, setQuery] = useState("");
@@ -32,7 +31,7 @@ export default function Home() {
   const [endDateKey, setEndDateKey] = useState("");
   const [svc, setSvc] = useState("todos");
 
-  // ✅ mobile: abre/fecha painel de filtros
+  // mobile: abre/fecha filtros (sanduíche)
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   const isValidKey = (key) =>
@@ -40,6 +39,7 @@ export default function Home() {
 
   function parseLocalKeySafe(key) {
     try {
+      // YYYY-MM-DD -> Date local
       const [y, m, d] = String(key)
         .split("-")
         .map((x) => Number(x));
@@ -52,6 +52,7 @@ export default function Home() {
     }
   }
 
+  // limpa end se ficar antes do start
   useEffect(() => {
     if (!isValidKey(startDateKey) || !isValidKey(endDateKey)) return;
     const ds = parseLocalKeySafe(startDateKey);
@@ -78,9 +79,9 @@ export default function Home() {
 
     if (isValidKey(startDateKey)) sp.set("start", startDateKey);
     if (isValidKey(endDateKey)) sp.set("end", endDateKey);
+
     if (svc && svc !== "todos") sp.set("svc", svc);
 
-    setMobileFiltersOpen(false);
     navigate(`/buscar?${sp.toString()}`);
   }
 
@@ -96,42 +97,58 @@ export default function Home() {
       {/* HERO */}
       <section className="relative overflow-hidden">
         <div
-          className="relative w-full sm:h-[calc(100svh-72px)]"
+          className="
+            relative w-full
+            h-[calc(100svh-56px)]
+            sm:h-[calc(100svh-72px)]
+          "
           style={{
-            minHeight: isMobile ? undefined : "640px",
-            maxHeight: isMobile ? undefined : "760px",
-            backgroundImage: isMobile
-              ? "url('/images/Gato_e_cachorro_Home_9x16.png')"
-              : "url('/images/Gato_e_cachorro_Home.png')",
+            // ✅ MOBILE: fica com cara 9x16 (alto o suficiente) sem mexer no web
+            minHeight: isMobile ? "calc(100svh - 56px)" : "640px",
+            maxHeight: isMobile ? "unset" : "760px",
+            backgroundImage: `url('${heroBg}')`,
             backgroundSize: "cover",
             backgroundPosition: "center",
             backgroundRepeat: "no-repeat",
           }}
         >
-          {/* ✅ MOBILE: trava área principal em 9:16 */}
-          <div className="sm:hidden w-full aspect-[9/16]" />
-
-          {/* Overlay */}
+          {/* Overlay p/ legibilidade */}
           <div className="absolute inset-0 bg-black/30" />
 
           <div className="absolute inset-0">
             <div className="relative w-full h-full max-w-6xl mx-auto px-4 sm:px-6 text-center text-white">
-              {/* ✅ MOBILE: título menor + mais pra cima (2 linhas) */}
-              <div className="sm:hidden pt-[64px]">
+              {/* ✅ MOBILE: conteúdo mais pra cima e mais organizado */}
+              <div className="pt-4 sm:pt-3">
                 <h1
-                  className="font-extrabold text-white text-[28px] leading-[1.03]"
+                  className="
+                    font-bold text-white
+                    text-[34px] leading-[1.08] tracking-tight
+                    sm:text-5xl sm:leading-tight
+                    relative
+                    top-0 sm:top-5
+                  "
                   style={{ textShadow: "2px 2px 10px rgba(0,0,0,0.55)" }}
                 >
-                  {/* max-w menor força 2 linhas */}
-                  <span className="block max-w-[16.8rem] mx-auto">
-                    Encontre cuidadores com carinho, segurança e{" "}
+                  <span className="block mx-auto max-w-[22rem] sm:max-w-none">
+                    Encontre cuidadores com{" "}
+                    <span className="text-white">carinho</span>,{" "}
+                    <span className="text-white">segurança</span> e{" "}
                     <span className="text-yellow-400 drop-shadow-md">confiança</span>{" "}
                     para o seu pet 🐾
                   </span>
                 </h1>
 
+                {/* ✅ frase curta (mobile) */}
                 <p
-                  className="mt-2 text-white/90 text-sm max-w-[19rem] mx-auto"
+                  className="
+                    mt-3
+                    text-white/90
+                    text-[13px]
+                    leading-snug
+                    sm:hidden
+                    mx-auto
+                    max-w-[22rem]
+                  "
                   style={{ textShadow: "2px 2px 10px rgba(0,0,0,0.45)" }}
                 >
                   Veja os cuidadores disponíveis.{" "}
@@ -141,26 +158,17 @@ export default function Home() {
                 </p>
               </div>
 
-              {/* ✅ WEB: mantém exatamente como estava */}
-              <div className="hidden sm:block pt-3">
-                <h1
-                  className="font-bold text-white text-3xl leading-tight sm:text-5xl"
-                  style={{ textShadow: "2px 2px 10px rgba(0,0,0,0.55)" }}
-                >
-                  <span className="block max-w-[26rem] mx-auto sm:max-w-none">
-                    Encontre cuidadores com{" "}
-                    <span className="text-white">carinho</span>,{" "}
-                    <span className="text-white">segurança</span> e{" "}
-                    <span className="text-yellow-400 drop-shadow-md">confiança</span>{" "}
-                    para o seu pet 🐾
-                  </span>
-                </h1>
-              </div>
-
-              {/* ✅ DESKTOP: idêntico ao seu */}
-              <div className="hidden sm:block absolute inset-x-6 bottom-3">
+              {/* BLOCO INFERIOR */}
+              <div
+                className="
+                  absolute
+                  inset-x-4 sm:inset-x-6
+                  bottom-5 sm:bottom-3
+                "
+              >
+                {/* Texto (web) mantém como estava */}
                 <p
-                  className="mb-3 text-white/90 text-sm sm:text-base text-center"
+                  className="hidden sm:block mb-3 text-white/90 text-sm sm:text-base text-center"
                   style={{ textShadow: "2px 2px 10px rgba(0,0,0,0.45)" }}
                 >
                   Busque por bairro/cidade, selecione as datas e o serviço — e já veja os
@@ -169,6 +177,41 @@ export default function Home() {
                     Sem taxas para tutores e cuidadores.
                   </span>
                 </p>
+
+                {/* ✅ MOBILE: botões fora do card, lado a lado e iguais */}
+                <div className="sm:hidden mb-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <Link
+                      to="/sobre#como-funciona"
+                      className="
+                        h-11
+                        inline-flex items-center justify-center
+                        rounded-xl font-semibold text-[13px]
+                        bg-[#FFD700] text-[#5A3A22]
+                        shadow-md hover:brightness-105 transition
+                        focus:outline-none focus:ring-2 focus:ring-white/70
+                      "
+                    >
+                      Conheça
+                    </Link>
+
+                    <Link
+                      to="/register"
+                      className="
+                        h-11
+                        inline-flex items-center justify-center
+                        rounded-xl font-semibold text-[13px]
+                        bg-white/10 hover:bg-white/15
+                        border border-white/25 text-white
+                        shadow-sm transition
+                        focus:outline-none focus:ring-2 focus:ring-white/70
+                        backdrop-blur-sm
+                      "
+                    >
+                      Quero ser cuidador(a)
+                    </Link>
+                  </div>
+                </div>
 
                 <form
                   onSubmit={handleSearchSubmit}
@@ -183,7 +226,8 @@ export default function Home() {
                     text-left
                   "
                 >
-                  <div className="flex items-center justify-between gap-3 mb-3">
+                  {/* header (web mantém) */}
+                  <div className="hidden sm:flex items-center justify-between gap-3 mb-3">
                     <p className="text-white font-semibold">Comece a buscar agora</p>
 
                     <Link
@@ -202,201 +246,54 @@ export default function Home() {
                     </Link>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
-                    <div className="sm:col-span-5 min-w-0">
-                      <label className="block text-[11px] text-white/85 mb-1">
-                        Bairro/Cidade
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="Ex: Savassi, Belo Horizonte…"
-                        value={query}
-                        onChange={(e) => setQuery(e.target.value)}
-                        className="
-                          w-full border border-white/25 bg-white/90
-                          rounded-lg px-3 py-2 text-[#5A3A22]
-                          focus:outline-none focus:ring-2 focus:ring-white/70
-                        "
-                      />
-                    </div>
+                  {/* ✅ MOBILE: versão “sanduíche” (compacta) */}
+                  <div className="sm:hidden">
+                    <p className="text-white font-semibold text-[18px] mb-3">
+                      Buscar cuidador
+                    </p>
 
-                    <div className="sm:col-span-2 min-w-0">
-                      <label className="block text-[11px] text-white/85 mb-1">Início</label>
-                      <input
-                        type="date"
-                        value={startDateKey}
-                        onChange={(e) => setStartDateKey(e.target.value)}
-                        className="
-                          w-full border border-white/25 bg-white/90
-                          rounded-lg px-3 py-2 text-[#5A3A22]
-                          focus:outline-none focus:ring-2 focus:ring-white/70
-                        "
-                      />
-                    </div>
-
-                    <div className="sm:col-span-2 min-w-0">
-                      <label className="block text-[11px] text-white/85 mb-1">Fim</label>
-                      <input
-                        type="date"
-                        value={endDateKey}
-                        onChange={(e) => setEndDateKey(e.target.value)}
-                        className="
-                          w-full border border-white/25 bg-white/90
-                          rounded-lg px-3 py-2 text-[#5A3A22]
-                          focus:outline-none focus:ring-2 focus:ring-white/70
-                        "
-                      />
-                    </div>
-
-                    <div className="sm:col-span-2 min-w-0">
-                      <label className="block text-[11px] text-white/85 mb-1">Serviço</label>
-                      <select
-                        value={svc}
-                        onChange={(e) => setSvc(e.target.value)}
-                        className="
-                          w-full border border-white/25 bg-white/90
-                          rounded-lg px-3 py-2 text-[#5A3A22]
-                          focus:outline-none focus:ring-2 focus:ring-white/70
-                        "
-                      >
-                        <option value="todos">Todos</option>
-                        <option value="hospedagem">Hospedagem</option>
-                        <option value="creche">Creche</option>
-                        <option value="petSitter">Pet Sitter</option>
-                        <option value="passeios">Passeios</option>
-                      </select>
-                    </div>
-
-                    <div className="sm:col-span-1 flex items-end min-w-0">
-                      <button
-                        type="submit"
-                        disabled={!canSubmit}
-                        className="
-                          w-full
-                          rounded-lg font-semibold shadow-lg transition
-                          px-4 py-2
-                          bg-[#95301F] hover:brightness-110 text-white
-                          disabled:opacity-60 disabled:cursor-not-allowed
-                          focus:outline-none focus:ring-2 focus:ring-white/70
-                        "
-                      >
-                        Buscar
-                      </button>
-                    </div>
-                  </div>
-
-                  <p className="mt-2 text-[11px] text-white/80">
-                    Dica: você pode preencher só “Bairro/Cidade” e buscar mesmo sem datas.
-                  </p>
-
-                  <div className="mt-3 flex justify-center">
-                    <Link
-                      to="/register"
-                      className="
-                        inline-flex items-center justify-center
-                        px-4 py-2 rounded-xl font-semibold text-sm
-                        bg-white/10 hover:bg-white/15
-                        border border-white/25 text-white
-                        shadow-sm transition
-                        focus:outline-none focus:ring-2 focus:ring-white/70
-                        backdrop-blur-sm
-                      "
-                    >
-                      Quero me cadastrar como cuidador(a)
-                    </Link>
-                  </div>
-                </form>
-              </div>
-
-              {/* ✅ MOBILE: botão “Conheça” fora do card + card subindo */}
-              <div className="sm:hidden absolute left-4 right-4 bottom-7">
-                {/* botão discreto FORA do card */}
-                <div className="mb-2 flex justify-center">
-                  <Link
-                    to="/sobre#como-funciona"
-                    className="
-                      inline-flex items-center justify-center
-                      px-4 py-2 rounded-xl font-semibold text-sm
-                      bg-[#FFD700]/90 text-[#5A3A22]
-                      shadow-sm hover:brightness-105 transition
-                      focus:outline-none focus:ring-2 focus:ring-white/70
-                    "
-                  >
-                    Conheça a PeloCaramelo
-                  </Link>
-                </div>
-
-                <form
-                  onSubmit={handleSearchSubmit}
-                  className="
-                    rounded-2xl
-                    bg-white/20
-                    backdrop-blur-md
-                    border border-white/25
-                    shadow-lg
-                    text-left
-                    overflow-hidden
-                  "
-                >
-                  <div className="p-3">
-                    <p className="text-white font-semibold mb-2">Buscar cuidador</p>
-
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        placeholder="Bairro/Cidade..."
-                        value={query}
-                        onChange={(e) => setQuery(e.target.value)}
-                        className="
-                          flex-1 min-w-0
-                          border border-white/25 bg-white/90
-                          rounded-xl px-3 py-2 text-[#5A3A22]
-                          focus:outline-none focus:ring-2 focus:ring-white/70
-                        "
-                      />
+                    <div className="flex gap-3">
+                      <div className="flex-1 min-w-0">
+                        <input
+                          type="text"
+                          placeholder="Bairro/Cidade..."
+                          value={query}
+                          onChange={(e) => setQuery(e.target.value)}
+                          className="
+                            w-full border border-white/25 bg-white/90
+                            rounded-lg px-3 py-3 text-[#5A3A22]
+                            focus:outline-none focus:ring-2 focus:ring-white/70
+                          "
+                        />
+                      </div>
 
                       <button
                         type="button"
                         onClick={() => setMobileFiltersOpen((v) => !v)}
                         className="
                           shrink-0
-                          px-3 py-2 rounded-xl font-semibold
+                          px-4
+                          rounded-lg
+                          font-semibold
                           bg-white/10 hover:bg-white/15
                           border border-white/25 text-white
-                          transition
+                          shadow-sm transition
                           focus:outline-none focus:ring-2 focus:ring-white/70
+                          backdrop-blur-sm
                         "
-                        aria-expanded={mobileFiltersOpen ? "true" : "false"}
+                        aria-expanded={mobileFiltersOpen}
+                        aria-controls="mobile-filters"
                       >
-                        {mobileFiltersOpen ? "Fechar" : "Filtros"}
+                        Filtros
                       </button>
                     </div>
 
-                    <button
-                      type="submit"
-                      disabled={!canSubmit}
-                      className="
-                        mt-2
-                        w-full
-                        rounded-xl font-semibold shadow-lg transition
-                        px-4 py-3
-                        bg-[#95301F] hover:brightness-110 text-white
-                        disabled:opacity-60 disabled:cursor-not-allowed
-                        focus:outline-none focus:ring-2 focus:ring-white/70
-                      "
+                    <div
+                      id="mobile-filters"
+                      className={`${mobileFiltersOpen ? "block" : "hidden"} mt-3`}
                     >
-                      Buscar
-                    </button>
-
-                    <p className="mt-2 text-[11px] text-white/80">
-                      Dica: dá pra buscar só com “Bairro/Cidade”.
-                    </p>
-                  </div>
-
-                  {mobileFiltersOpen && (
-                    <div className="px-3 pb-3">
-                      <div className="grid grid-cols-1 gap-2">
-                        <div className="min-w-0">
+                      <div className="grid grid-cols-1 gap-3">
+                        <div>
                           <label className="block text-[11px] text-white/85 mb-1">
                             Início
                           </label>
@@ -406,27 +303,29 @@ export default function Home() {
                             onChange={(e) => setStartDateKey(e.target.value)}
                             className="
                               w-full border border-white/25 bg-white/90
-                              rounded-xl px-3 py-2 text-[#5A3A22]
+                              rounded-lg px-3 py-3 text-[#5A3A22]
                               focus:outline-none focus:ring-2 focus:ring-white/70
                             "
                           />
                         </div>
 
-                        <div className="min-w-0">
-                          <label className="block text-[11px] text-white/85 mb-1">Fim</label>
+                        <div>
+                          <label className="block text-[11px] text-white/85 mb-1">
+                            Fim
+                          </label>
                           <input
                             type="date"
                             value={endDateKey}
                             onChange={(e) => setEndDateKey(e.target.value)}
                             className="
                               w-full border border-white/25 bg-white/90
-                              rounded-xl px-3 py-2 text-[#5A3A22]
+                              rounded-lg px-3 py-3 text-[#5A3A3A22]
                               focus:outline-none focus:ring-2 focus:ring-white/70
                             "
                           />
                         </div>
 
-                        <div className="min-w-0">
+                        <div>
                           <label className="block text-[11px] text-white/85 mb-1">
                             Serviço
                           </label>
@@ -435,7 +334,7 @@ export default function Home() {
                             onChange={(e) => setSvc(e.target.value)}
                             className="
                               w-full border border-white/25 bg-white/90
-                              rounded-xl px-3 py-2 text-[#5A3A22]
+                              rounded-lg px-3 py-3 text-[#5A3A22]
                               focus:outline-none focus:ring-2 focus:ring-white/70
                             "
                           >
@@ -447,29 +346,144 @@ export default function Home() {
                           </select>
                         </div>
                       </div>
+                    </div>
 
-                      <div className="mt-3">
-                        <Link
-                          to="/register"
+                    <button
+                      type="submit"
+                      disabled={!canSubmit}
+                      className="
+                        mt-3
+                        w-full
+                        rounded-lg font-semibold shadow-lg transition
+                        px-4 py-3
+                        bg-[#95301F] hover:brightness-110 text-white
+                        disabled:opacity-60 disabled:cursor-not-allowed
+                        focus:outline-none focus:ring-2 focus:ring-white/70
+                      "
+                    >
+                      Buscar
+                    </button>
+
+                    <p className="mt-2 text-[12px] text-white/85">
+                      Dica: dá pra buscar só com “Bairro/Cidade”.
+                    </p>
+                  </div>
+
+                  {/* ✅ WEB/TABLET: mantém exatamente o layout antigo */}
+                  <div className="hidden sm:block">
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                      <div className="sm:col-span-5 min-w-0">
+                        <label className="block text-[11px] text-white/85 mb-1">
+                          Bairro/Cidade
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Ex: Savassi, Belo Horizonte…"
+                          value={query}
+                          onChange={(e) => setQuery(e.target.value)}
                           className="
-                            inline-flex items-center justify-center
-                            w-full
-                            px-4 py-3 rounded-xl font-semibold text-sm
-                            bg-white/10 hover:bg-white/15
-                            border border-white/25 text-white
-                            shadow-sm transition
+                            w-full border border-white/25 bg-white/90
+                            rounded-lg px-3 py-2 text-[#5A3A22]
                             focus:outline-none focus:ring-2 focus:ring-white/70
-                            backdrop-blur-sm
+                          "
+                        />
+                      </div>
+
+                      <div className="sm:col-span-2 min-w-0">
+                        <label className="block text-[11px] text-white/85 mb-1">
+                          Início
+                        </label>
+                        <input
+                          type="date"
+                          value={startDateKey}
+                          onChange={(e) => setStartDateKey(e.target.value)}
+                          className="
+                            w-full border border-white/25 bg-white/90
+                            rounded-lg px-3 py-2 text-[#5A3A22]
+                            focus:outline-none focus:ring-2 focus:ring-white/70
+                          "
+                        />
+                      </div>
+
+                      <div className="sm:col-span-2 min-w-0">
+                        <label className="block text-[11px] text-white/85 mb-1">
+                          Fim
+                        </label>
+                        <input
+                          type="date"
+                          value={endDateKey}
+                          onChange={(e) => setEndDateKey(e.target.value)}
+                          className="
+                            w-full border border-white/25 bg-white/90
+                            rounded-lg px-3 py-2 text-[#5A3A22]
+                            focus:outline-none focus:ring-2 focus:ring-white/70
+                          "
+                        />
+                      </div>
+
+                      <div className="sm:col-span-2 min-w-0">
+                        <label className="block text-[11px] text-white/85 mb-1">
+                          Serviço
+                        </label>
+                        <select
+                          value={svc}
+                          onChange={(e) => setSvc(e.target.value)}
+                          className="
+                            w-full border border-white/25 bg-white/90
+                            rounded-lg px-3 py-2 text-[#5A3A22]
+                            focus:outline-none focus:ring-2 focus:ring-white/70
                           "
                         >
-                          Quero me cadastrar como cuidador(a)
-                        </Link>
+                          <option value="todos">Todos</option>
+                          <option value="hospedagem">Hospedagem</option>
+                          <option value="creche">Creche</option>
+                          <option value="petSitter">Pet Sitter</option>
+                          <option value="passeios">Passeios</option>
+                        </select>
+                      </div>
+
+                      <div className="sm:col-span-1 flex items-end min-w-0">
+                        <button
+                          type="submit"
+                          disabled={!canSubmit}
+                          className="
+                            w-full
+                            rounded-lg font-semibold shadow-lg transition
+                            px-4 py-2
+                            bg-[#95301F] hover:brightness-110 text-white
+                            disabled:opacity-60 disabled:cursor-not-allowed
+                            focus:outline-none focus:ring-2 focus:ring-white/70
+                          "
+                        >
+                          Buscar
+                        </button>
                       </div>
                     </div>
-                  )}
+
+                    <p className="mt-2 text-[11px] text-white/80">
+                      Dica: você pode preencher só “Bairro/Cidade” e buscar mesmo sem datas.
+                    </p>
+
+                    <div className="mt-3 flex justify-center">
+                      <Link
+                        to="/register"
+                        className="
+                          inline-flex items-center justify-center
+                          px-4 py-2 rounded-xl font-semibold text-sm
+                          bg-white/10 hover:bg-white/15
+                          border border-white/25 text-white
+                          shadow-sm transition
+                          focus:outline-none focus:ring-2 focus:ring-white/70
+                          backdrop-blur-sm
+                        "
+                      >
+                        Quero me cadastrar como cuidador(a)
+                      </Link>
+                    </div>
+                  </div>
                 </form>
               </div>
-              {/* fim mobile overlay */}
+              {/* fim bloco inferior */}
             </div>
           </div>
         </div>
@@ -537,6 +551,7 @@ export default function Home() {
                     </div>
                   </div>
 
+                  {/* imagem gato */}
                   <div className="md:pt-6">
                     <div className="rounded-2xl overflow-hidden shadow-md border border-[#5A3A22]/10 mt-4 md:mt-0">
                       <LazyImage
@@ -550,6 +565,7 @@ export default function Home() {
 
                 {/* Coluna direita */}
                 <div className="flex flex-col gap-6 md:gap-0 md:justify-between min-w-0">
+                  {/* imagem cachorro */}
                   <div>
                     <div className="rounded-2xl overflow-hidden shadow-md border border-[#5A3A22]/10 mb-4 md:mb-0">
                       <LazyImage
@@ -560,8 +576,10 @@ export default function Home() {
                     </div>
                   </div>
 
+                  {/* Card interno (borda amarela) */}
                   <div className="relative md:pt-6">
                     <div className="w-full bg-white rounded-2xl shadow-md p-6 border border-[#5A3A22]/10 border-r-4 border-r-[#FFD700]">
+                      {/* DESKTOP/TABLET */}
                       <div className="hidden sm:grid grid-cols-1 sm:grid-cols-2 gap-4">
                         {behaviorCards.map((x) => (
                           <div
@@ -574,29 +592,41 @@ export default function Home() {
                         ))}
                       </div>
 
-                      {/* ✅ MOBILE: evita setas em cima do texto */}
-                      <div className="sm:hidden overflow-hidden">
-                        <Carousel
-                          className="mt-1"
-                          itemClassName="w-full"
-                          // dá "respiro" pros botões laterais não cobrirem o conteúdo
-                          viewportClassName="px-12"
-                          arrows
-                          dots
+                      {/* ✅ MOBILE: sem setas, sem “pedaços do lado”, só swipe */}
+                      <div className="sm:hidden">
+                        <div
+                          className="
+                            w-full
+                            overflow-x-auto
+                            flex
+                            snap-x snap-mandatory
+                            scroll-smooth
+                            gap-0
+                          "
+                          style={{ WebkitOverflowScrolling: "touch" }}
+                          aria-label="Conteúdos de comportamento (deslize)"
                         >
                           {behaviorCards.map((x) => (
                             <div
                               key={x.t}
-                              className="rounded-xl bg-[#FFF8F0] border border-[#5A3A22]/10 p-4"
+                              className="
+                                w-full
+                                shrink-0
+                                snap-center
+                              "
                             >
-                              <p className="font-bold text-[#5A3A22]">{x.t}</p>
-                              <p className="text-sm text-[#5A3A22]/80 mt-1">{x.d}</p>
+                              <div className="rounded-xl bg-[#FFF8F0] border border-[#5A3A22]/10 p-5">
+                                <p className="font-bold text-[#5A3A22]">{x.t}</p>
+                                <p className="text-sm text-[#5A3A22]/80 mt-2 leading-relaxed">
+                                  {x.d}
+                                </p>
+                              </div>
                             </div>
                           ))}
-                        </Carousel>
+                        </div>
 
-                        <p className="mt-1 text-[11px] text-[#5A3A22]/70">
-                          Deslize para o lado ou use as setas.
+                        <p className="mt-3 text-[11px] text-[#5A3A22]/70 text-center">
+                          Deslize para o lado para ver os cards →
                         </p>
                       </div>
                     </div>
