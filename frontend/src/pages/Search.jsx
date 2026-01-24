@@ -277,6 +277,9 @@ export default function Search() {
   const [svc, setSvc] = useState("todos");
   const [sort, setSort] = useState("preco");
 
+  // ✅ MOBILE: sanduíche dos filtros (somente mobile)
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+
   // ✅ mostra “Resultados para…” quando vier por URL
   const [showResultsHint, setShowResultsHint] = useState(false);
 
@@ -753,10 +756,12 @@ export default function Search() {
               </p>
             </div>
 
+            {/* ✅ WEB: mantém botão | ✅ MOBILE: remove (hidden sm:flex) */}
             <Link
               to="/sobre#como-funciona"
               className="
-                inline-flex items-center justify-center
+                hidden sm:inline-flex
+                items-center justify-center
                 px-4 py-2 rounded-xl font-semibold
                 bg-[#FFD700] text-[#5A3A22]
                 shadow-md hover:brightness-105 transition
@@ -768,7 +773,8 @@ export default function Search() {
             </Link>
           </div>
 
-          <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {/* ✅ WEB: mantém cards | ✅ MOBILE: remove */}
+          <div className="hidden sm:grid mt-4 grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="rounded-xl bg-white border border-[#5A3A22]/10 p-3">
               <p className="font-bold text-[#5A3A22]">✅ Sem taxas</p>
               <p className="text-sm text-[#5A3A22]/75 mt-1">
@@ -778,9 +784,7 @@ export default function Search() {
 
             <div className="rounded-xl bg-white border border-[#5A3A22]/10 p-3">
               <p className="font-bold text-[#5A3A22]">🔒 Contato protegido</p>
-              <p className="text-sm text-[#5A3A22]/75 mt-1">
-                Telefone sempre mascarado.
-              </p>
+              <p className="text-sm text-[#5A3A22]/75 mt-1">Telefone sempre mascarado.</p>
             </div>
 
             <div className="rounded-xl bg-white border border-[#5A3A22]/10 p-3">
@@ -810,8 +814,8 @@ export default function Search() {
             </p>
           </div>
 
-          {/* Ordenação visível */}
-          <div className="flex items-center gap-2">
+          {/* ✅ WEB: mantém ordenação aqui | ✅ MOBILE: vai pro sanduíche */}
+          <div className="hidden sm:flex items-center gap-2">
             <span className="text-sm text-[#5A3A22]/70">Ordenar por:</span>
             <select
               value={sort}
@@ -825,8 +829,10 @@ export default function Search() {
           </div>
         </div>
 
-        {/* filtros */}
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-2 mb-4">
+        {/* =========================
+            ✅ FILTROS (WEB)
+            ========================= */}
+        <div className="hidden sm:grid grid-cols-1 md:grid-cols-12 gap-2 mb-4">
           <input
             type="text"
             placeholder="Bairro/Cidade…"
@@ -861,7 +867,6 @@ export default function Search() {
             <option value="passeios">Passeios</option>
           </select>
 
-          {/* botão “limpar” */}
           <button
             type="button"
             onClick={clearAllFilters}
@@ -874,6 +879,102 @@ export default function Search() {
           >
             Limpar filtros
           </button>
+        </div>
+
+        {/* =========================
+            ✅ FILTROS (MOBILE - sanduíche)
+            ========================= */}
+        <div className="sm:hidden mb-4">
+          <div className="rounded-2xl border border-[#5A3A22]/10 bg-[#FFF8F0] p-3 shadow-sm">
+            <div className="flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => setMobileFiltersOpen((v) => !v)}
+                className="
+                  inline-flex items-center gap-2
+                  px-4 py-2 rounded-xl font-semibold
+                  bg-white border border-[#5A3A22]/15
+                  text-[#5A3A22]
+                  shadow-sm
+                  active:scale-[0.99]
+                "
+                aria-expanded={mobileFiltersOpen ? "true" : "false"}
+                aria-controls="mobile-filters-panel"
+              >
+                <span className="text-lg leading-none">☰</span>
+                <span>Filtros</span>
+                <span className="text-[#5A3A22]/60">
+                  {mobileFiltersOpen ? "▲" : "▼"}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={clearAllFilters}
+                className="
+                  px-4 py-2 rounded-xl font-semibold
+                  bg-[#5A3A22]/10 text-[#5A3A22]
+                  hover:bg-[#5A3A22]/15 transition
+                "
+              >
+                Limpar
+              </button>
+            </div>
+
+            {mobileFiltersOpen && (
+              <div id="mobile-filters-panel" className="mt-3 grid grid-cols-1 gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-[#5A3A22]/70 whitespace-nowrap">
+                    Ordenar:
+                  </span>
+                  <select
+                    value={sort}
+                    onChange={(e) => setSort(e.target.value)}
+                    className="flex-1 border rounded-lg px-3 py-2 bg-white"
+                    aria-label="Ordenar por"
+                  >
+                    <option value="preco">Preço</option>
+                    <option value="nome">Nome</option>
+                  </select>
+                </div>
+
+                <input
+                  type="text"
+                  placeholder="Bairro/Cidade…"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  className="border rounded-lg px-3 py-2 bg-white"
+                />
+
+                <div className="grid grid-cols-1 gap-2">
+                  <input
+                    type="date"
+                    value={startDateKey}
+                    onChange={(e) => setStartDateKey(e.target.value)}
+                    className="border rounded-lg px-3 py-2 bg-white"
+                  />
+                  <input
+                    type="date"
+                    value={endDateKey}
+                    onChange={(e) => setEndDateKey(e.target.value)}
+                    className="border rounded-lg px-3 py-2 bg-white"
+                  />
+                </div>
+
+                <select
+                  value={svc}
+                  onChange={(e) => setSvc(e.target.value)}
+                  className="border rounded-lg px-3 py-2 bg-white"
+                >
+                  <option value="todos">Todos</option>
+                  <option value="hospedagem">Hospedagem</option>
+                  <option value="creche">Creche</option>
+                  <option value="petSitter">Pet Sitter</option>
+                  <option value="passeios">Passeios</option>
+                </select>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* pílulas de filtros ativos */}
