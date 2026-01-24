@@ -1,20 +1,11 @@
 // src/pages/Sobre.jsx
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 
 function prefersReducedMotion() {
   try {
     return window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
-  } catch {
-    return false;
-  }
-}
-
-// ✅ MOBILE detect (não afeta web)
-function isMobile() {
-  try {
-    return window.matchMedia?.("(max-width: 639px)")?.matches === true; // < sm
   } catch {
     return false;
   }
@@ -34,9 +25,7 @@ function getNavbarOffsetPx() {
   return Math.round(safe + 115);
 }
 
-// ✅ MANTIDO como estava “na prática” no seu código atual:
-// (o retorno efetivo era safe + 215)
-// Isso garante que o WEB não muda.
+// ✅ NOVO: offset só da navbar (pra evitar descer demais quando vem com hash)
 function getNavbarOnlyOffsetPx() {
   const nav =
     document.querySelector("header") ||
@@ -46,8 +35,10 @@ function getNavbarOnlyOffsetPx() {
   const h = nav?.getBoundingClientRect?.().height;
   const safe = Number.isFinite(h) && h > 40 ? h : 90;
 
-  // apenas navbar + uma folga mínima (no seu código anterior estava 215)
+  // apenas navbar + uma folga mínima
   return Math.round(safe + 215);
+  // apenas navbar + folga mínima (pra não ficar colado e compensar scroll-mt/padding)
+  return Math.round(safe + 12);
 }
 
 // ✅ Alterado: agora dá pra escolher o tipo de offset
@@ -66,8 +57,49 @@ function scrollToId(id, mode = "full") {
   return true;
 }
 
+/**
+ * ✅ MOBILE ONLY: scroll do FAQ com offset menor (pra alinhar no título)
+ * - NÃO altera nada do web, porque só é chamado quando isMobile === true.
+ */
+function scrollToFaqMobile() {
+  const el = document.getElementById("faq");
+  if (!el) return false;
+
+  const nav =
+    document.querySelector("header") ||
+    document.querySelector("nav") ||
+    document.getElementById("navbar");
+
+  const h = nav?.getBoundingClientRect?.().height;
+  const safe = Number.isFinite(h) && h > 40 ? h : 90;
+
+  // ✅ ajuste fino do MOBILE:
+  // menor que o "full" (safe + 115), pra não parar acima do título
+  const offset = Math.round(safe + 18);
+
+  const y = el.getBoundingClientRect().top + window.scrollY - offset;
+
+  window.scrollTo({
+    top: Math.max(0, y),
+    behavior: prefersReducedMotion() ? "auto" : "smooth",
+  });
+
+  return true;
+}
+
 export default function Sobre() {
   const location = useLocation();
+
+  // ✅ NOVO (sem mexer no web): detecta mobile
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 639px)"); // < sm
+    const apply = () => setIsMobile(!!mq.matches);
+    apply();
+    mq.addEventListener?.("change", apply);
+    return () => mq.removeEventListener?.("change", apply);
+  }, []);
 
   // FAQ (visível) + Schema.org (SEO)
   const faqs = useMemo(
@@ -109,9 +141,9 @@ export default function Sobre() {
 
   // ✅ Scroll suave ao acessar /sobre
   // - com hash (#faq / #como-funciona): rola para a âncora
-  //   ✅ MOBILE: #como-funciona -> vai pro TOPO (pra mostrar o título "Sobre a PeloCaramelo")
-  //   ✅ WEB: mantém exatamente como já estava (navbarOnly com offset antigo)
-  // - sem hash: mantém o comportamento atual
+  //   ✅ #como-funciona -> mantém seu comportamento atual
+  //   ✅ #faq -> AJUSTA SOMENTE NO MOBILE (web fica intacto)
+  // - sem hash: mantém o comportamento atual (offset completo)
   useEffect(() => {
     if (location.pathname !== "/sobre") return;
 
@@ -125,18 +157,16 @@ export default function Sobre() {
       tries += 1;
 
       if (targetId) {
-        // ✅ ALTERAÇÃO SOMENTE NO MOBILE:
-        // quando vem da Home em /sobre#como-funciona, queremos ver o título no topo.
-        if (isMobile() && targetId === "como-funciona") {
-          window.scrollTo({
-            top: 0,
-            behavior: prefersReducedMotion() ? "auto" : "smooth",
-          });
-          if (tries >= 2) return;
+        // ✅ SOMENTE MOBILE: se for FAQ, usa scroll específico (não mexe no web)
+        if (isMobile && targetId === "faq") {
+          const ok = scrollToFaqMobile();
+          if (ok && tries >= 3) return;
         } else {
-          // ✅ WEB permanece igual ao seu atual
+          // ✅ WEB/TABLET e qualquer outra âncora: mantém exatamente como estava
           const mode = targetId === "como-funciona" ? "navbarOnly" : "full";
           const ok = scrollToId(targetId, mode);
+
+          // se achou e rolou, ainda tentamos mais 1-2 vezes pra “fixar” caso layout mude
           if (ok && tries >= 3) return;
         }
       } else {
@@ -160,7 +190,7 @@ export default function Sobre() {
       clearTimeout(t);
       if (raf) cancelAnimationFrame(raf);
     };
-  }, [location.pathname, location.hash]);
+  }, [location.pathname, location.hash, isMobile]);
 
   // Animação padrão para os cards
   const cardMotion = {
@@ -175,7 +205,6 @@ export default function Sobre() {
       {/* ✅ Schema.org FAQ (JSON-LD) */}
       <script
         type="application/ld+json"
-        include=""
         dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
       />
 
