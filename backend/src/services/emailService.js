@@ -1,33 +1,57 @@
 // backend/src/services/emailService.js
+
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const EMAIL_FROM = process.env.EMAIL_FROM || "PeloCaramelo <onboarding@resend.dev>";
-const REQUEST_TIMEOUT_MS = Number(process.env.EMAIL_HTTP_TIMEOUT_MS || 10000);
+const EMAIL_REPLY_TO = process.env.EMAIL_REPLY_TO || null;
+const REQUEST_TIMEOUT_MS = Number(process.env.EMAIL_HTTP_TIMEOUT_MS || 15000);
+
+// Node 18+ tem fetch. Se for <18, avisa claramente.
+const hasFetch = typeof fetch === "function";
 
 if (!RESEND_API_KEY) {
   console.warn("[emailService] RESEND_API_KEY ausente. Envio de e-mails vai falhar.");
 }
+if (!hasFetch) {
+  console.warn(
+    "[emailService] fetch() não disponível neste Node. Use Node 18+ ou instale/importe 'node-fetch'."
+  );
+}
 
-async function sendEmail({ to, subject, html }) {
-  if (!to || !subject || !html) {
-    throw new Error("sendEmail: parâmetros obrigatórios ausentes.");
-  }
+function normalizeTo(to) {
+  if (Array.isArray(to)) return to.map((v) => String(v).trim()).filter(Boolean);
+  return [String(to).trim()].filter(Boolean);
+}
+
+async function sendEmail({ to, subject, html, text, replyTo }) {
+  const toList = normalizeTo(to);
+
+  if (!toList.length) throw new Error("sendEmail: destinatário (to) ausente.");
+  if (!subject) throw new Error("sendEmail: subject ausente.");
+  if (!html && !text) throw new Error("sendEmail: precisa de html ou text.");
+
+  if (!RESEND_API_KEY) throw new Error("RESEND_API_KEY ausente no ambiente.");
+  if (!hasFetch) throw new Error("fetch() não disponível. Rode com Node 18+.");
 
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
+    const payload = {
+      from: String(EMAIL_FROM),
+      to: toList,
+      subject: String(subject),
+      ...(html ? { html: String(html) } : {}),
+      ...(text ? { text: String(text) } : {}),
+      ...(replyTo || EMAIL_REPLY_TO ? { reply_to: String(replyTo || EMAIL_REPLY_TO) } : {}),
+    };
+
     const resp = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${RESEND_API_KEY}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        from: EMAIL_FROM,
-        to: [String(to)],
-        subject: String(subject),
-        html: String(html),
-      }),
+      body: JSON.stringify(payload),
       signal: controller.signal,
     });
 
@@ -38,7 +62,7 @@ async function sendEmail({ to, subject, html }) {
         data?.message ||
         data?.error ||
         `Falha Resend: HTTP ${resp.status} ${resp.statusText}`;
-      console.error("[emailService] Resend error:", msg, data || "");
+      console.error("[emailService] Resend error:", msg);
       throw new Error(msg);
     }
 
@@ -53,6 +77,4 @@ async function sendEmail({ to, subject, html }) {
   }
 }
 
-module.exports = {
-  sendEmail,
-};
+module.exports = { sendEmail };

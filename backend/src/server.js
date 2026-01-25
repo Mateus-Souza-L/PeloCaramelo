@@ -76,6 +76,52 @@ app.get("/health/db", async (req, res) => {
 app.use(morgan("dev"));
 
 /* ===========================================================
+   ✅ Debug: Email (Resend) - remover depois
+   =========================================================== */
+const { sendEmail } = require("./services/emailService");
+
+// só pra confirmar se o backend leu a variável do .env (sem vazar a chave inteira)
+app.get("/debug/email-env", (req, res) => {
+  const key = process.env.RESEND_API_KEY || "";
+  return res.json({
+    ok: true,
+    hasResendKey: Boolean(key),
+    resendKeyPrefix: key ? `${key.slice(0, 8)}...` : null,
+    emailFrom: process.env.EMAIL_FROM || null,
+    nodeEnv: process.env.NODE_ENV || null,
+  });
+});
+
+// dispara um email real pelo Resend (GET simples só pra testar)
+app.get("/debug/test-email", async (req, res) => {
+  try {
+    const to = String(req.query.to || "").trim();
+    if (!to) {
+      return res.status(400).json({ ok: false, error: "Passe ?to=seuemail@..." });
+    }
+
+    const result = await sendEmail({
+      to,
+      subject: "Teste Resend - PeloCaramelo",
+      html: `
+        <div style="font-family: Arial, sans-serif;">
+          <h2>Teste Resend ✅</h2>
+          <p>Se você recebeu este e-mail, o envio via Resend está funcionando.</p>
+          <p><b>Data:</b> ${new Date().toISOString()}</p>
+        </div>
+      `,
+    });
+
+    return res.json({ ok: true, result });
+  } catch (err) {
+    return res.status(500).json({
+      ok: false,
+      error: err?.message || String(err),
+    });
+  }
+});
+
+/* ===========================================================
    ✅ Rotas
    =========================================================== */
 const authRoutes = require("./routes/authRoutes");

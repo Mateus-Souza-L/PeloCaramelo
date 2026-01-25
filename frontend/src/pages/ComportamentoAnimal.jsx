@@ -7,7 +7,7 @@ import { useToast } from "../components/ToastProvider";
 import { trackEvent } from "../utils/analytics";
 
 const BRAND_UTM = "utm_source=pelocaramelo&utm_medium=cta&utm_campaign=comportamento";
-const WHATSAPP_NUMBER = "5531999999999"; // ✅ troque aqui depois
+const WHATSAPP_NUMBER = "5531994009734"; // ✅ troque aqui depois
 
 function buildWhatsAppLink({ text, content = "hero" }) {
   const base = `https://wa.me/${WHATSAPP_NUMBER}`;
