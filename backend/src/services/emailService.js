@@ -1,8 +1,15 @@
 // backend/src/services/emailService.js
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
-const EMAIL_FROM = process.env.EMAIL_FROM || "PeloCaramelo <no-reply@pelocaramelo.com.br>";
-const EMAIL_REPLY_TO = process.env.EMAIL_REPLY_TO || null;
+
+// Remetente oficial (padrão seguro)
+const EMAIL_FROM =
+  process.env.EMAIL_FROM || "PeloCaramelo <no-reply@pelocaramelo.com.br>";
+
+// Reply-To opcional (boa prática para no-reply)
+const EMAIL_REPLY_TO =
+  process.env.EMAIL_REPLY_TO || "contato@pelocaramelo.com.br";
+
 const REQUEST_TIMEOUT_MS = Number(process.env.EMAIL_HTTP_TIMEOUT_MS || 15000);
 
 // Node 18+ tem fetch. Se for <18, avisa claramente.
@@ -18,7 +25,9 @@ if (!hasFetch) {
 }
 
 function normalizeTo(to) {
-  if (Array.isArray(to)) return to.map((v) => String(v).trim()).filter(Boolean);
+  if (Array.isArray(to)) {
+    return to.map((v) => String(v).trim()).filter(Boolean);
+  }
   return [String(to).trim()].filter(Boolean);
 }
 
@@ -42,7 +51,9 @@ async function sendEmail({ to, subject, html, text, replyTo }) {
       subject: String(subject),
       ...(html ? { html: String(html) } : {}),
       ...(text ? { text: String(text) } : {}),
-      ...(replyTo || EMAIL_REPLY_TO ? { reply_to: String(replyTo || EMAIL_REPLY_TO) } : {}),
+      {
+        reply_to: String(replyTo || EMAIL_REPLY_TO),
+      },
     };
 
     const resp = await fetch("https://api.resend.com/emails", {
@@ -69,7 +80,9 @@ async function sendEmail({ to, subject, html, text, replyTo }) {
     return data; // { id: ... }
   } catch (err) {
     const isAbort = err?.name === "AbortError";
-    const msg = isAbort ? "Timeout ao chamar Resend API" : (err?.message || String(err));
+    const msg = isAbort
+      ? "Timeout ao chamar Resend API"
+      : err?.message || String(err);
     console.error("[emailService] Erro ao enviar e-mail:", msg);
     throw err;
   } finally {
