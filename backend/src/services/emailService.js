@@ -1,7 +1,7 @@
 // backend/src/services/emailService.js
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
-const EMAIL_FROM = process.env.EMAIL_FROM || "PeloCaramelo <onboarding@resend.dev>";
+const EMAIL_FROM = process.env.EMAIL_FROM || "PeloCaramelo <no-reply@pelocaramelo.com.br>";
 const EMAIL_REPLY_TO = process.env.EMAIL_REPLY_TO || null;
 const REQUEST_TIMEOUT_MS = Number(process.env.EMAIL_HTTP_TIMEOUT_MS || 15000);
 
