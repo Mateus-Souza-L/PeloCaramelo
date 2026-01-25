@@ -2,7 +2,7 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
-const pool = require("../config/db");
+const pool = require("../config/db"); // (mantido, caso você use em outros trechos)
 const { sendEmail } = require("../services/emailService");
 
 const {
@@ -27,9 +27,7 @@ const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-trocar-em-producao";
    ============================================================ */
 
 function generateToken(user) {
-  return jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, {
-    expiresIn: "7d",
-  });
+  return jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: "7d" });
 }
 
 function safeJsonParse(raw) {
@@ -92,6 +90,72 @@ function computeFrontendBase(req) {
   return "";
 }
 
+function escapeHtml(s) {
+  return String(s || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function buildResetEmail({ link, minutes }) {
+  const safeLink = String(link || "");
+  const safeMinutes = Number.isFinite(Number(minutes)) ? Number(minutes) : 60;
+
+  const subject = "Recuperação de senha – PeloCaramelo";
+
+  const text =
+    `Você solicitou a redefinição de senha no PeloCaramelo.\n\n` +
+    `Para criar uma nova senha, acesse o link:\n${safeLink}\n\n` +
+    `Este link expira em aproximadamente ${safeMinutes} minutos.\n\n` +
+    `Se você não solicitou isso, ignore este e-mail.`;
+
+  // HTML simples e confiável (Gmail-friendly)
+  const html = `
+  <div style="font-family: Arial, sans-serif; background:#fff; color:#1f2937; line-height:1.4; padding: 8px 0;">
+    <div style="max-width: 560px; margin: 0 auto; padding: 20px; border:1px solid #e5e7eb; border-radius: 10px;">
+      <h2 style="margin:0 0 12px; font-size:20px;">Recuperação de senha</h2>
+
+      <p style="margin:0 0 12px; font-size:14px;">
+        Recebemos uma solicitação para redefinir a senha da sua conta no <strong>PeloCaramelo</strong>.
+      </p>
+
+      <p style="margin:0 0 16px; font-size:14px;">
+        Clique no botão abaixo para criar uma nova senha (o link expira em aproximadamente <strong>${escapeHtml(
+          String(safeMinutes)
+        )} minutos</strong>).
+      </p>
+
+      <p style="margin:0 0 18px;">
+        <a href="${escapeHtml(safeLink)}"
+           style="display:inline-block; padding:12px 18px; background:#FFD700; color:#5A3A22; text-decoration:none; border-radius:8px; font-weight:700;">
+          Criar nova senha
+        </a>
+      </p>
+
+      <p style="margin:0 0 10px; font-size:12px; color:#6b7280;">
+        Se o botão não funcionar, copie e cole este link no navegador:
+      </p>
+
+      <p style="margin:0 0 18px; font-size:12px; word-break:break-all;">
+        <a href="${escapeHtml(safeLink)}" style="color:#2563eb; text-decoration:underline;">
+          ${escapeHtml(safeLink)}
+        </a>
+      </p>
+
+      <hr style="border:none; border-top:1px solid #e5e7eb; margin: 16px 0;" />
+
+      <p style="margin:0; font-size:12px; color:#6b7280;">
+        Se você não solicitou essa recuperação, pode ignorar este e-mail com segurança.
+      </p>
+    </div>
+  </div>
+  `;
+
+  return { subject, text, html };
+}
+
 /* ============================================================
    REGISTER
    ============================================================ */
@@ -100,9 +164,7 @@ async function register(req, res) {
     const { name, email, password, role = "tutor" } = readBody(req);
 
     if (!name || !email || !password) {
-      return res
-        .status(400)
-        .json({ error: "Nome, e-mail e senha são obrigatórios." });
+      return res.status(400).json({ error: "Nome, e-mail e senha são obrigatórios." });
     }
 
     const normalizedEmail = trimLower(email);
@@ -136,9 +198,7 @@ async function login(req, res) {
     const { email, password } = readBody(req);
 
     if (!email || !password) {
-      return res
-        .status(400)
-        .json({ error: "E-mail e senha são obrigatórios." });
+      return res.status(400).json({ error: "E-mail e senha são obrigatórios." });
     }
 
     const user = await findUserByEmail(trimLower(email));
@@ -201,6 +261,7 @@ async function forgotPassword(req, res) {
 
     if (pickBlockInfo(user).blocked) return res.json(safeResponse);
 
+    // limpeza best-effort
     try {
       await cleanupPasswordResets();
     } catch {
@@ -210,7 +271,8 @@ async function forgotPassword(req, res) {
     const token = crypto.randomBytes(32).toString("hex");
 
     const minutes = Number(process.env.PASSWORD_RESET_EXPIRES_MINUTES || 60);
-    const expiresAt = new Date(Date.now() + minutes * 60 * 1000);
+    const safeMinutes = Number.isFinite(minutes) && minutes > 0 ? minutes : 60;
+    const expiresAt = new Date(Date.now() + safeMinutes * 60 * 1000);
 
     // invalida tokens antigos e cria novo
     await invalidateAllActiveByUserId(user.id);
@@ -218,20 +280,27 @@ async function forgotPassword(req, res) {
 
     const base = computeFrontendBase(req);
 
-    // ✅ ALTERAÇÃO NECESSÁRIA:
     // Em produção, não envie link relativo (quebra no e-mail).
     if (!base) {
       console.warn(
         "[forgotPassword] FRONTEND_URL/origin ausente. Configure FRONTEND_URL no Render. " +
-        "E-mail não será enviado para evitar link quebrado."
+          "E-mail não será enviado para evitar link quebrado."
       );
       return res.json(safeResponse);
     }
 
     const link = `${base}/reset-password?token=${encodeURIComponent(token)}`;
 
+    // monta e-mail (HTML + text)
+    const { subject, text, html } = buildResetEmail({ link, minutes: safeMinutes });
+
     try {
-      await sendEmail({ to: user.email, subject: "Recuperação de senha – PeloCaramelo", html: `...` });
+      await sendEmail({
+        to: user.email,
+        subject,
+        html,
+        text, // fallback opcional (se seu sendEmail suportar)
+      });
     } catch (e) {
       console.error("[forgotPassword] Falha ao enviar email:", e?.message || e);
       // retorna safeResponse mesmo assim (não vaza info)
@@ -256,9 +325,7 @@ async function resetPassword(req, res) {
     const newPassword = String(body?.newPassword || body?.password || "").trim();
 
     if (!token || !newPassword || newPassword.length < 6) {
-      return res.status(400).json({
-        error: "Token inválido ou senha muito curta.",
-      });
+      return res.status(400).json({ error: "Token inválido ou senha muito curta." });
     }
 
     const reset = await findValidPasswordResetByToken(token);
