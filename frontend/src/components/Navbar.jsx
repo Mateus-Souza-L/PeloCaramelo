@@ -1,7 +1,7 @@
 // frontend/src/components/Navbar.jsx
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
-import { Bell, Menu, X } from "lucide-react";
+import { Bell, Menu, X, ChevronDown } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { authRequest } from "../services/api";
 import {
@@ -11,34 +11,63 @@ import {
 } from "../utils/reservationNotifs";
 
 export default function Navbar() {
-  const { user, logout, token } = useAuth();
+  const { user, logout, token, hasCaregiverProfile, activeMode, setMode } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
   const role = String(user?.role || "").toLowerCase().trim();
-
-  const isTutor = role === "tutor";
-  const isCaregiver = role === "caregiver";
   const isAdminLike = role === "admin" || role === "admin_master";
 
-  const canUseBell = isTutor || isCaregiver; // admin não usa contadores
+  // ✅ “mode efetivo” pro usuário comum (pra UI)
+  const effectiveMode = isAdminLike ? "admin" : activeMode || "tutor";
+  const isTutor = effectiveMode === "tutor";
+  const isCaregiver = effectiveMode === "caregiver";
+
+  const canUseBell = !isAdminLike && (isTutor || isCaregiver);
 
   const [chatUnreadIds, setChatUnreadIds] = useState([]);
   const [reservationUnreadCount, setReservationUnreadCount] = useState(0);
 
   // ✅ menu mobile
   const [mobileOpen, setMobileOpen] = useState(false);
+  const closeMobile = () => setMobileOpen(false);
+
+  // ✅ dropdown Painel (desktop)
+  const [panelOpen, setPanelOpen] = useState(false);
+  const panelWrapRef = useRef(null);
 
   const chatUnreadCount = chatUnreadIds.length;
   const totalUnread = chatUnreadCount + reservationUnreadCount;
 
-  const closeMobile = () => setMobileOpen(false);
-
   // Fecha menu ao trocar rota
   useEffect(() => {
     closeMobile();
+    setPanelOpen(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname, location.search]);
+
+  // Fecha dropdown ao clicar fora / ESC
+  useEffect(() => {
+    if (!panelOpen) return;
+
+    const onDoc = (e) => {
+      const el = panelWrapRef.current;
+      if (!el) return;
+      if (el.contains(e.target)) return;
+      setPanelOpen(false);
+    };
+
+    const onKey = (e) => {
+      if (e.key === "Escape") setPanelOpen(false);
+    };
+
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [panelOpen]);
 
   const handleLogout = () => {
     try {
@@ -47,13 +76,13 @@ export default function Navbar() {
       setChatUnreadIds([]);
       setReservationUnreadCount(0);
       closeMobile();
+      setPanelOpen(false);
       navigate("/", { replace: true });
     }
   };
 
   /* ================= CHAT (backend-driven) ================= */
 
-  // ✅ 1 fetch inicial (login/reload) — depois o estado vem via eventos
   const loadUnreadChatFromServer = useCallback(async () => {
     if (!user || !token || isAdminLike) {
       setChatUnreadIds([]);
@@ -62,13 +91,10 @@ export default function Navbar() {
 
     try {
       const data = await authRequest("/chat/unread", token);
-      const ids = Array.isArray(data?.reservationIds)
-        ? data.reservationIds.map(String)
-        : [];
+      const ids = Array.isArray(data?.reservationIds) ? data.reservationIds.map(String) : [];
 
       setChatUnreadIds(ids);
 
-      // mantém compat com o resto do app (Navbar/ChatBox/Dashboard)
       window.dispatchEvent(
         new CustomEvent("chat-unread-changed", {
           detail: { list: ids },
@@ -113,7 +139,7 @@ export default function Navbar() {
         };
       }
 
-      const snapshotKey = `reservationsSnapshot_${role}_${user.id}`;
+      const snapshotKey = `reservationsSnapshot_${effectiveMode}_${user.id}`;
       let prevMap = null;
 
       try {
@@ -138,7 +164,7 @@ export default function Navbar() {
       const prevStatus = (id) => {
         const p = prevEntry(id);
         if (!p) return undefined;
-        if (typeof p === "string") return p; // compat snapshot antigo
+        if (typeof p === "string") return p;
         return p.status;
       };
 
@@ -169,7 +195,7 @@ export default function Navbar() {
         return c ? c.caregiverRating ?? null : null;
       };
 
-      // -------- eventos por ROLE --------
+      // -------- eventos por MODE --------
       if (isCaregiver) {
         for (const r of apiRes) {
           const idStr = String(r.id);
@@ -249,7 +275,7 @@ export default function Navbar() {
         setReservationUnreadCount(0);
       }
     }
-  }, [user, token, isAdminLike, isTutor, isCaregiver, role]);
+  }, [user, token, isAdminLike, isTutor, isCaregiver, effectiveMode]);
 
   /* ================= LISTENERS ================= */
 
@@ -280,7 +306,7 @@ export default function Navbar() {
     };
   }, [user?.id]);
 
-  /* ================= FETCH INIT (SEM polling de chat) ================= */
+  /* ================= FETCH INIT ================= */
 
   useEffect(() => {
     if (!user || !token || isAdminLike) {
@@ -289,7 +315,6 @@ export default function Navbar() {
       return;
     }
 
-    // ✅ faz uma vez ao entrar (ou trocar usuário)
     loadUnreadChatFromServer();
     loadReservationEventsFromServer();
   }, [user?.id, token, isAdminLike, loadUnreadChatFromServer, loadReservationEventsFromServer]);
@@ -300,7 +325,6 @@ export default function Navbar() {
     if (!user || !token || isAdminLike) return;
     if (!isTutor && !isCaregiver) return;
 
-    // ✅ mantém seu polling existente SOMENTE para reservas (snapshot/compare)
     const intervalId = setInterval(() => {
       loadReservationEventsFromServer();
     }, 15000);
@@ -308,22 +332,127 @@ export default function Navbar() {
     return () => clearInterval(intervalId);
   }, [user?.id, token, isAdminLike, isTutor, isCaregiver, loadReservationEventsFromServer]);
 
-  // Sino: admin vai pro /admin/users; tutor/caregiver vai pro /dashboard?tab=reservas
   const handleBellClick = () => {
     if (!user) return;
     if (isAdminLike) return navigate("/admin/users");
     navigate("/dashboard?tab=reservas");
     closeMobile();
+    setPanelOpen(false);
   };
 
   const title = useMemo(() => {
-    if (!canUseBell) return "Painel Admin";
+    if (!canUseBell) return "Painel";
     if (totalUnread <= 0) return "Nenhuma nova notificação";
     const parts = [];
     if (chatUnreadCount) parts.push(`${chatUnreadCount} chat`);
     if (reservationUnreadCount) parts.push(`${reservationUnreadCount} reserva`);
     return `${totalUnread} pendente(s) • ${parts.join(" • ")}`;
   }, [canUseBell, totalUnread, chatUnreadCount, reservationUnreadCount]);
+
+  const panelLabel = useMemo(() => {
+    if (isAdminLike) return "Painel";
+    return isCaregiver ? "Painel Cuidador" : "Painel Tutor";
+  }, [isAdminLike, isCaregiver]);
+
+  const goDashboard = () => {
+    navigate("/dashboard?tab=reservas");
+    setPanelOpen(false);
+    closeMobile();
+  };
+
+  const switchToTutor = () => {
+    setMode?.("tutor");
+    navigate("/dashboard?tab=reservas", { replace: false });
+    setPanelOpen(false);
+    closeMobile();
+  };
+
+  const switchToCaregiver = () => {
+    setMode?.("caregiver");
+    navigate("/dashboard?tab=reservas", { replace: false });
+    setPanelOpen(false);
+    closeMobile();
+  };
+
+  const goCreateCaregiver = () => {
+    // ✅ rota que você achou no botão: /register
+    navigate("/register");
+    setPanelOpen(false);
+    closeMobile();
+  };
+
+  const PanelDropdown = user && !isAdminLike ? (
+    <div className="relative" ref={panelWrapRef}>
+      <button
+        type="button"
+        onClick={() => setPanelOpen((v) => !v)}
+        className="bg-[#95301F] px-3 py-1 rounded-lg font-semibold inline-flex items-center gap-2"
+        aria-haspopup="menu"
+        aria-expanded={panelOpen ? "true" : "false"}
+        title="Abrir opções do painel"
+      >
+        {panelLabel}
+        <ChevronDown className="w-4 h-4 opacity-90" />
+      </button>
+
+      {panelOpen && (
+        <div
+          role="menu"
+          className="absolute right-0 mt-2 w-[300px] max-w-[90vw] bg-white text-[#5A3A22] rounded-2xl shadow-xl border border-black/10 overflow-hidden z-50"
+        >
+          <div className="py-2">
+            {/* Linha de modo / ação principal */}
+            {!hasCaregiverProfile ? (
+              <>
+                <button
+                  type="button"
+                  onClick={goCreateCaregiver}
+                  className="w-full px-4 py-3 text-left hover:bg-black/5 transition font-semibold"
+                  role="menuitem"
+                >
+                  Ser cuidador
+                  <span className="ml-2 text-xs font-semibold text-[#95301F]">(criar perfil)</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={switchToTutor}
+                  className="w-full px-4 py-3 text-left hover:bg-black/5 transition font-semibold flex items-center justify-between"
+                  role="menuitem"
+                >
+                  <span>Tutor</span>
+                  {isTutor && <span className="text-xs font-bold text-[#95301F]">(ativo)</span>}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={switchToCaregiver}
+                  className="w-full px-4 py-3 text-left hover:bg-black/5 transition font-semibold flex items-center justify-between"
+                  role="menuitem"
+                >
+                  <span>Cuidador</span>
+                  {isCaregiver && <span className="text-xs font-bold text-[#95301F]">(ativo)</span>}
+                </button>
+              </>
+            )}
+
+            <div className="h-px bg-black/10 my-2" />
+
+            <button
+              type="button"
+              onClick={goDashboard}
+              className="w-full px-4 py-3 text-left hover:bg-black/5 transition"
+              role="menuitem"
+            >
+              Abrir painel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  ) : null;
 
   const desktopLinks = (
     <div className="hidden md:flex gap-6 items-center">
@@ -340,36 +469,17 @@ export default function Navbar() {
         Sobre
       </Link>
 
-      {isTutor && (
-        <Link
-          to="/dashboard?tab=reservas"
-          className="bg-[#95301F] px-3 py-1 rounded-lg font-semibold"
-        >
-          Painel Tutor
-        </Link>
-      )}
-
-      {isCaregiver && (
-        <Link
-          to="/dashboard?tab=reservas"
-          className="bg-[#95301F] px-3 py-1 rounded-lg font-semibold"
-        >
-          Painel Cuidador
-        </Link>
-      )}
+      {/* ✅ Dropdown do painel */}
+      {PanelDropdown}
 
       {isAdminLike && (
-        <Link
-          to="/admin/users"
-          className="bg-red-600 px-3 py-1 rounded-lg font-semibold"
-        >
+        <Link to="/admin/users" className="bg-red-600 px-3 py-1 rounded-lg font-semibold">
           Painel Admin
         </Link>
       )}
     </div>
   );
 
-  // ✅ troca "Login" -> "Cadastre-se" (manda para /register)
   const desktopAuth = (
     <div className="hidden md:flex gap-3 items-center">
       {user && (
@@ -389,10 +499,7 @@ export default function Navbar() {
       )}
 
       {!user ? (
-        <Link
-          to="/register"
-          className="bg-[#95301F] px-4 py-2 rounded-lg font-semibold"
-        >
+        <Link to="/register" className="bg-[#95301F] px-4 py-2 rounded-lg font-semibold">
           Cadastre-se
         </Link>
       ) : (
@@ -417,7 +524,6 @@ export default function Navbar() {
 
   const MobileMenu = (
     <div className="md:hidden">
-      {/* Botão */}
       <button
         type="button"
         onClick={() => setMobileOpen((v) => !v)}
@@ -427,7 +533,6 @@ export default function Navbar() {
         {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
       </button>
 
-      {/* Dropdown */}
       {mobileOpen && (
         <div className="absolute left-0 right-0 top-full bg-[#5A3A22] text-white shadow-lg border-t border-white/10 z-50">
           <div className="px-4 py-4 flex flex-col gap-3">
@@ -448,14 +553,65 @@ export default function Navbar() {
               Sobre
             </Link>
 
-            {(isTutor || isCaregiver) && (
-              <Link
-                to="/dashboard?tab=reservas"
-                className="bg-[#95301F] px-3 py-2 rounded-lg font-semibold text-center"
-                onClick={closeMobile}
-              >
-                {isTutor ? "Painel Tutor" : "Painel Cuidador"}
-              </Link>
+            {/* ✅ “Painel” no mobile: opções */}
+            {user && !isAdminLike && (
+              <div className="bg-white/10 rounded-xl p-2 flex flex-col gap-2">
+                {!hasCaregiverProfile ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigate("/register");
+                      closeMobile();
+                    }}
+                    className="w-full bg-white/10 hover:bg-white/15 border border-white/15 px-3 py-2 rounded-lg font-semibold text-center"
+                  >
+                    Ser cuidador
+                  </button>
+                ) : (
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMode("tutor");
+                        navigate("/dashboard?tab=reservas");
+                        closeMobile();
+                      }}
+                      className={[
+                        "flex-1 px-3 py-2 rounded-lg font-semibold text-center transition",
+                        isTutor ? "bg-[#FFD700] text-[#5A3A22]" : "bg-white/10 text-white",
+                      ].join(" ")}
+                    >
+                      Tutor
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMode("caregiver");
+                        navigate("/dashboard?tab=reservas");
+                        closeMobile();
+                      }}
+                      className={[
+                        "flex-1 px-3 py-2 rounded-lg font-semibold text-center transition",
+                        isCaregiver ? "bg-[#FFD700] text-[#5A3A22]" : "bg-white/10 text-white",
+                      ].join(" ")}
+                    >
+                      Cuidador
+                    </button>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigate("/dashboard?tab=reservas");
+                    closeMobile();
+                  }}
+                  className="bg-[#95301F] px-3 py-2 rounded-lg font-semibold text-center"
+                >
+                  {isCaregiver ? "Abrir painel do cuidador" : "Abrir painel do tutor"}
+                </button>
+              </div>
             )}
 
             {isAdminLike && (
@@ -519,19 +675,13 @@ export default function Navbar() {
 
   return (
     <nav className="relative flex justify-between items-center px-4 md:px-6 py-4 bg-[#5A3A22] text-white shadow-md">
-      {/* Logo */}
       <Link to="/" className="font-bold text-xl hover:opacity-90 transition">
         <span className="text-white">Pelo</span>
         <span className="text-yellow-400 drop-shadow-md">Caramelo</span>
       </Link>
 
-      {/* Links (desktop) */}
       {desktopLinks}
-
-      {/* Auth (desktop) */}
       {desktopAuth}
-
-      {/* Menu (mobile) */}
       {MobileMenu}
     </nav>
   );

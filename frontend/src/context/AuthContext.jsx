@@ -26,12 +26,7 @@ function normalizeUser(u) {
 
 // ---------- helpers ----------
 function pickBlockedPayload(err) {
-  const data =
-    err?.data ||
-    err?.response?.data ||
-    err?.body ||
-    err?.payload ||
-    null;
+  const data = err?.data || err?.response?.data || err?.body || err?.payload || null;
 
   const code = data?.code || data?.errorCode || null;
   if (code !== "USER_BLOCKED") return null;
@@ -59,6 +54,17 @@ function formatBlockedUntil(blockedUntil) {
   } catch {
     return dt.toISOString();
   }
+}
+
+function coerceHasCaregiverProfile(res) {
+  // Suporta variações caso algum ambiente retorne diferente
+  const v =
+    res?.hasCaregiverProfile ??
+    res?.has_caregiver_profile ??
+    res?.user?.hasCaregiverProfile ??
+    res?.user?.has_caregiver_profile ??
+    false;
+  return Boolean(v);
 }
 
 // ---------- modal ----------
@@ -183,6 +189,9 @@ export function AuthProvider({ children }) {
   const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // ✅ Mantém apenas a “capacidade” (perfil cuidador existe), NÃO o modo ativo
+  const [hasCaregiverProfile, setHasCaregiverProfile] = useState(false);
+
   // modal de bloqueio
   const [blockedModalOpen, setBlockedModalOpen] = useState(false);
   const [blockedInfo, setBlockedInfo] = useState({ reason: null, blockedUntil: null });
@@ -199,10 +208,23 @@ export function AuthProvider({ children }) {
     setBlockedModalOpen(false);
   };
 
+  function persistSession(next) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      // ignore
+    }
+  }
+
   function handleLogout() {
     setUser(null);
     setToken(null);
-    localStorage.removeItem(STORAGE_KEY);
+    setHasCaregiverProfile(false);
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // ignore
+    }
   }
 
   // Carregar sessão salva no localStorage ao iniciar o app
@@ -217,6 +239,7 @@ export function AuthProvider({ children }) {
       const parsed = JSON.parse(saved);
       const savedToken = parsed?.token || null;
       const savedUser = parsed?.user || null;
+      const savedHas = Boolean(parsed?.hasCaregiverProfile ?? false);
 
       if (!savedToken) {
         setLoading(false);
@@ -225,22 +248,30 @@ export function AuthProvider({ children }) {
 
       // hidrata imediatamente
       setToken(savedToken);
-      if (savedUser) setUser(savedUser);
+      if (savedUser) setUser(normalizeUser(savedUser));
+      setHasCaregiverProfile(savedHas);
 
       // Sempre busca o usuário atual no backend (fonte de verdade)
       meRequest(savedToken)
         .then((res) => {
+          const has = coerceHasCaregiverProfile(res);
+
           if (res?.user) {
             const full = normalizeUser(res.user);
+
             setUser(full);
-            localStorage.setItem(STORAGE_KEY, JSON.stringify({ user: full, token: savedToken }));
+            setHasCaregiverProfile(has);
+
+            persistSession({
+              user: full,
+              token: savedToken,
+              hasCaregiverProfile: has,
+            });
             return;
           }
 
           // se não veio user, trata como sessão inválida
-          setUser(null);
-          setToken(null);
-          localStorage.removeItem(STORAGE_KEY);
+          handleLogout();
         })
         .catch((err) => {
           console.error("Erro ao carregar sessão /auth/me:", err);
@@ -279,20 +310,24 @@ export function AuthProvider({ children }) {
       setLoading(true);
 
       const res = await meRequest(newToken);
+      const has = coerceHasCaregiverProfile(res);
       const fullUser = normalizeUser(res?.user || loginUser);
 
       setUser(fullUser);
-      localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify({ user: fullUser, token: newToken })
-      );
+      setHasCaregiverProfile(has);
 
+      persistSession({
+        user: fullUser,
+        token: newToken,
+        hasCaregiverProfile: has,
+      });
     } catch (err) {
       console.error("Erro ao buscar /auth/me após login:", err);
 
-      // se o /auth/me responder bloqueado por algum motivo, mostra modal e limpa sessão
       const status = err?.status ?? err?.response?.status ?? null;
       const bi = pickBlockedPayload(err);
+
+      // se o /auth/me responder bloqueado por algum motivo, mostra modal e limpa sessão
       if (status === 403 && bi) {
         showBlockedModal(bi);
         handleLogout();
@@ -300,8 +335,17 @@ export function AuthProvider({ children }) {
       }
 
       // mantém sessão (útil em instabilidade momentânea)
-      setUser(loginUser);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ user: loginUser, token: newToken }));
+      const full = normalizeUser(loginUser);
+      setUser(full);
+
+      // sem /me não sabemos o perfil -> assume "não cuidador" até provar o contrário
+      setHasCaregiverProfile(false);
+
+      persistSession({
+        user: full,
+        token: newToken,
+        hasCaregiverProfile: false,
+      });
     } finally {
       setLoading(false);
     }
@@ -317,24 +361,22 @@ export function AuthProvider({ children }) {
       logout: handleLogout,
       isAuthenticated: !!user && !!token,
 
+      // ✅ capacidade (Dashboard decide o perfil ativo)
+      hasCaregiverProfile,
+
       // bloqueio
       showBlockedModal,
       hideBlockedModal,
       blockedModalOpen,
       blockedInfo,
     }),
-    [user, token, loading, blockedModalOpen, blockedInfo]
+    [user, token, loading, hasCaregiverProfile, blockedModalOpen, blockedInfo]
   );
 
   return (
     <AuthContext.Provider value={value}>
       {children}
-
-      <BlockedModal
-        open={blockedModalOpen}
-        info={blockedInfo}
-        onClose={hideBlockedModal}
-      />
+      <BlockedModal open={blockedModalOpen} info={blockedInfo} onClose={hideBlockedModal} />
     </AuthContext.Provider>
   );
 }

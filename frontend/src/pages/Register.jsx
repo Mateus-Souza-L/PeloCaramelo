@@ -136,7 +136,7 @@ export default function Register() {
                 onClick={() => proceedRole("tutor")}
                 className="border rounded-2xl p-5 text-left hover:shadow-md transition bg-[#FFF7E0]"
               >
-                <h2 className="text-xl font-semibold text-[#5A3A22] mb-2">Sou Tutor</h2>
+                <h2 className="text-xl font-semibold text-[#5A3A22] mb-2">Ser Tutor</h2>
                 <p className="text-[#5A3A22]/90 text-sm">
                   Quero encontrar cuidadores, fazer reservas e gerenciar meus pedidos.
                 </p>
@@ -146,7 +146,7 @@ export default function Register() {
                 onClick={() => proceedRole("caregiver")}
                 className="border rounded-2xl p-5 text-left hover:shadow-md transition bg-[#F4F0FF]"
               >
-                <h2 className="text-xl font-semibold text-[#5A3A22] mb-2">Sou Cuidador</h2>
+                <h2 className="text-xl font-semibold text-[#5A3A22] mb-2">Ser Cuidador</h2>
                 <p className="text-[#5A3A22]/90 text-sm">
                   Quero oferecer meus serviços, definir disponibilidade e receber reservas.
                 </p>

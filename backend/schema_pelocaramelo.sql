@@ -44,6 +44,28 @@ CREATE TABLE IF NOT EXISTS users (
 -- ADD CONSTRAINT users_role_check
 -- CHECK (role IN ('tutor', 'caregiver', 'admin'));
 
+-- ------------------------------------------------------------
+-- caregiver_profiles (perfil de cuidador) - 1:1 com users
+-- "Ser cuidador" = existir um registro aqui
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS caregiver_profiles (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+
+  -- dados do perfil (ajuste conforme seu app já usa)
+  bio TEXT,
+  city TEXT,
+  price NUMERIC(10, 2),
+  experience TEXT,
+
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- índice auxiliar (além do UNIQUE)
+CREATE INDEX IF NOT EXISTS idx_caregiver_profiles_user_id
+  ON caregiver_profiles(user_id);
+
 
 -- =========================================================
 -- 2) Tabela de reservas
@@ -122,3 +144,4 @@ CREATE INDEX IF NOT EXISTS idx_chat_messages_from_user_id
 
 CREATE INDEX IF NOT EXISTS idx_chat_messages_to_user_id
   ON chat_messages (to_user_id);
+

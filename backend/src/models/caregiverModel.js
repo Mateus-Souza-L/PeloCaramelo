@@ -5,6 +5,10 @@ const pool = require("../config/db");
  * Lista cuidadores ativos (não bloqueados) com agregados:
  * - rating_avg / rating_count (baseado em reservations.tutor_rating)
  * - completed_reservations
+ *
+ * Regra nova:
+ * - Cuidador = existe em caregiver_profiles (JOIN)
+ * - Mantemos os dados ainda vindo de users (por enquanto)
  */
 async function listAllCaregivers() {
   const query = `
@@ -36,10 +40,11 @@ async function listAllCaregivers() {
           AND r.end_date < CURRENT_DATE
       ) AS completed_reservations
     FROM users u
+    INNER JOIN caregiver_profiles cp
+      ON cp.user_id = u.id
     LEFT JOIN reservations r
       ON r.caregiver_id = u.id
-    WHERE u.role = 'caregiver'
-      AND u.blocked = false
+    WHERE u.blocked = false
     GROUP BY
       u.id, u.name, u.email, u.role, u.image, u.bio, u.phone,
       u.address, u.neighborhood, u.city, u.cep, u.services,
@@ -84,10 +89,11 @@ async function getCaregiverById(caregiverId) {
           AND r.end_date < CURRENT_DATE
       ) AS completed_reservations
     FROM users u
+    INNER JOIN caregiver_profiles cp
+      ON cp.user_id = u.id
     LEFT JOIN reservations r
       ON r.caregiver_id = u.id
-    WHERE u.role = 'caregiver'
-      AND u.blocked = false
+    WHERE u.blocked = false
       AND u.id = $1
     GROUP BY
       u.id, u.name, u.email, u.role, u.image, u.bio, u.phone,

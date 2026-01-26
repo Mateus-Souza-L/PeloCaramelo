@@ -51,9 +51,7 @@ async function sendEmail({ to, subject, html, text, replyTo }) {
       subject: String(subject),
       ...(html ? { html: String(html) } : {}),
       ...(text ? { text: String(text) } : {}),
-      {
-        reply_to: String(replyTo || EMAIL_REPLY_TO),
-      },
+      reply_to: String(replyTo || EMAIL_REPLY_TO),
     };
 
     const resp = await fetch("https://api.resend.com/emails", {

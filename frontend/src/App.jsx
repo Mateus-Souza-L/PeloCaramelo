@@ -78,8 +78,8 @@ export default function App() {
   const fallbackPath = useMemo(() => {
     if (!role) return "/";
     if (isAdminLike) return "/admin/users";
-    if (role === "tutor" || role === "caregiver") return "/dashboard";
-    return "/";
+    // ✅ agora: qualquer usuário logado (tutor/cuidador/ambos) vai pra dashboard
+    return "/dashboard";
   }, [role, isAdminLike]);
 
   // ✅ SEO base (meta description + robots), sem quebrar regras de hooks
@@ -165,14 +165,8 @@ export default function App() {
                 {/* IMPORTANTE: passar location para controlar o key do AnimatePresence */}
                 <Routes location={location}>
                   {/* Públicas */}
-                  <Route
-                    path="/"
-                    element={withTitle("PeloCaramelo | Início", <Home />)}
-                  />
-                  <Route
-                    path="/login"
-                    element={withTitle("PeloCaramelo | Login", <Login />)}
-                  />
+                  <Route path="/" element={withTitle("PeloCaramelo | Início", <Home />)} />
+                  <Route path="/login" element={withTitle("PeloCaramelo | Login", <Login />)} />
                   <Route
                     path="/register"
                     element={withTitle("PeloCaramelo | Cadastro", <Register />)}
@@ -181,29 +175,17 @@ export default function App() {
                   {/* ✅ Recuperação de senha (públicas, mas SEM indexação) */}
                   <Route
                     path="/forgot-password"
-                    element={withTitle(
-                      "PeloCaramelo | Recuperar Senha",
-                      <ForgotPassword />
-                    )}
+                    element={withTitle("PeloCaramelo | Recuperar Senha", <ForgotPassword />)}
                   />
                   <Route
                     path="/reset-password"
-                    element={withTitle(
-                      "PeloCaramelo | Redefinir Senha",
-                      <ResetPassword />
-                    )}
+                    element={withTitle("PeloCaramelo | Redefinir Senha", <ResetPassword />)}
                   />
 
-                  <Route
-                    path="/buscar"
-                    element={withTitle("PeloCaramelo | Buscar", <Search />)}
-                  />
+                  <Route path="/buscar" element={withTitle("PeloCaramelo | Buscar", <Search />)} />
                   <Route
                     path="/caregiver/:id"
-                    element={withTitle(
-                      "PeloCaramelo | Detalhes do Cuidador",
-                      <CaregiverDetail />
-                    )}
+                    element={withTitle("PeloCaramelo | Detalhes do Cuidador", <CaregiverDetail />)}
                   />
                   <Route
                     path="/comportamento"
@@ -212,10 +194,7 @@ export default function App() {
                       <ComportamentoAnimal />
                     )}
                   />
-                  <Route
-                    path="/sobre"
-                    element={withTitle("PeloCaramelo | Sobre", <Sobre />)}
-                  />
+                  <Route path="/sobre" element={withTitle("PeloCaramelo | Sobre", <Sobre />)} />
 
                   {/* ✅ Institucionais (Confiança & LGPD) */}
                   <Route
@@ -227,29 +206,23 @@ export default function App() {
                   />
                   <Route
                     path="/termos"
-                    element={withTitle(
-                      "PeloCaramelo | Termos de Uso",
-                      <TermosDeUso />
-                    )}
+                    element={withTitle("PeloCaramelo | Termos de Uso", <TermosDeUso />)}
                   />
                   <Route
                     path="/seguranca"
-                    element={withTitle(
-                      "PeloCaramelo | Diretrizes de Segurança",
-                      <Seguranca />
-                    )}
+                    element={withTitle("PeloCaramelo | Diretrizes de Segurança", <Seguranca />)}
                   />
 
                   {/* Protegidas */}
 
-                  {/* Dashboard tutor/cuidador (admin/admin_master não usa) */}
+                  {/* ✅ Dashboard: agora só precisa estar autenticado (admin é redirecionado) */}
                   <Route
                     path="/dashboard"
                     element={
                       isAdminLike ? (
                         <Navigate to="/admin/users" replace />
                       ) : (
-                        <PrivateRoute roles={["tutor", "caregiver"]}>
+                        <PrivateRoute>
                           {withTitle("PeloCaramelo | Painel", <Dashboard />)}
                         </PrivateRoute>
                       )
@@ -293,32 +266,33 @@ export default function App() {
                     }
                   />
 
+                  {/* ✅ Perfil: qualquer usuário autenticado (inclusive admin) */}
                   <Route
                     path="/perfil"
                     element={
-                      <PrivateRoute roles={["tutor", "caregiver", "admin", "admin_master"]}>
+                      <PrivateRoute>
                         {withTitle("PeloCaramelo | Meu Perfil", <Profile />)}
                       </PrivateRoute>
                     }
                   />
 
+                  {/* ✅ Reserva: qualquer usuário autenticado (inclusive admin) */}
                   <Route
                     path="/reserva/:id"
                     element={
-                      <PrivateRoute roles={["tutor", "caregiver", "admin", "admin_master"]}>
+                      <PrivateRoute>
                         {withTitle("PeloCaramelo | Reserva", <ReservationDetail />)}
                       </PrivateRoute>
                     }
                   />
 
+                  {/* ✅ Avaliações: exige estar autenticado (tutor/cuidador/ambos).
+                      Se você quiser permitir admin ver avaliações dele também, é só deixar assim. */}
                   <Route
                     path="/avaliacoes"
                     element={
-                      <PrivateRoute roles={["tutor", "caregiver"]}>
-                        {withTitle(
-                          "PeloCaramelo | Minhas Avaliações",
-                          <ReviewHistory />
-                        )}
+                      <PrivateRoute>
+                        {withTitle("PeloCaramelo | Minhas Avaliações", <ReviewHistory />)}
                       </PrivateRoute>
                     }
                   />

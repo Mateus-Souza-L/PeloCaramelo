@@ -241,7 +241,11 @@ app.use("/caregivers", caregiverRoutes);
 /* ===========================================================
    ✅ Rotas mistas
    =========================================================== */
+// ✅ /availability volta a ser mista:
+// - GET público para tutor ver datas
+// - /me protegido dentro de availabilityRoutes.js
 app.use("/availability", availabilityRoutes);
+
 app.use("/notifications", notificationRoutes);
 
 /* ===========================================================

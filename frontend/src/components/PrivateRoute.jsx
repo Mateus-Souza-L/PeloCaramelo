@@ -3,10 +3,9 @@ import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 export default function PrivateRoute({ roles, children }) {
-  const { user, token, loading } = useAuth();
+  const { user, token, loading, hasCaregiverProfile, activeMode } = useAuth();
   const location = useLocation();
 
-  // Enquanto valida sessão, NÃO redireciona
   if (loading) {
     return (
       <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] py-8 px-6 flex items-center justify-center">
@@ -17,7 +16,6 @@ export default function PrivateRoute({ roles, children }) {
     );
   }
 
-  // Sem sessão -> login, mas preserva destino completo
   if (!user || !token) {
     return (
       <Navigate
@@ -31,10 +29,21 @@ export default function PrivateRoute({ roles, children }) {
     );
   }
 
-  // Role inválida -> home
+  // ✅ role efetivo:
+  // - admin/admin_master: role real
+  // - usuário comum: activeMode ("tutor" | "caregiver")
+  const rawRole = String(user?.role || "").toLowerCase().trim();
+  const isAdminLike = rawRole === "admin" || rawRole === "admin_master";
+
+  let effectiveRole = rawRole;
+  if (!isAdminLike) {
+    const m = String(activeMode || "tutor").toLowerCase() === "caregiver" ? "caregiver" : "tutor";
+    effectiveRole = m === "caregiver" && !hasCaregiverProfile ? "tutor" : m;
+  }
+
   if (Array.isArray(roles) && roles.length > 0) {
-    const hasRole = roles.includes(user.role);
-    if (!hasRole) return <Navigate to="/" replace />;
+    const ok = roles.includes(effectiveRole) || roles.includes(rawRole);
+    if (!ok) return <Navigate to="/" replace />;
   }
 
   return children;

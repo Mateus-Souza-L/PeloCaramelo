@@ -258,13 +258,102 @@ function mergePreservingLocalRatings(apiList, localList) {
 }
 
 export default function Dashboard() {
-  const { user, token } = useAuth();
+  const { user, token, hasCaregiverProfile } = useAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
 
-  const isTutor = user?.role === "tutor";
-  const isCaregiver = user?.role === "caregiver";
+  // ===========================================================
+  // ✅ Troca de perfil (tutor/caregiver) sem trocar usuário
+  // - Detecta se o usuário tem ambos perfis
+  // - Persiste o perfil ativo no localStorage por user.id
+  // ===========================================================
+
+  const rolesAvailable = useMemo(() => {
+    const set = new Set();
+
+    // role principal (se existir)
+    if (user?.role) set.add(String(user.role));
+
+    // ✅ fonte de verdade vinda do AuthContext
+    if (hasCaregiverProfile) {
+      set.add("tutor");     // quem vira cuidador continua sendo tutor
+      set.add("caregiver");
+    }
+
+    // formatos comuns que podem existir no seu user
+    if (Array.isArray(user?.roles)) user.roles.forEach((r) => r && set.add(String(r)));
+    if (user?.isTutor === true) set.add("tutor");
+    if (user?.isCaregiver === true) set.add("caregiver");
+
+    // (opcional) se você usa "tutor+caregiver" em algum lugar
+    if (user?.role === "tutor+caregiver") {
+      set.add("tutor");
+      set.add("caregiver");
+    }
+
+    const arr = Array.from(set).filter((r) => r === "tutor" || r === "caregiver");
+    // garante ordem consistente (tutor primeiro)
+    arr.sort((a, b) => (a === b ? 0 : a === "tutor" ? -1 : 1));
+    return arr;
+  }, [user, hasCaregiverProfile]);
+
+  const hasBothRoles = rolesAvailable.length >= 2;
+
+  const activeRoleStorageKey = useMemo(() => {
+    const uid = user?.id != null ? String(user.id) : "anon";
+    return `activeRole_${uid}`;
+  }, [user?.id]);
+
+  const [activeRole, setActiveRole] = useState(() => {
+    try {
+      const saved = localStorage.getItem(`activeRole_${user?.id ?? "anon"}`);
+      if (saved === "tutor") return "tutor";
+      if (saved === "caregiver" && hasCaregiverProfile) return "caregiver";
+    } catch {
+      // ignore
+    }
+    return "tutor";
+  });
+
+  // garante que activeRole sempre seja um role válido pro usuário
+  useEffect(() => {
+    if (!user?.id) return;
+    if (!rolesAvailable.length) return;
+
+    if (!rolesAvailable.includes(activeRole)) {
+      const next = rolesAvailable[0];
+      setActiveRole(next);
+      try {
+        localStorage.setItem(activeRoleStorageKey, next);
+      } catch {
+        // ignore
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, rolesAvailable.join("|")]);
+
+  const setRoleSafe = useCallback(
+    (nextRole) => {
+      const next = nextRole === "caregiver" ? "caregiver" : "tutor";
+      if (!rolesAvailable.includes(next)) return;
+
+      setActiveRole(next);
+      try {
+        localStorage.setItem(activeRoleStorageKey, next);
+      } catch {
+        // ignore
+      }
+
+      // opcional: limpa hash/tab da URL ao trocar perfil, pra não ficar preso em aba errada
+      // navigate({ pathname: "/dashboard" }, { replace: true });
+    },
+    [rolesAvailable, activeRoleStorageKey]
+  );
+
+  const isTutor = activeRole === "tutor";
+  const isCaregiver = activeRole === "caregiver";
+
 
   const [tab, setTab] = useState("disponibilidade");
   const [reservations, setReservations] = useState([]);
@@ -296,9 +385,9 @@ export default function Dashboard() {
   const [myReviewsLoaded, setMyReviewsLoaded] = useState(false);
 
   const reservationsStorageKey = useMemo(() => {
-    if (!user?.id || !user?.role) return "reservations";
-    return `reservations_${String(user.role)}_${String(user.id)}`;
-  }, [user?.id, user?.role]);
+    if (!user?.id) return "reservations";
+    return `reservations_${String(activeRole)}_${String(user.id)}`;
+  }, [user?.id, activeRole]);
 
   const availabilityStorageKey = useMemo(() => {
     if (!user?.id) return "availability";
@@ -367,7 +456,7 @@ export default function Dashboard() {
     }
 
     const now = Date.now();
-    const guardKey = `${String(user.id)}:${String(user.role || "")}`;
+    const guardKey = `${String(user.id)}:${String(activeRole || "")}`;
 
     if (myReviewsGuardRef.current.inFlight) return;
     if (
@@ -411,7 +500,7 @@ export default function Dashboard() {
     } finally {
       myReviewsGuardRef.current.inFlight = false;
     }
-  }, [user?.id, user?.role, token]);
+  }, [user?.id, activeRole, token]);
 
   const loadReservations = useCallback(async () => {
     if (!user) {
@@ -422,7 +511,7 @@ export default function Dashboard() {
     }
 
     const now = Date.now();
-    const guardKey = `${user?.role || ""}:${user?.id || ""}:${reservationsStorageKey}`;
+    const guardKey = `${activeRole || ""}:${user?.id || ""}:${reservationsStorageKey}`;
 
     if (resFetchGuardRef.current.inFlight) return [];
     if (
@@ -803,7 +892,7 @@ export default function Dashboard() {
       if (detail?.reason === "dashboard-apply") return;
 
       if (rid && (detail?.reason === "rating-local" || detail?.reason === "rating-saved")) {
-        const role = String(detail?.fromRole || detail?.role || user?.role || "");
+        const role = String(detail?.fromRole || detail?.role || activeRole || "");
         const rating = detail?.rating;
         const comment = detail?.comment ?? null;
 
@@ -905,8 +994,9 @@ export default function Dashboard() {
 
     window.addEventListener("reservation-updated", onReservationUpdated);
     return () => window.removeEventListener("reservation-updated", onReservationUpdated);
-  }, [user?.id, user?.role, isCaregiver, scheduleRefresh, reservationsStorageKey]);
+  }, [user?.id, activeRole, isCaregiver, scheduleRefresh, reservationsStorageKey]);
 
+  // ---------- init (tabs + dados) ----------
   // ---------- init (tabs + dados) ----------
   useEffect(() => {
     document.title = "PeloCaramelo | Painel";
@@ -930,7 +1020,7 @@ export default function Dashboard() {
     loadReservations();
     loadMyReviewsFromServer();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id, user?.role, token, location.search]);
+  }, [user?.id, token, location.search, activeRole]);
 
   // foco/storage -> recarrega reservas + unread chat (+ reviews/me)
   useEffect(() => {
@@ -1004,6 +1094,18 @@ export default function Dashboard() {
     loadAvailabilityIfCaregiver,
   ]);
 
+  useEffect(() => {
+    if (!user?.id) return;
+
+    // ao trocar perfil, força uma tab padrão coerente
+    if (activeRole === "caregiver") {
+      setTab((prev) => (prev === "reservas" ? "reservas" : "disponibilidade"));
+      loadAvailabilityIfCaregiver(); // ok aqui
+    } else {
+      setTab((prev) => (prev === "pets" ? "pets" : "reservasTutor"));
+    }
+  }, [activeRole, user?.id, loadAvailabilityIfCaregiver]);
+
   // ---------- status da reserva ----------
   const applyAndPersistReservation = useCallback(
     (updatedReservation) => {
@@ -1050,7 +1152,7 @@ export default function Dashboard() {
       rejectReason: status === "Recusada" ? rejectReason || null : null,
     };
 
-    const toastMsg = getStatusToastMessage(status, user?.role);
+    const toastMsg = getStatusToastMessage(status, activeRole);
     const toastType = getStatusToastType(status);
 
     if (token && (isTutor || isCaregiver)) {
@@ -1284,7 +1386,7 @@ export default function Dashboard() {
           reservationId: String(ratingReservation.id),
           source: "local",
           reason: "rating-local",
-          fromRole: user?.role,
+          fromRole: activeRole,
           rating: cleanValue,
           comment: cleanComment,
         },
@@ -1314,7 +1416,7 @@ export default function Dashboard() {
               reservationId: String(ratingReservation.id),
               source: "server",
               reason: "rating-saved",
-              fromRole: user?.role,
+              fromRole: activeRole,
               rating: cleanValue,
               comment: cleanComment,
             },
@@ -1396,12 +1498,38 @@ export default function Dashboard() {
 
     return (
       <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] p-6">
+        {hasBothRoles && (
+          <div className="max-w-[1400px] mx-auto mb-4 flex justify-center">
+            <div className="inline-flex rounded-2xl bg-white/70 border border-[#FFD700]/60 shadow-sm overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setRoleSafe("tutor")}
+                className={`px-4 py-2 text-sm font-semibold transition ${activeRole === "tutor"
+                  ? "bg-[#5A3A22] text-white"
+                  : "text-[#5A3A22] hover:bg-white"
+                  }`}
+              >
+                Perfil: Tutor
+              </button>
+              <button
+                type="button"
+                onClick={() => setRoleSafe("caregiver")}
+                className={`px-4 py-2 text-sm font-semibold transition ${activeRole === "caregiver"
+                  ? "bg-[#5A3A22] text-white"
+                  : "text-[#5A3A22] hover:bg-white"
+                  }`}
+              >
+                Perfil: Cuidador
+              </button>
+            </div>
+          </div>
+        )}
         <div className="max-w-[1400px] mx-auto mb-4 flex gap-3 justify-center">
           <button
             onClick={() => setTab("reservasTutor")}
             className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${tab === "reservasTutor"
-                ? "bg-[#5A3A22] text-white"
-                : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
+              ? "bg-[#5A3A22] text-white"
+              : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
               }`}
             type="button"
           >
@@ -1411,8 +1539,8 @@ export default function Dashboard() {
           <button
             onClick={() => setTab("pets")}
             className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${tab === "pets"
-                ? "bg-[#5A3A22] text-white"
-                : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
+              ? "bg-[#5A3A22] text-white"
+              : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
               }`}
             type="button"
           >
@@ -1514,8 +1642,8 @@ export default function Dashboard() {
                         {statusHelper && (
                           <p
                             className={`mt-1 text-xs ${r.status === "Recusada" || r.status === "Cancelada"
-                                ? "text-red-600"
-                                : "text-[#5A3A22]"
+                              ? "text-red-600"
+                              : "text-[#5A3A22]"
                               }`}
                           >
                             {statusHelper}
@@ -1645,12 +1773,38 @@ export default function Dashboard() {
 
     return (
       <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] p-6">
+        {hasBothRoles && (
+          <div className="max-w-[1400px] mx-auto mb-4 flex justify-center">
+            <div className="inline-flex rounded-2xl bg-white/70 border border-[#FFD700]/60 shadow-sm overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setRoleSafe("tutor")}
+                className={`px-4 py-2 text-sm font-semibold transition ${activeRole === "tutor"
+                  ? "bg-[#5A3A22] text-white"
+                  : "text-[#5A3A22] hover:bg-white"
+                  }`}
+              >
+                Perfil: Tutor
+              </button>
+              <button
+                type="button"
+                onClick={() => setRoleSafe("caregiver")}
+                className={`px-4 py-2 text-sm font-semibold transition ${activeRole === "caregiver"
+                  ? "bg-[#5A3A22] text-white"
+                  : "text-[#5A3A22] hover:bg-white"
+                  }`}
+              >
+                Perfil: Cuidador
+              </button>
+            </div>
+          </div>
+        )}
         <div className="max-w-[1400px] mx-auto mb-4 flex gap-3 justify-center">
           <button
             onClick={() => setTab("disponibilidade")}
             className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${tab === "disponibilidade"
-                ? "bg-[#5A3A22] text-white"
-                : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
+              ? "bg-[#5A3A22] text-white"
+              : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
               }`}
             type="button"
           >
@@ -1659,8 +1813,8 @@ export default function Dashboard() {
           <button
             onClick={() => setTab("reservas")}
             className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${tab === "reservas"
-                ? "bg-[#5A3A22] text-white"
-                : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
+              ? "bg-[#5A3A22] text-white"
+              : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
               }`}
             type="button"
           >
@@ -1744,8 +1898,8 @@ export default function Dashboard() {
                   type="button"
                   disabled={!unsaved}
                   className={`font-semibold px-5 py-2 rounded-lg shadow-md ${unsaved
-                      ? "bg-green-700 hover:bg-green-800 text-white"
-                      : "bg-green-700/50 text-white/70 cursor-not-allowed"
+                    ? "bg-green-700 hover:bg-green-800 text-white"
+                    : "bg-green-700/50 text-white/70 cursor-not-allowed"
                     }`}
                 >
                   💾 Salvar Alterações
