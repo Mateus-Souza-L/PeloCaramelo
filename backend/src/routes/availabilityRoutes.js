@@ -4,21 +4,25 @@ const availabilityController = require("../controllers/availabilityController");
 const authMiddleware = require("../middleware/authMiddleware");
 const requireCaregiverProfile = require("../middleware/requireCaregiverProfile");
 
-// 🔒 Privado (Cuidador gerencia a própria agenda)
-// Agora exige: login + perfil cuidador
-router.get(
-  "/me",
-  authMiddleware,
-  requireCaregiverProfile,
-  availabilityController.getMyAvailability
-);
+/**
+ * Evita dupla verificação de token se o server.js já aplicou authMiddleware.
+ * (Mas garante auth se alguém montar esse router sem middleware por engano.)
+ */
+function requireAuth(req, res, next) {
+  if (req.user?.id) return next();
+  return authMiddleware(req, res, next);
+}
 
-router.put(
-  "/me",
-  authMiddleware,
-  requireCaregiverProfile,
-  availabilityController.updateMyAvailability
-);
+// ---------------------------------------------------------
+// ✅ Auth garantido aqui
+// ---------------------------------------------------------
+
+// 🔒 Privado (Cuidador gerencia a própria agenda)
+// ✅ Multi-perfil: exige login + perfil cuidador (caregiver_profiles)
+// Admin/admin_master também passa pelo requireCaregiverProfile
+router.get("/me", requireAuth, requireCaregiverProfile, availabilityController.getMyAvailability);
+
+router.put("/me", requireAuth, requireCaregiverProfile, availabilityController.updateMyAvailability);
 
 // ✅ Público (Tutor precisa ver dias disponíveis para reservar)
 router.get("/caregiver/:caregiverId", availabilityController.getCaregiverAvailability);

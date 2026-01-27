@@ -17,11 +17,14 @@ function requireAuth(req, res, next) {
 
 /**
  * Guard simples por papel (role do token).
- * Observação: agora "ser cuidador" NÃO é role, é perfil (caregiver_profiles).
+ * ✅ Ajuste: aceita role em lowercase e inclui admin/admin_master.
  */
 function requireRole(...allowedRoles) {
+  const allowed = new Set(allowedRoles.map((r) => String(r || "").toLowerCase().trim()));
+
   return (req, res, next) => {
-    const role = req.user?.role;
+    const role = String(req.user?.role || "").toLowerCase().trim();
+
     if (!role) {
       return res.status(401).json({
         error: "Não autenticado. Faça login novamente.",
@@ -29,10 +32,11 @@ function requireRole(...allowedRoles) {
       });
     }
 
-    if (!allowedRoles.includes(role)) {
+    if (!allowed.has(role)) {
       return res.status(403).json({
         error: "Você não tem permissão para acessar este recurso.",
         code: "FORBIDDEN_ROLE",
+        role,
       });
     }
 
@@ -41,19 +45,39 @@ function requireRole(...allowedRoles) {
 }
 
 /**
+ * ✅ Admin-like
+ */
+function requireAdminLike() {
+  return requireRole("admin", "admin_master");
+}
+
+/**
  * ✅ Admin OU Perfil Cuidador
- * - Admin (admin/admin_master) passa
- * - Usuário comum passa se tiver caregiver_profiles
+ * - Admin/admin_master passa
+ * - Usuário comum passa se tiver caregiver_profiles (perfil cuidador)
  */
 function requireAdminOrCaregiverProfile() {
   return (req, res, next) => {
     const role = String(req.user?.role || "").toLowerCase().trim();
     const isAdminLike = role === "admin" || role === "admin_master";
-
     if (isAdminLike) return next();
 
-    // ✅ aqui valida "perfil cuidador" (e não role)
     return requireCaregiverProfile(req, res, next);
+  };
+}
+
+/**
+ * ✅ Admin-like OU usuário logado (qualquer role)
+ * Útil quando o token pode vir "tutor" mesmo para cuidador (multi-perfil),
+ * mas a rota não deveria depender do role e sim do "ownership" ou query interna.
+ */
+function requireAnyLoggedUserOrAdmin() {
+  return (req, res, next) => {
+    if (req.user?.id) return next();
+    return res.status(401).json({
+      error: "Não autenticado.",
+      code: "UNAUTHENTICATED",
+    });
   };
 }
 
@@ -110,19 +134,26 @@ function pickHandler(name) {
 router.use(requireAuth);
 
 // POST /reservations
-// Tutor cria pré-reserva (admin pode testar/operar se você quiser)
-router.post("/", requireRole("tutor", "admin", "admin_master"), pickHandler("createReservationController"));
+// ✅ Multi-perfil: criar reserva é fluxo de tutor.
+// Mantemos "tutor" e admin-like, mas aceitando lowercase.
+router.post(
+  "/",
+  requireRole("tutor", "admin", "admin_master"),
+  pickHandler("createReservationController")
+);
 
 // GET /reservations/tutor
-// Lista apenas reservas do tutor autenticado
+// ✅ Aqui NÃO deve depender do role do token em multi-perfil.
+// O controller já lista por user.id. Então basta estar logado.
+// (Admin continua funcionando, pois também está logado.)
 router.get(
   "/tutor",
-  requireRole("tutor", "admin", "admin_master"),
+  requireAnyLoggedUserOrAdmin(),
   pickHandler("listTutorReservationsController")
 );
 
 // GET /reservations/caregiver
-// ✅ Agora é: admin OU tem caregiver_profiles (perfil cuidador)
+// ✅ Admin OU tem caregiver_profiles (perfil cuidador)
 router.get(
   "/caregiver",
   requireAdminOrCaregiverProfile(),
@@ -130,9 +161,11 @@ router.get(
 );
 
 // GET /reservations/my-evaluations
+// ✅ Também não deve depender do role do token (multi-perfil).
+// O endpoint já usa req.user.id, e aplica filtro de isAdmin internamente.
 router.get(
   "/my-evaluations",
-  requireRole("tutor", "caregiver", "admin", "admin_master"),
+  requireAnyLoggedUserOrAdmin(),
   pickHandler("listMyEvaluationsController")
 );
 
