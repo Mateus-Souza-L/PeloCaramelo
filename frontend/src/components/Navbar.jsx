@@ -27,13 +27,6 @@ export default function Navbar() {
   const role = String(user?.role || "").toLowerCase().trim();
   const isAdminLike = role === "admin" || role === "admin_master";
 
-  // ✅ “mode efetivo” pro usuário comum (pra UI)
-  const effectiveMode = isAdminLike ? "admin" : activeMode || "tutor";
-  const isTutor = effectiveMode === "tutor";
-  const isCaregiver = effectiveMode === "caregiver";
-
-  const canUseBell = !isAdminLike && (isTutor || isCaregiver);
-
   const [chatUnreadIds, setChatUnreadIds] = useState([]);
   const [reservationUnreadCount, setReservationUnreadCount] = useState(0);
 
@@ -58,6 +51,38 @@ export default function Navbar() {
       new CustomEvent("active-role-changed", { detail: { role: next } })
     );
   }, []);
+
+  /* ============================================================
+     ✅ FIX: modo inicial automático (evita cair em "tutor" por default)
+     - Se o usuário é caregiver no token/banco e activeMode ainda não existe,
+       define "caregiver" automaticamente.
+     ============================================================ */
+  useEffect(() => {
+    if (!user?.id) return;
+    if (isAdminLike) return;
+
+    const cur = String(activeMode || "").toLowerCase().trim();
+    const isValid = cur === "tutor" || cur === "caregiver";
+
+    if (isValid) return;
+
+    // prioridade 1: role do token (fonte de verdade do cadastro)
+    let preferred = role === "caregiver" ? "caregiver" : role === "tutor" ? "tutor" : "";
+
+    // fallback: se não vier role esperado, mas tem caregiver profile -> caregiver
+    if (!preferred) preferred = hasCaregiverProfile ? "caregiver" : "tutor";
+
+    setMode?.(preferred);
+    emitRoleChanged(preferred);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, isAdminLike, activeMode, role, hasCaregiverProfile]);
+
+  // ✅ “mode efetivo” pro usuário comum (pra UI)
+  const effectiveMode = isAdminLike ? "admin" : activeMode || "tutor";
+  const isTutor = effectiveMode === "tutor";
+  const isCaregiver = effectiveMode === "caregiver";
+
+  const canUseBell = !isAdminLike && (isTutor || isCaregiver);
 
   // Fecha menu ao trocar rota
   useEffect(() => {
@@ -424,14 +449,11 @@ export default function Navbar() {
     setCreatingCaregiver(true);
     try {
       await createCaregiverProfile?.(); // POST /caregivers/me + atualiza context
-      // garante modo caregiver e avisa a mesma aba
       setMode?.("caregiver");
       emitRoleChanged("caregiver");
       navigate("/dashboard?tab=reservas", { replace: false });
     } catch (err) {
       console.error("Falha ao criar perfil cuidador:", err);
-      // fallback suave: se preferir mandar pra /register
-      // navigate("/register");
     } finally {
       setCreatingCaregiver(false);
       setPanelOpen(false);
@@ -439,11 +461,6 @@ export default function Navbar() {
     }
   };
 
-  /* ============================================================
-     ✅ Dropdown: “linha 2” vira (Ser cuidador / Cuidador) ou (Tutor)
-     ============================================================ */
-
-  // qual é o “outro” item do dropdown?
   const otherActionLabel = useMemo(() => {
     if (isAdminLike) return null;
     if (isTutor) return hasCaregiverProfile ? "Cuidador" : "Ser cuidador";
@@ -484,13 +501,11 @@ export default function Navbar() {
           className="absolute right-0 mt-2 w-[300px] max-w-[90vw] bg-white text-[#5A3A22] rounded-2xl shadow-xl border border-black/10 overflow-hidden z-50"
         >
           <div className="py-2">
-            {/* Linha 1: modo atual (somente informativo) */}
             <div className="w-full px-4 py-3 text-left font-semibold flex items-center justify-between">
               <span>{isCaregiver ? "Cuidador" : "Tutor"}</span>
               <span className="text-xs font-bold text-[#95301F]">(ativo)</span>
             </div>
 
-            {/* Linha 2: AÇÃO -> Ser cuidador / Cuidador / Tutor */}
             {otherActionLabel && (
               <button
                 type="button"
@@ -504,7 +519,6 @@ export default function Navbar() {
               >
                 <span>{otherActionLabel}</span>
 
-                {/* micro label quando for criação */}
                 {isTutor && !hasCaregiverProfile && (
                   <span className="text-xs font-semibold text-[#95301F]">
                     {creatingCaregiver ? "criando..." : "(criar perfil)"}
@@ -515,7 +529,6 @@ export default function Navbar() {
 
             <div className="h-px bg-black/10 my-2" />
 
-            {/* Mantém “Abrir painel” como ação separada (terceira linha) */}
             <button
               type="button"
               onClick={goDashboard}
@@ -545,7 +558,6 @@ export default function Navbar() {
         Sobre
       </Link>
 
-      {/* ✅ Dropdown do painel */}
       {PanelDropdown}
 
       {isAdminLike && (
@@ -629,7 +641,6 @@ export default function Navbar() {
               Sobre
             </Link>
 
-            {/* ✅ “Painel” no mobile: ação “Ser cuidador / Cuidador / Tutor” + abrir painel */}
             {user && !isAdminLike && (
               <div className="bg-white/10 rounded-xl p-2 flex flex-col gap-2">
                 <div className="w-full px-3 py-2 rounded-lg bg-white/5 flex items-center justify-between">
