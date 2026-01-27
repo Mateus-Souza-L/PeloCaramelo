@@ -15,10 +15,18 @@ function normalizeUser(u) {
   const blocked = Boolean(u.blocked ?? u.is_blocked ?? u.isBlocked ?? false);
 
   const blockedReason =
-    u.blockedReason ?? u.blocked_reason ?? u.block_reason ?? u.blockReason ?? null;
+    u.blockedReason ??
+    u.blocked_reason ??
+    u.block_reason ??
+    u.blockReason ??
+    null;
 
   const blockedUntil =
-    u.blockedUntil ?? u.blocked_until ?? u.block_until ?? u.blockedUntil ?? null;
+    u.blockedUntil ??
+    u.blocked_until ??
+    u.block_until ??
+    u.blockedUntil ??
+    null;
 
   return {
     ...u,
@@ -69,20 +77,29 @@ function coerceHasCaregiverProfile(res) {
   return Boolean(v);
 }
 
-function pickInitialMode(savedMode, hasCaregiverProfile) {
-  const m = String(savedMode || "").toLowerCase();
-  if (m === "caregiver" && hasCaregiverProfile) return "caregiver";
-  return "tutor";
+function normalizeMode(m) {
+  return String(m || "").toLowerCase().trim() === "caregiver" ? "caregiver" : "tutor";
+}
+
+function normalizeRole(role) {
+  return String(role || "").toLowerCase().trim();
 }
 
 /**
- * Regra especial (UX):
- * - Se o usuário acabou de criar o perfil cuidador (ou pediu para ir para cuidador),
- *   e de fato existe caregiver_profile, mantemos caregiver como modo ativo.
+ * ✅ Regra final do modo:
+ * 1) Se role do usuário é "caregiver" => sempre caregiver
+ * 2) Se preferCaregiver=true e existe caregiver_profile => caregiver
+ * 3) Se savedMode=caregiver e existe caregiver_profile => caregiver
+ * 4) Senão => tutor
  */
-function pickNextMode({ savedMode, hasCaregiverProfile, preferCaregiver = false }) {
+function decideMode({ role, savedMode, hasCaregiverProfile, preferCaregiver = false }) {
+  const r = normalizeRole(role);
+  const s = normalizeMode(savedMode);
+
+  if (r === "caregiver") return "caregiver";
   if (preferCaregiver && hasCaregiverProfile) return "caregiver";
-  return pickInitialMode(savedMode, hasCaregiverProfile);
+  if (s === "caregiver" && hasCaregiverProfile) return "caregiver";
+  return "tutor";
 }
 
 /* ============================================================
@@ -224,9 +241,6 @@ export function AuthProvider({ children }) {
   const [blockedModalOpen, setBlockedModalOpen] = useState(false);
   const [blockedInfo, setBlockedInfo] = useState({ reason: null, blockedUntil: null });
 
-  // ✅ flag interna: quando o usuário acabou de criar perfil e quer ficar em caregiver
-  const [preferCaregiverMode, setPreferCaregiverMode] = useState(false);
-
   const showBlockedModal = (info) => {
     setBlockedInfo({
       reason: info?.reason ?? null,
@@ -259,7 +273,6 @@ export function AuthProvider({ children }) {
     setToken(null);
     setHasCaregiverProfile(false);
     setActiveMode("tutor");
-    setPreferCaregiverMode(false);
     try {
       localStorage.removeItem(STORAGE_KEY);
     } catch {
@@ -267,17 +280,31 @@ export function AuthProvider({ children }) {
     }
   }
 
-  // ✅ troca de modo (só permite caregiver se tiver perfil)
+  /**
+   * ✅ troca de modo (só permite caregiver se tiver perfil)
+   * - Se o usuário for role caregiver, sempre força caregiver
+   */
   function setMode(nextMode) {
-    const m = String(nextMode || "").toLowerCase() === "caregiver" ? "caregiver" : "tutor";
-    const finalMode = m === "caregiver" && !hasCaregiverProfile ? "tutor" : m;
+    const saved = readSession();
+    const role = normalizeRole(user?.role ?? saved?.user?.role);
 
-    // se o usuário escolheu explicitamente, isso vira a preferência
-    setPreferCaregiverMode(finalMode === "caregiver");
+    // role caregiver sempre caregiver
+    if (role === "caregiver") {
+      setActiveMode("caregiver");
+      persistSession({
+        user: saved?.user ?? user ?? null,
+        token: saved?.token ?? token ?? null,
+        hasCaregiverProfile: Boolean(saved?.hasCaregiverProfile ?? hasCaregiverProfile ?? false),
+        activeMode: "caregiver",
+      });
+      return;
+    }
+
+    const desired = normalizeMode(nextMode);
+    const finalMode = desired === "caregiver" && !hasCaregiverProfile ? "tutor" : desired;
 
     setActiveMode(finalMode);
 
-    const saved = readSession();
     persistSession({
       user: saved?.user ?? user ?? null,
       token: saved?.token ?? token ?? null,
@@ -286,64 +313,64 @@ export function AuthProvider({ children }) {
     });
   }
 
-  // ✅ helper pra sincronizar user + hasCaregiverProfile com /auth/me
+  /**
+   * ✅ helper pra sincronizar user + hasCaregiverProfile com /auth/me
+   * opts:
+   * - preferCaregiver: tenta manter caregiver se existir caregiver_profile (multi-perfil)
+   */
   async function refreshMe(nextToken, opts = {}) {
     const t = nextToken || token;
     if (!t) return null;
 
     const saved = readSession();
     const savedMode = saved?.activeMode || activeMode || "tutor";
-
-    // ✅ se opts.preferCaregiver vier true, tenta manter caregiver
-    const prefer = Boolean(opts.preferCaregiver ?? preferCaregiverMode);
+    const preferCaregiver = Boolean(opts.preferCaregiver);
 
     const res = await meRequest(t);
     const has = coerceHasCaregiverProfile(res);
 
-    if (res?.user) {
-      const full = normalizeUser(res.user);
-      setUser(full);
-      setHasCaregiverProfile(has);
+    if (!res?.user) return null;
 
-      const nextMode = pickNextMode({
-        savedMode,
-        hasCaregiverProfile: has,
-        preferCaregiver: prefer,
-      });
+    const full = normalizeUser(res.user);
 
-      setActiveMode(nextMode);
+    setUser(full);
+    setHasCaregiverProfile(has);
 
-      // se o backend diz que não tem perfil, a preferência não faz sentido
-      setPreferCaregiverMode(prefer && has);
+    const nextMode = decideMode({
+      role: full.role,
+      savedMode,
+      hasCaregiverProfile: has,
+      preferCaregiver,
+    });
 
-      persistSession({
-        user: full,
-        token: t,
-        hasCaregiverProfile: has,
-        activeMode: nextMode,
-      });
+    setActiveMode(nextMode);
 
-      return { user: full, hasCaregiverProfile: has, activeMode: nextMode };
-    }
+    persistSession({
+      user: full,
+      token: t,
+      hasCaregiverProfile: has,
+      activeMode: nextMode,
+    });
 
-    return null;
+    return { user: full, hasCaregiverProfile: has, activeMode: nextMode };
   }
 
-  // ✅ cria o outro perfil SEM logout (POST /caregivers/me)
+  /**
+   * ✅ cria o outro perfil SEM logout (POST /caregivers/me)
+   * - após criar, preferimos caregiver (multi-perfil)
+   */
   async function createCaregiverProfile() {
     if (!token) throw new Error("Não autenticado.");
 
-    // ✅ a partir daqui, a intenção do usuário é ficar em caregiver
-    setPreferCaregiverMode(true);
+    // UX: já vira caregiver no UI
     setActiveMode("caregiver");
 
-    // endpoint já é idempotente/seguro; aqui tratamos a UX
     const res = await authRequest("/caregivers/me", token, { method: "POST" });
 
     // marca localmente como criado
     setHasCaregiverProfile(true);
 
-    // persiste (pro UI reagir imediatamente)
+    // persiste imediatamente
     persistSession({
       user,
       token,
@@ -351,11 +378,11 @@ export function AuthProvider({ children }) {
       activeMode: "caregiver",
     });
 
-    // atualiza fonte de verdade (mantendo caregiver se existir perfil)
+    // fonte da verdade
     try {
       await refreshMe(token, { preferCaregiver: true });
     } catch {
-      // se falhar, mantém estado local mesmo
+      // mantém estado local
     }
 
     return res;
@@ -382,8 +409,15 @@ export function AuthProvider({ children }) {
     setToken(savedToken);
     if (savedUser) setUser(normalizeUser(savedUser));
     setHasCaregiverProfile(savedHas);
-    setActiveMode(pickInitialMode(savedMode, savedHas));
-    setPreferCaregiverMode(savedMode === "caregiver" && savedHas);
+
+    const initialMode = decideMode({
+      role: savedUser?.role,
+      savedMode,
+      hasCaregiverProfile: savedHas,
+      preferCaregiver: false,
+    });
+
+    setActiveMode(initialMode);
 
     // sincroniza no backend
     meRequest(savedToken)
@@ -395,14 +429,14 @@ export function AuthProvider({ children }) {
           setUser(full);
           setHasCaregiverProfile(has);
 
-          const nextMode = pickNextMode({
+          const nextMode = decideMode({
+            role: full.role,
             savedMode,
             hasCaregiverProfile: has,
-            preferCaregiver: savedMode === "caregiver",
+            preferCaregiver: false,
           });
 
           setActiveMode(nextMode);
-          setPreferCaregiverMode(nextMode === "caregiver" && has);
 
           persistSession({
             user: full,
@@ -459,14 +493,14 @@ export function AuthProvider({ children }) {
       setUser(fullUser);
       setHasCaregiverProfile(has);
 
-      const nextMode = pickNextMode({
+      const nextMode = decideMode({
+        role: fullUser?.role,
         savedMode,
         hasCaregiverProfile: has,
-        preferCaregiver: savedMode === "caregiver",
+        preferCaregiver: false,
       });
 
       setActiveMode(nextMode);
-      setPreferCaregiverMode(nextMode === "caregiver" && has);
 
       persistSession({
         user: fullUser,
@@ -492,14 +526,22 @@ export function AuthProvider({ children }) {
 
       // sem /me não sabemos se tem perfil
       setHasCaregiverProfile(false);
-      setActiveMode("tutor");
-      setPreferCaregiverMode(false);
+
+      // se o loginUser já vier como caregiver, respeita
+      const nextMode = decideMode({
+        role: full?.role,
+        savedMode: "tutor",
+        hasCaregiverProfile: false,
+        preferCaregiver: false,
+      });
+
+      setActiveMode(nextMode);
 
       persistSession({
         user: full,
         token: newToken,
         hasCaregiverProfile: false,
-        activeMode: "tutor",
+        activeMode: nextMode,
       });
     } finally {
       setLoading(false);

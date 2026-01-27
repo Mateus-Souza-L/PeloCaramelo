@@ -78,7 +78,11 @@ export default function Navbar() {
   }, [user?.id, isAdminLike, activeMode, role, hasCaregiverProfile]);
 
   // ✅ “mode efetivo” pro usuário comum (pra UI)
-  const effectiveMode = isAdminLike ? "admin" : activeMode || "tutor";
+  const effectiveMode = isAdminLike
+    ? "admin"
+    : role === "caregiver"
+      ? "caregiver"
+      : activeMode || "tutor";
   const isTutor = effectiveMode === "tutor";
   const isCaregiver = effectiveMode === "caregiver";
 
