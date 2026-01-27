@@ -5,9 +5,6 @@ const crypto = require("crypto");
 const pool = require("../config/db");
 const { sendEmail } = require("../services/emailService");
 
-// ✅ templates transacionais
-const { buildConfirmSignupEmail } = require("../email/templates/confirmSignup");
-
 const {
   createUser,
   findUserByEmail,
@@ -72,15 +69,35 @@ function pickBlockInfo(user) {
   };
 }
 
+/**
+ * ✅ Multi-perfil (tolerante ao schema):
+ * Em alguns bancos o vínculo do perfil cuidador pode estar em:
+ * - caregiver_profiles.user_id
+ * - caregiver_profiles.caregiver_id
+ * - caregiver_profiles.id (quando id == users.id)
+ */
 async function hasCaregiverProfileByUserId(userId) {
   const id = Number(userId);
   if (!Number.isFinite(id) || id <= 0) return false;
 
-  const { rows } = await pool.query(
-    "SELECT 1 FROM caregiver_profiles WHERE user_id = $1 LIMIT 1",
-    [id]
-  );
-  return rows.length > 0;
+  try {
+    const { rows } = await pool.query(
+      `
+      SELECT 1
+      FROM caregiver_profiles
+      WHERE
+        (user_id::text = $1)
+        OR (caregiver_id::text = $1)
+        OR (id::text = $1)
+      LIMIT 1
+      `,
+      [String(id)]
+    );
+    return rows.length > 0;
+  } catch (err) {
+    console.error("[authController] hasCaregiverProfileByUserId error:", err?.message || err);
+    return false;
+  }
 }
 
 function computeFrontendBase(req) {
@@ -196,31 +213,6 @@ async function register(req, res) {
       role,
     });
 
-    // ✅ envio de e-mail de boas-vindas/confirm. cadastro (best-effort)
-    // Não deve quebrar o registro se o e-mail falhar.
-    try {
-      const appUrl = computeFrontendBase(req);
-      if (!appUrl) {
-        console.warn(
-          "[register] FRONTEND_URL/origin ausente. Configure FRONTEND_URL no ambiente. " +
-            "E-mail de confirmação não será enviado para evitar link quebrado."
-        );
-      } else {
-        const emailPayload = buildConfirmSignupEmail({
-          userName: newUser?.name,
-          appUrl,
-        });
-
-        await sendEmail({
-          to: newUser.email,
-          ...emailPayload,
-        });
-      }
-    } catch (e) {
-      console.error("[register] Falha ao enviar e-mail de confirmação:", e?.message || e);
-      // segue o fluxo normalmente
-    }
-
     const token = generateToken(newUser);
 
     // ✅ multi-perfil: no registro ainda não tem caregiver_profile
@@ -269,7 +261,7 @@ async function login(req, res) {
 
     const token = generateToken(user);
 
-    // ✅ importante p/ UI: já devolve se tem perfil cuidador
+    // ✅ importante p/ UI: já devolve se tem perfil cuidador (tolerante ao schema)
     const hasCaregiverProfile = await hasCaregiverProfileByUserId(user.id);
 
     return res.json({ user, token, hasCaregiverProfile });
@@ -301,6 +293,7 @@ async function me(req, res) {
       });
     }
 
+    // ✅ tolerante ao schema
     const hasCaregiverProfile = await hasCaregiverProfileByUserId(userId);
 
     // ✅ retorno real que o frontend deve usar
