@@ -178,15 +178,15 @@ function canAccessReservation(user, reservation) {
 function getStartEndSafe(obj, fallbackReservation) {
   const start = toDateKey(
     obj?.startDate ??
-      obj?.start_date ??
-      fallbackReservation?.startDate ??
-      fallbackReservation?.start_date
+    obj?.start_date ??
+    fallbackReservation?.startDate ??
+    fallbackReservation?.start_date
   );
   const end = toDateKey(
     obj?.endDate ??
-      obj?.end_date ??
-      fallbackReservation?.endDate ??
-      fallbackReservation?.end_date
+    obj?.end_date ??
+    fallbackReservation?.endDate ??
+    fallbackReservation?.end_date
   );
   return { start, end };
 }
@@ -1092,19 +1092,40 @@ async function updateReservationRatingController(req, res) {
    GET /reservations/my-evaluations
    =========================================================== */
 
+/* ===========================================================
+   GET /reservations/my-evaluations?mode=tutor|caregiver
+   - mode=tutor     => avaliações recebidas quando eu fui tutor (r.tutor_id = eu)
+   - mode=caregiver => avaliações recebidas quando eu fui cuidador (r.caregiver_id = eu)
+   =========================================================== */
+
 async function listMyEvaluationsController(req, res) {
   try {
     const user = req.user;
-    if (!user?.id) return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
+    if (!user?.id) {
+      return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
+    }
 
     const isAdmin = String(user.role || "").toLowerCase() === "admin";
     const idStr = String(user.id);
+
+    // ✅ modo vindo do front: /avaliacoes?mode=tutor|caregiver
+    const modeRaw = String(req.query?.mode || "").trim().toLowerCase();
+    const mode = modeRaw === "caregiver" ? "caregiver" : modeRaw === "tutor" ? "tutor" : "";
+
+    // ✅ filtro por papel na reserva
+    // Se não vier mode, mantém compat (traz tudo do reviewed_id)
+    const roleFilterSql =
+      mode === "tutor"
+        ? "AND r.tutor_id::text = $1"
+        : mode === "caregiver"
+          ? "AND r.caregiver_id::text = $1"
+          : "";
 
     const sql = `
       SELECT
         r.id AS reservation_id,
         rv.reviewer_id AS from_user_id,
-        COALESCE(u.name, r.tutor_name, r.caregiver_name) AS from_user_name,
+        COALESCE(u.name, u.email, 'Usuário') AS from_user_name,
         u.image AS from_user_image,
         u.city AS from_user_city,
 
@@ -1127,17 +1148,27 @@ async function listMyEvaluationsController(req, res) {
 
       WHERE rv.reviewed_id::text = $1
         AND rv.rating IS NOT NULL
+        ${roleFilterSql}
         ${isAdmin ? "" : "AND (rv.is_hidden IS NOT TRUE)"}
 
       ORDER BY rv.created_at DESC NULLS LAST, r.updated_at DESC NULLS LAST, r.created_at DESC
       LIMIT 1000
     `;
 
-    const result = await pool.query(sql, [idStr]);
-    return res.json({ evaluations: result.rows || [] });
+    const { rows } = await pool.query(sql, [idStr]);
+
+    // ✅ compat: alguns fronts esperam "reviews"
+    return res.json({
+      evaluations: rows || [],
+      reviews: rows || [],
+      mode: mode || "all",
+    });
   } catch (err) {
     console.error("Erro em GET /reservations/my-evaluations:", err);
-    return res.status(500).json({ error: "Erro ao buscar avaliações.", code: "LIST_EVAL_FAILED" });
+    return res.status(500).json({
+      error: "Erro ao buscar avaliações.",
+      code: "LIST_EVAL_FAILED",
+    });
   }
 }
 

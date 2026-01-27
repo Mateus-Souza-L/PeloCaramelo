@@ -2,7 +2,7 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
-const pool = require("../config/db"); // (mantido, caso você use em outros trechos)
+const pool = require("../config/db");
 const { sendEmail } = require("../services/emailService");
 
 const {
@@ -57,16 +57,27 @@ function readBody(req) {
   return {};
 }
 
+function trimLower(v) {
+  return String(v || "").trim().toLowerCase();
+}
+
 function pickBlockInfo(user) {
   return {
     blocked: Boolean(user?.blocked),
-    blockedReason: user?.blocked_reason ?? null,
-    blockedUntil: user?.blocked_until ?? null,
+    blockedReason: user?.blocked_reason ?? user?.blockedReason ?? null,
+    blockedUntil: user?.blocked_until ?? user?.blockedUntil ?? null,
   };
 }
 
-function trimLower(v) {
-  return String(v || "").trim().toLowerCase();
+async function hasCaregiverProfileByUserId(userId) {
+  const id = Number(userId);
+  if (!Number.isFinite(id) || id <= 0) return false;
+
+  const { rows } = await pool.query(
+    "SELECT 1 FROM caregiver_profiles WHERE user_id = $1 LIMIT 1",
+    [id]
+  );
+  return rows.length > 0;
 }
 
 function computeFrontendBase(req) {
@@ -183,7 +194,13 @@ async function register(req, res) {
     });
 
     const token = generateToken(newUser);
-    return res.status(201).json({ user: newUser, token });
+
+    // ✅ multi-perfil: no registro ainda não tem caregiver_profile
+    return res.status(201).json({
+      user: newUser,
+      token,
+      hasCaregiverProfile: false,
+    });
   } catch (err) {
     console.error("register:", err);
     return res.status(500).json({ error: "Erro ao registrar usuário." });
@@ -208,7 +225,13 @@ async function login(req, res) {
 
     const bi = pickBlockInfo(user);
     if (bi.blocked) {
-      return res.status(403).json({ error: "Usuário bloqueado." });
+      // ✅ payload alinhado com o AuthContext (pickBlockedPayload)
+      return res.status(403).json({
+        code: "USER_BLOCKED",
+        error: "Usuário bloqueado.",
+        reason: bi.blockedReason,
+        blockedUntil: bi.blockedUntil,
+      });
     }
 
     const match = await bcrypt.compare(String(password), user.password_hash);
@@ -217,7 +240,11 @@ async function login(req, res) {
     }
 
     const token = generateToken(user);
-    return res.json({ user, token });
+
+    // ✅ importante p/ UI: já devolve se tem perfil cuidador
+    const hasCaregiverProfile = await hasCaregiverProfileByUserId(user.id);
+
+    return res.json({ user, token, hasCaregiverProfile });
   } catch (err) {
     console.error("login:", err);
     return res.status(500).json({ error: "Erro ao fazer login." });
@@ -235,7 +262,21 @@ async function me(req, res) {
     const user = await findUserById(userId);
     if (!user) return res.status(404).json({ error: "Usuário não encontrado." });
 
-    return res.json({ user });
+    const bi = pickBlockInfo(user);
+    if (bi.blocked) {
+      // ✅ se o usuário foi bloqueado depois que já tinha token
+      return res.status(403).json({
+        code: "USER_BLOCKED",
+        error: "Usuário bloqueado.",
+        reason: bi.blockedReason,
+        blockedUntil: bi.blockedUntil,
+      });
+    }
+
+    const hasCaregiverProfile = await hasCaregiverProfileByUserId(userId);
+
+    // ✅ retorno real que o frontend deve usar
+    return res.json({ user, hasCaregiverProfile });
   } catch (err) {
     console.error("me:", err);
     return res.status(500).json({ error: "Erro ao buscar usuário." });
@@ -299,7 +340,7 @@ async function forgotPassword(req, res) {
         to: user.email,
         subject,
         html,
-        text, // fallback opcional (se seu sendEmail suportar)
+        text,
       });
     } catch (e) {
       console.error("[forgotPassword] Falha ao enviar email:", e?.message || e);

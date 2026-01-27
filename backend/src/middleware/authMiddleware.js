@@ -5,29 +5,19 @@ const pool = require("../config/db");
 const JWT_SECRET = process.env.JWT_SECRET;
 
 if (!JWT_SECRET) {
-  console.warn("⚠️ JWT_SECRET não definido no ambiente!");
+  console.warn("⚠️ JWT_SECRET não definido no ambiente! (misconfig)");
 }
 
 function pickBlockedPayload(row) {
   if (!row) return null;
 
-  const blocked =
-    row.blocked ??
-    row.is_blocked ??
-    row.isBlocked ??
-    false;
+  const blocked = row.blocked ?? row.is_blocked ?? row.isBlocked ?? false;
 
   const blockedReason =
-    row.blocked_reason ??
-    row.block_reason ??
-    row.blockReason ??
-    null;
+    row.blocked_reason ?? row.block_reason ?? row.blockReason ?? null;
 
   const blockedUntil =
-    row.blocked_until ??
-    row.block_until ??
-    row.blockedUntil ??
-    null;
+    row.blocked_until ?? row.block_until ?? row.blockedUntil ?? null;
 
   return {
     blocked: Boolean(blocked),
@@ -43,33 +33,79 @@ function isUntilActive(blockedUntil) {
   return dt.getTime() > Date.now();
 }
 
-async function fetchBlockInfo(userId) {
+function normalizeRole(role) {
+  return String(role || "").toLowerCase().trim();
+}
+
+// admin_master => 1 (master), admin => 0 (normal admin)
+function computeAdminLevel(role) {
+  const r = normalizeRole(role);
+  if (r === "admin_master") return 1;
+  return 0;
+}
+
+/**
+ * ✅ Busca info de bloqueio + capacidade de cuidador (multi-perfil)
+ * - blocked / blocked_reason / blocked_until (se existirem)
+ * - hasCaregiverProfile (EXISTS caregiver_profiles)
+ */
+async function fetchUserSecurityAndProfiles(userId) {
+  const id = String(userId);
+
   try {
     const { rows } = await pool.query(
       `
       SELECT
-        blocked,
-        blocked_reason,
-        blocked_until
-      FROM users
-      WHERE id::text = $1::text
+        u.blocked,
+        u.blocked_reason,
+        u.blocked_until,
+        EXISTS (
+          SELECT 1
+          FROM caregiver_profiles cp
+          WHERE cp.user_id = u.id
+        ) AS has_caregiver_profile
+      FROM users u
+      WHERE u.id::text = $1::text
       LIMIT 1;
       `,
-      [String(userId)]
+      [id]
     );
-    return pickBlockedPayload(rows?.[0] || null);
+
+    const row = rows?.[0] || null;
+    if (!row) return null;
+
+    const blockInfo = pickBlockedPayload(row);
+    return {
+      ...blockInfo,
+      hasCaregiverProfile: Boolean(row.has_caregiver_profile),
+    };
   } catch (err) {
+    // fallback: se algum ambiente não tiver blocked_reason/blocked_until (ou outras colunas)
     if (err?.code === "42703") {
       const { rows } = await pool.query(
         `
-        SELECT blocked
-        FROM users
-        WHERE id::text = $1::text
+        SELECT
+          u.blocked,
+          EXISTS (
+            SELECT 1
+            FROM caregiver_profiles cp
+            WHERE cp.user_id = u.id
+          ) AS has_caregiver_profile
+        FROM users u
+        WHERE u.id::text = $1::text
         LIMIT 1;
         `,
-        [String(userId)]
+        [id]
       );
-      return pickBlockedPayload(rows?.[0] || null);
+
+      const row = rows?.[0] || null;
+      if (!row) return null;
+
+      const blockInfo = pickBlockedPayload(row);
+      return {
+        ...blockInfo,
+        hasCaregiverProfile: Boolean(row.has_caregiver_profile),
+      };
     }
     throw err;
   }
@@ -97,22 +133,19 @@ async function tryAutoUnblockIfExpired(userId) {
   }
 }
 
-function normalizeRole(role) {
-  return String(role || "").toLowerCase().trim();
-}
-
-// admin_master => 1 (master), admin => 0 (normal admin)
-function computeAdminLevel(role) {
-  const r = normalizeRole(role);
-  if (r === "admin_master") return 1;
-  return 0;
-}
-
 /**
  * Middleware de autenticação via JWT.
  * Espera: Authorization: Bearer <token>
  */
 async function authMiddleware(req, res, next) {
+  // ✅ se o servidor estiver mal configurado, não culpar o usuário
+  if (!JWT_SECRET) {
+    return res.status(500).json({
+      error: "Configuração inválida do servidor (JWT_SECRET ausente).",
+      code: "SERVER_MISCONFIG",
+    });
+  }
+
   const authHeader = req.headers.authorization;
 
   if (!authHeader) {
@@ -142,16 +175,20 @@ async function authMiddleware(req, res, next) {
     }
 
     const role = normalizeRole(decoded.role);
+    const admin_level = computeAdminLevel(role);
+    const isAdminLike = role === "admin" || role === "admin_master";
 
     // ✅ Usuário autenticado (do token)
     req.user = {
       id: String(decoded.id),
-      role, // sempre minúsculo: "admin", "admin_master", "tutor", "caregiver"
-      admin_level: computeAdminLevel(role), // 1 para admin_master, 0 para demais
+      role, // "admin", "admin_master", "tutor", ...
+      admin_level,
+      isAdminLike,
+      hasCaregiverProfile: false, // ✅ preenchido via banco
     };
 
-    // ✅ Checagem de bloqueio no banco (para token antigo também)
-    const info = await fetchBlockInfo(req.user.id);
+    // ✅ Checagem no banco (fonte da verdade)
+    const info = await fetchUserSecurityAndProfiles(req.user.id);
 
     if (!info) {
       return res.status(401).json({
@@ -160,11 +197,15 @@ async function authMiddleware(req, res, next) {
       });
     }
 
+    // ✅ injeta capacidade (multi-perfil)
+    req.user.hasCaregiverProfile = Boolean(info.hasCaregiverProfile);
+
+    // ✅ bloqueio
     if (info.blocked) {
       if (info.blockedUntil && !isUntilActive(info.blockedUntil)) {
         await tryAutoUnblockIfExpired(req.user.id);
 
-        const refreshed = await fetchBlockInfo(req.user.id);
+        const refreshed = await fetchUserSecurityAndProfiles(req.user.id);
         if (refreshed && refreshed.blocked) {
           return res.status(403).json({
             error: "Seu acesso está bloqueado.",
@@ -191,7 +232,7 @@ async function authMiddleware(req, res, next) {
 
     console.error(
       "❌ Erro ao validar token JWT:",
-      isExpired ? "TOKEN_EXPIRED" : err.message
+      isExpired ? "TOKEN_EXPIRED" : err?.message || err
     );
 
     return res.status(401).json({

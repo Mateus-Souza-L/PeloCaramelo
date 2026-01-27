@@ -31,7 +31,7 @@ function looksLikeJsonString(str) {
   return (s.startsWith("{") && s.endsWith("}")) || (s.startsWith("[") && s.endsWith("]"));
 }
 
-// ✅ logout automático em 401/403 (sem depender do AuthContext)
+// ✅ logout automático em 401 (sem depender do AuthContext)
 function autoLogout(reason = "unauthorized") {
   try {
     // evita spam/loop
@@ -97,7 +97,7 @@ function autoLogout(reason = "unauthorized") {
  * - ✅ NOVO: se body já vier string JSON ("{...}" / "[...]"), seta Content-Type JSON também
  * - NÃO seta Content-Type quando for FormData/Blob (deixa o browser cuidar)
  * - Evita cache (304 sem body em APIs)
- * - ✅ NOVO: auto logout em 401/403 (padrão), com opção de desativar
+ * - ✅ auto logout APENAS em 401 (padrão), com opção de desativar
  *
  * Opções extras (não vão pro fetch):
  *  - __noAutoLogout: boolean (default false)
@@ -178,15 +178,15 @@ async function apiRequest(path, options = {}) {
   }
 
   if (!response.ok) {
-    // ✅ auto-logout em 401/403 (exceto se desativado)
-    if (!__noAutoLogout && (response.status === 401 || response.status === 403)) {
+    // ✅ auto-logout APENAS em 401 (exceto se desativado)
+    if (!__noAutoLogout && response.status === 401) {
       // se for login/register, não faz sentido deslogar (apenas erro de credencial)
       const isAuthEndpoint =
         typeof path === "string" &&
         (path.startsWith("/auth/login") || path.startsWith("/auth/register"));
 
       if (!isAuthEndpoint) {
-        autoLogout(`http_${response.status}`);
+        autoLogout("http_401");
       }
     }
 

@@ -351,6 +351,43 @@ export default function Dashboard() {
     [rolesAvailable, activeRoleStorageKey]
   );
 
+  useEffect(() => {
+    const onRoleChanged = (e) => {
+      const next = e?.detail?.role;
+      if (next !== "tutor" && next !== "caregiver") return;
+
+      if (next === "caregiver" && !hasCaregiverProfile) return;
+
+      setActiveRole(next);
+
+      // ✅ IMPORTANTÍSSIMO: persistir, senão outro effect “puxa de volta”
+      try {
+        localStorage.setItem(activeRoleStorageKey, next);
+      } catch {
+        // ignore
+      }
+    };
+
+    window.addEventListener("active-role-changed", onRoleChanged);
+    return () => window.removeEventListener("active-role-changed", onRoleChanged);
+  }, [hasCaregiverProfile, activeRoleStorageKey]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+
+    try {
+      const saved = localStorage.getItem(activeRoleStorageKey);
+      if (saved !== "tutor" && saved !== "caregiver") return;
+
+      if (saved === "caregiver" && !hasCaregiverProfile) return;
+
+      // ✅ só atualiza se for diferente (evita “voltar” desnecessariamente)
+      setActiveRole((prev) => (prev === saved ? prev : saved));
+    } catch {
+      // ignore
+    }
+  }, [user?.id, activeRoleStorageKey, hasCaregiverProfile]);
+
   const isTutor = activeRole === "tutor";
   const isCaregiver = activeRole === "caregiver";
 
@@ -1039,9 +1076,20 @@ export default function Dashboard() {
         k === reservationsStorageKey ||
         k === "reservationNotifications" ||
         k === "newMessages" ||
-        k === availabilityStorageKey;
+        k === availabilityStorageKey ||
+        k === activeRoleStorageKey;
+
 
       if (!relevant) return;
+
+      // ✅ se a Navbar trocou o perfil, o dashboard sincroniza
+      if (k === activeRoleStorageKey) {
+        const next = (e.newValue || "").trim();
+        if (next === "tutor" || next === "caregiver") {
+          setActiveRole(next);
+        }
+        return; // não precisa fazer o resto aqui; o useEffect do activeRole já cuida do resto
+      }
 
       loadReservations();
       loadUnreadChatFromServer();
@@ -1064,6 +1112,7 @@ export default function Dashboard() {
     loadAvailabilityIfCaregiver,
     reservationsStorageKey,
     availabilityStorageKey,
+    activeRoleStorageKey,
   ]);
 
   // polling leve (chat 15s, reservas 60s, reviews 60s)
@@ -1498,32 +1547,6 @@ export default function Dashboard() {
 
     return (
       <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] p-6">
-        {hasBothRoles && (
-          <div className="max-w-[1400px] mx-auto mb-4 flex justify-center">
-            <div className="inline-flex rounded-2xl bg-white/70 border border-[#FFD700]/60 shadow-sm overflow-hidden">
-              <button
-                type="button"
-                onClick={() => setRoleSafe("tutor")}
-                className={`px-4 py-2 text-sm font-semibold transition ${activeRole === "tutor"
-                  ? "bg-[#5A3A22] text-white"
-                  : "text-[#5A3A22] hover:bg-white"
-                  }`}
-              >
-                Perfil: Tutor
-              </button>
-              <button
-                type="button"
-                onClick={() => setRoleSafe("caregiver")}
-                className={`px-4 py-2 text-sm font-semibold transition ${activeRole === "caregiver"
-                  ? "bg-[#5A3A22] text-white"
-                  : "text-[#5A3A22] hover:bg-white"
-                  }`}
-              >
-                Perfil: Cuidador
-              </button>
-            </div>
-          </div>
-        )}
         <div className="max-w-[1400px] mx-auto mb-4 flex gap-3 justify-center">
           <button
             onClick={() => setTab("reservasTutor")}
@@ -1550,7 +1573,7 @@ export default function Dashboard() {
 
         <div className="max-w-[1400px] mx-auto mb-4 flex justify-end">
           <Link
-            to="/avaliacoes"
+            to={`/avaliacoes?mode=${activeRole}`}
             className="px-4 py-2 rounded-2xl bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22] font-semibold shadow text-sm"
           >
             Ver minhas avaliações
@@ -1773,32 +1796,6 @@ export default function Dashboard() {
 
     return (
       <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] p-6">
-        {hasBothRoles && (
-          <div className="max-w-[1400px] mx-auto mb-4 flex justify-center">
-            <div className="inline-flex rounded-2xl bg-white/70 border border-[#FFD700]/60 shadow-sm overflow-hidden">
-              <button
-                type="button"
-                onClick={() => setRoleSafe("tutor")}
-                className={`px-4 py-2 text-sm font-semibold transition ${activeRole === "tutor"
-                  ? "bg-[#5A3A22] text-white"
-                  : "text-[#5A3A22] hover:bg-white"
-                  }`}
-              >
-                Perfil: Tutor
-              </button>
-              <button
-                type="button"
-                onClick={() => setRoleSafe("caregiver")}
-                className={`px-4 py-2 text-sm font-semibold transition ${activeRole === "caregiver"
-                  ? "bg-[#5A3A22] text-white"
-                  : "text-[#5A3A22] hover:bg-white"
-                  }`}
-              >
-                Perfil: Cuidador
-              </button>
-            </div>
-          </div>
-        )}
         <div className="max-w-[1400px] mx-auto mb-4 flex gap-3 justify-center">
           <button
             onClick={() => setTab("disponibilidade")}
@@ -1824,7 +1821,7 @@ export default function Dashboard() {
 
         <div className="max-w-[1400px] mx-auto mb-4 flex justify-end">
           <Link
-            to="/avaliacoes"
+            to={`/avaliacoes?mode=${activeRole}`}
             className="px-4 py-2 rounded-2xl bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22] font-semibold shadow text-sm"
           >
             Ver minhas avaliações

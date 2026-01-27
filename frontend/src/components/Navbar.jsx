@@ -11,7 +11,16 @@ import {
 } from "../utils/reservationNotifs";
 
 export default function Navbar() {
-  const { user, logout, token, hasCaregiverProfile, activeMode, setMode } = useAuth();
+  const {
+    user,
+    logout,
+    token,
+    hasCaregiverProfile,
+    activeMode,
+    setMode,
+    createCaregiverProfile,
+  } = useAuth();
+
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -36,8 +45,19 @@ export default function Navbar() {
   const [panelOpen, setPanelOpen] = useState(false);
   const panelWrapRef = useRef(null);
 
+  // ✅ criando perfil cuidador (UX)
+  const [creatingCaregiver, setCreatingCaregiver] = useState(false);
+
   const chatUnreadCount = chatUnreadIds.length;
   const totalUnread = chatUnreadCount + reservationUnreadCount;
+
+  // ✅ helper: avisa a mesma aba (Dashboard já escuta)
+  const emitRoleChanged = useCallback((nextRole) => {
+    const next = nextRole === "caregiver" ? "caregiver" : "tutor";
+    window.dispatchEvent(
+      new CustomEvent("active-role-changed", { detail: { role: next } })
+    );
+  }, []);
 
   // Fecha menu ao trocar rota
   useEffect(() => {
@@ -91,7 +111,9 @@ export default function Navbar() {
 
     try {
       const data = await authRequest("/chat/unread", token);
-      const ids = Array.isArray(data?.reservationIds) ? data.reservationIds.map(String) : [];
+      const ids = Array.isArray(data?.reservationIds)
+        ? data.reservationIds.map(String)
+        : [];
 
       setChatUnreadIds(ids);
 
@@ -130,7 +152,8 @@ export default function Navbar() {
         const idStr = String(r.id);
 
         const tutorRating = r.tutor_rating == null ? null : Number(r.tutor_rating);
-        const caregiverRating = r.caregiver_rating == null ? null : Number(r.caregiver_rating);
+        const caregiverRating =
+          r.caregiver_rating == null ? null : Number(r.caregiver_rating);
 
         currentMap[idStr] = {
           status: r.status ?? "Pendente",
@@ -251,7 +274,10 @@ export default function Navbar() {
             });
           }
 
-          if (prevCaregiverRating(idStr) == null && curCaregiverRating(idStr) != null) {
+          if (
+            prevCaregiverRating(idStr) == null &&
+            curCaregiverRating(idStr) != null
+          ) {
             newEvents.push({
               reservationId: idStr,
               type: "rating",
@@ -295,7 +321,10 @@ export default function Navbar() {
     };
 
     window.addEventListener("chat-unread-changed", handleChatUnreadChanged);
-    window.addEventListener("reservation-notifications-changed", handleReservationNotifChanged);
+    window.addEventListener(
+      "reservation-notifications-changed",
+      handleReservationNotifChanged
+    );
 
     return () => {
       window.removeEventListener("chat-unread-changed", handleChatUnreadChanged);
@@ -317,7 +346,13 @@ export default function Navbar() {
 
     loadUnreadChatFromServer();
     loadReservationEventsFromServer();
-  }, [user?.id, token, isAdminLike, loadUnreadChatFromServer, loadReservationEventsFromServer]);
+  }, [
+    user?.id,
+    token,
+    isAdminLike,
+    loadUnreadChatFromServer,
+    loadReservationEventsFromServer,
+  ]);
 
   /* ================= POLLING APENAS RESERVAS ================= */
 
@@ -330,7 +365,14 @@ export default function Navbar() {
     }, 15000);
 
     return () => clearInterval(intervalId);
-  }, [user?.id, token, isAdminLike, isTutor, isCaregiver, loadReservationEventsFromServer]);
+  }, [
+    user?.id,
+    token,
+    isAdminLike,
+    isTutor,
+    isCaregiver,
+    loadReservationEventsFromServer,
+  ]);
 
   const handleBellClick = () => {
     if (!user) return;
@@ -362,6 +404,7 @@ export default function Navbar() {
 
   const switchToTutor = () => {
     setMode?.("tutor");
+    emitRoleChanged("tutor");
     navigate("/dashboard?tab=reservas", { replace: false });
     setPanelOpen(false);
     closeMobile();
@@ -369,16 +412,56 @@ export default function Navbar() {
 
   const switchToCaregiver = () => {
     setMode?.("caregiver");
+    emitRoleChanged("caregiver");
     navigate("/dashboard?tab=reservas", { replace: false });
     setPanelOpen(false);
     closeMobile();
   };
 
-  const goCreateCaregiver = () => {
-    // ✅ rota que você achou no botão: /register
-    navigate("/register");
-    setPanelOpen(false);
-    closeMobile();
+  // ✅ “Ser cuidador” (cria perfil usando os MESMOS dados, sem duplicar user)
+  const createAndSwitchToCaregiver = async () => {
+    if (creatingCaregiver) return;
+    setCreatingCaregiver(true);
+    try {
+      await createCaregiverProfile?.(); // POST /caregivers/me + atualiza context
+      // garante modo caregiver e avisa a mesma aba
+      setMode?.("caregiver");
+      emitRoleChanged("caregiver");
+      navigate("/dashboard?tab=reservas", { replace: false });
+    } catch (err) {
+      console.error("Falha ao criar perfil cuidador:", err);
+      // fallback suave: se preferir mandar pra /register
+      // navigate("/register");
+    } finally {
+      setCreatingCaregiver(false);
+      setPanelOpen(false);
+      closeMobile();
+    }
+  };
+
+  /* ============================================================
+     ✅ Dropdown: “linha 2” vira (Ser cuidador / Cuidador) ou (Tutor)
+     ============================================================ */
+
+  // qual é o “outro” item do dropdown?
+  const otherActionLabel = useMemo(() => {
+    if (isAdminLike) return null;
+    if (isTutor) return hasCaregiverProfile ? "Cuidador" : "Ser cuidador";
+    if (isCaregiver) return "Tutor";
+    return null;
+  }, [isAdminLike, isTutor, isCaregiver, hasCaregiverProfile]);
+
+  const handleOtherAction = () => {
+    if (isAdminLike) return;
+
+    if (isTutor) {
+      if (hasCaregiverProfile) return switchToCaregiver();
+      return createAndSwitchToCaregiver();
+    }
+
+    if (isCaregiver) {
+      return switchToTutor();
+    }
   };
 
   const PanelDropdown = user && !isAdminLike ? (
@@ -401,45 +484,38 @@ export default function Navbar() {
           className="absolute right-0 mt-2 w-[300px] max-w-[90vw] bg-white text-[#5A3A22] rounded-2xl shadow-xl border border-black/10 overflow-hidden z-50"
         >
           <div className="py-2">
-            {/* Linha de modo / ação principal */}
-            {!hasCaregiverProfile ? (
-              <>
-                <button
-                  type="button"
-                  onClick={goCreateCaregiver}
-                  className="w-full px-4 py-3 text-left hover:bg-black/5 transition font-semibold"
-                  role="menuitem"
-                >
-                  Ser cuidador
-                  <span className="ml-2 text-xs font-semibold text-[#95301F]">(criar perfil)</span>
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={switchToTutor}
-                  className="w-full px-4 py-3 text-left hover:bg-black/5 transition font-semibold flex items-center justify-between"
-                  role="menuitem"
-                >
-                  <span>Tutor</span>
-                  {isTutor && <span className="text-xs font-bold text-[#95301F]">(ativo)</span>}
-                </button>
+            {/* Linha 1: modo atual (somente informativo) */}
+            <div className="w-full px-4 py-3 text-left font-semibold flex items-center justify-between">
+              <span>{isCaregiver ? "Cuidador" : "Tutor"}</span>
+              <span className="text-xs font-bold text-[#95301F]">(ativo)</span>
+            </div>
 
-                <button
-                  type="button"
-                  onClick={switchToCaregiver}
-                  className="w-full px-4 py-3 text-left hover:bg-black/5 transition font-semibold flex items-center justify-between"
-                  role="menuitem"
-                >
-                  <span>Cuidador</span>
-                  {isCaregiver && <span className="text-xs font-bold text-[#95301F]">(ativo)</span>}
-                </button>
-              </>
+            {/* Linha 2: AÇÃO -> Ser cuidador / Cuidador / Tutor */}
+            {otherActionLabel && (
+              <button
+                type="button"
+                onClick={handleOtherAction}
+                disabled={creatingCaregiver}
+                className={[
+                  "w-full px-4 py-3 text-left hover:bg-black/5 transition font-semibold flex items-center justify-between",
+                  creatingCaregiver ? "opacity-60 cursor-not-allowed" : "",
+                ].join(" ")}
+                role="menuitem"
+              >
+                <span>{otherActionLabel}</span>
+
+                {/* micro label quando for criação */}
+                {isTutor && !hasCaregiverProfile && (
+                  <span className="text-xs font-semibold text-[#95301F]">
+                    {creatingCaregiver ? "criando..." : "(criar perfil)"}
+                  </span>
+                )}
+              </button>
             )}
 
             <div className="h-px bg-black/10 my-2" />
 
+            {/* Mantém “Abrir painel” como ação separada (terceira linha) */}
             <button
               type="button"
               onClick={goDashboard}
@@ -553,53 +629,44 @@ export default function Navbar() {
               Sobre
             </Link>
 
-            {/* ✅ “Painel” no mobile: opções */}
+            {/* ✅ “Painel” no mobile: ação “Ser cuidador / Cuidador / Tutor” + abrir painel */}
             {user && !isAdminLike && (
               <div className="bg-white/10 rounded-xl p-2 flex flex-col gap-2">
-                {!hasCaregiverProfile ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      navigate("/register");
-                      closeMobile();
-                    }}
-                    className="w-full bg-white/10 hover:bg-white/15 border border-white/15 px-3 py-2 rounded-lg font-semibold text-center"
-                  >
-                    Ser cuidador
-                  </button>
-                ) : (
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setMode("tutor");
-                        navigate("/dashboard?tab=reservas");
-                        closeMobile();
-                      }}
-                      className={[
-                        "flex-1 px-3 py-2 rounded-lg font-semibold text-center transition",
-                        isTutor ? "bg-[#FFD700] text-[#5A3A22]" : "bg-white/10 text-white",
-                      ].join(" ")}
-                    >
-                      Tutor
-                    </button>
+                <div className="w-full px-3 py-2 rounded-lg bg-white/5 flex items-center justify-between">
+                  <span className="font-semibold">{isCaregiver ? "Cuidador" : "Tutor"}</span>
+                  <span className="text-xs font-bold text-yellow-300">(ativo)</span>
+                </div>
 
-                    <button
-                      type="button"
-                      onClick={() => {
+                <button
+                  type="button"
+                  onClick={() => {
+                    closeMobile();
+
+                    if (isTutor) {
+                      if (hasCaregiverProfile) {
                         setMode("caregiver");
+                        emitRoleChanged("caregiver");
                         navigate("/dashboard?tab=reservas");
-                        closeMobile();
-                      }}
-                      className={[
-                        "flex-1 px-3 py-2 rounded-lg font-semibold text-center transition",
-                        isCaregiver ? "bg-[#FFD700] text-[#5A3A22]" : "bg-white/10 text-white",
-                      ].join(" ")}
-                    >
-                      Cuidador
-                    </button>
-                  </div>
-                )}
+                        return;
+                      }
+                      createAndSwitchToCaregiver();
+                      return;
+                    }
+
+                    if (isCaregiver) {
+                      setMode("tutor");
+                      emitRoleChanged("tutor");
+                      navigate("/dashboard?tab=reservas");
+                    }
+                  }}
+                  disabled={creatingCaregiver}
+                  className={[
+                    "w-full bg-white/10 hover:bg-white/15 border border-white/15 px-3 py-2 rounded-lg font-semibold text-center transition",
+                    creatingCaregiver ? "opacity-60 cursor-not-allowed" : "",
+                  ].join(" ")}
+                >
+                  {isTutor ? (hasCaregiverProfile ? "Cuidador" : "Ser cuidador") : "Tutor"}
+                </button>
 
                 <button
                   type="button"

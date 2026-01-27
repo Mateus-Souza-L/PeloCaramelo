@@ -1,9 +1,13 @@
 // src/context/AuthContext.jsx
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { meRequest } from "../services/api";
+import { meRequest, authRequest } from "../services/api";
 
 const AuthContext = createContext();
 const STORAGE_KEY = "pelocaramelo_auth";
+
+/* ============================================================
+   Normalizers / helpers
+   ============================================================ */
 
 function normalizeUser(u) {
   if (!u) return u;
@@ -24,7 +28,6 @@ function normalizeUser(u) {
   };
 }
 
-// ---------- helpers ----------
 function pickBlockedPayload(err) {
   const data = err?.data || err?.response?.data || err?.body || err?.payload || null;
 
@@ -57,7 +60,6 @@ function formatBlockedUntil(blockedUntil) {
 }
 
 function coerceHasCaregiverProfile(res) {
-  // Suporta variações caso algum ambiente retorne diferente
   const v =
     res?.hasCaregiverProfile ??
     res?.has_caregiver_profile ??
@@ -67,7 +69,16 @@ function coerceHasCaregiverProfile(res) {
   return Boolean(v);
 }
 
-// ---------- modal ----------
+function pickInitialMode(savedMode, hasCaregiverProfile) {
+  const m = String(savedMode || "").toLowerCase();
+  if (m === "caregiver" && hasCaregiverProfile) return "caregiver";
+  return "tutor";
+}
+
+/* ============================================================
+   Modal (blocked)
+   ============================================================ */
+
 function BlockedModal({ open, info, onClose }) {
   if (!open) return null;
 
@@ -184,13 +195,20 @@ function BlockedModal({ open, info, onClose }) {
   );
 }
 
+/* ============================================================
+   Provider
+   ============================================================ */
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // ✅ Mantém apenas a “capacidade” (perfil cuidador existe), NÃO o modo ativo
+  // ✅ capacidade (existe perfil cuidador)
   const [hasCaregiverProfile, setHasCaregiverProfile] = useState(false);
+
+  // ✅ modo ativo (pra Navbar/UI). Não é “role”, é só modo de uso.
+  const [activeMode, setActiveMode] = useState("tutor"); // "tutor" | "caregiver"
 
   // modal de bloqueio
   const [blockedModalOpen, setBlockedModalOpen] = useState(false);
@@ -204,9 +222,7 @@ export function AuthProvider({ children }) {
     setBlockedModalOpen(true);
   };
 
-  const hideBlockedModal = () => {
-    setBlockedModalOpen(false);
-  };
+  const hideBlockedModal = () => setBlockedModalOpen(false);
 
   function persistSession(next) {
     try {
@@ -216,10 +232,20 @@ export function AuthProvider({ children }) {
     }
   }
 
+  function readSession() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  }
+
   function handleLogout() {
     setUser(null);
     setToken(null);
     setHasCaregiverProfile(false);
+    setActiveMode("tutor");
     try {
       localStorage.removeItem(STORAGE_KEY);
     } catch {
@@ -227,83 +253,159 @@ export function AuthProvider({ children }) {
     }
   }
 
-  // Carregar sessão salva no localStorage ao iniciar o app
+  // ✅ troca de modo (só permite caregiver se tiver perfil)
+  function setMode(nextMode) {
+    const m = String(nextMode || "").toLowerCase() === "caregiver" ? "caregiver" : "tutor";
+    const finalMode = m === "caregiver" && !hasCaregiverProfile ? "tutor" : m;
+
+    setActiveMode(finalMode);
+
+    const saved = readSession();
+    persistSession({
+      user: saved?.user ?? user ?? null,
+      token: saved?.token ?? token ?? null,
+      hasCaregiverProfile: Boolean(saved?.hasCaregiverProfile ?? hasCaregiverProfile ?? false),
+      activeMode: finalMode,
+    });
+  }
+
+  // ✅ helper pra sincronizar user + hasCaregiverProfile com /auth/me
+  async function refreshMe(nextToken) {
+    const t = nextToken || token;
+    if (!t) return null;
+
+    const res = await meRequest(t);
+    const has = coerceHasCaregiverProfile(res);
+
+    if (res?.user) {
+      const full = normalizeUser(res.user);
+      setUser(full);
+      setHasCaregiverProfile(has);
+
+      // garante que não fique em caregiver sem perfil
+      setActiveMode((prev) => pickInitialMode(prev, has));
+
+      persistSession({
+        user: full,
+        token: t,
+        hasCaregiverProfile: has,
+        activeMode: pickInitialMode(readSession()?.activeMode, has),
+      });
+
+      return { user: full, hasCaregiverProfile: has };
+    }
+
+    return null;
+  }
+
+  // ✅ cria o outro perfil SEM logout (POST /caregivers/me)
+  async function createCaregiverProfile() {
+    if (!token) throw new Error("Não autenticado.");
+
+    // endpoint já é idempotente/seguro; aqui tratamos a UX
+    const res = await authRequest("/caregivers/me", token, { method: "POST" });
+
+    // marca localmente como criado
+    setHasCaregiverProfile(true);
+
+    // troca pro modo cuidador automaticamente (faz sentido pra UX “Ser cuidador”)
+    setActiveMode("caregiver");
+
+    // persiste
+    persistSession({
+      user,
+      token,
+      hasCaregiverProfile: true,
+      activeMode: "caregiver",
+    });
+
+    // atualiza fonte de verdade (se /auth/me já devolve hasCaregiverProfile)
+    try {
+      await refreshMe(token);
+    } catch {
+      // se falhar, mantém estado local mesmo
+    }
+
+    return res;
+  }
+
+  /* ============================================================
+     Bootstrap (localStorage -> /auth/me)
+     ============================================================ */
+
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (!saved) {
+    const saved = readSession();
+
+    if (!saved?.token) {
       setLoading(false);
       return;
     }
 
-    try {
-      const parsed = JSON.parse(saved);
-      const savedToken = parsed?.token || null;
-      const savedUser = parsed?.user || null;
-      const savedHas = Boolean(parsed?.hasCaregiverProfile ?? false);
+    const savedToken = saved.token;
+    const savedUser = saved.user || null;
+    const savedHas = Boolean(saved.hasCaregiverProfile ?? false);
+    const savedMode = saved.activeMode || "tutor";
 
-      if (!savedToken) {
-        setLoading(false);
-        return;
-      }
+    // hidrata imediatamente
+    setToken(savedToken);
+    if (savedUser) setUser(normalizeUser(savedUser));
+    setHasCaregiverProfile(savedHas);
+    setActiveMode(pickInitialMode(savedMode, savedHas));
 
-      // hidrata imediatamente
-      setToken(savedToken);
-      if (savedUser) setUser(normalizeUser(savedUser));
-      setHasCaregiverProfile(savedHas);
+    // sincroniza no backend
+    meRequest(savedToken)
+      .then((res) => {
+        const has = coerceHasCaregiverProfile(res);
 
-      // Sempre busca o usuário atual no backend (fonte de verdade)
-      meRequest(savedToken)
-        .then((res) => {
-          const has = coerceHasCaregiverProfile(res);
+        if (res?.user) {
+          const full = normalizeUser(res.user);
+          setUser(full);
+          setHasCaregiverProfile(has);
 
-          if (res?.user) {
-            const full = normalizeUser(res.user);
+          const nextMode = pickInitialMode(savedMode, has);
+          setActiveMode(nextMode);
 
-            setUser(full);
-            setHasCaregiverProfile(has);
+          persistSession({
+            user: full,
+            token: savedToken,
+            hasCaregiverProfile: has,
+            activeMode: nextMode,
+          });
+          return;
+        }
 
-            persistSession({
-              user: full,
-              token: savedToken,
-              hasCaregiverProfile: has,
-            });
-            return;
-          }
+        handleLogout();
+      })
+      .catch((err) => {
+        console.error("Erro ao carregar sessão /auth/me:", err);
 
-          // se não veio user, trata como sessão inválida
+        const status = err?.status ?? err?.response?.status ?? null;
+
+        // bloqueio
+        const bi = pickBlockedPayload(err);
+        if (status === 403 && bi) {
+          showBlockedModal(bi);
           handleLogout();
-        })
-        .catch((err) => {
-          console.error("Erro ao carregar sessão /auth/me:", err);
+          return;
+        }
 
-          const status = err?.status ?? err?.response?.status ?? null;
+        // token inválido
+        if (status === 401 || status === 403) {
+          handleLogout();
+          return;
+        }
 
-          // ✅ se backend informou bloqueio, mostra modal + limpa sessão
-          const bi = pickBlockedPayload(err);
-          if (status === 403 && bi) {
-            showBlockedModal(bi);
-            handleLogout();
-            return;
-          }
+        // erro temporário: mantém sessão local
+      })
+      .finally(() => setLoading(false));
 
-          // ✅ só “desloga” se for token inválido/sem permissão (sem payload de bloqueio)
-          if (status === 401 || status === 403) {
-            handleLogout();
-            return;
-          }
-
-          // erro temporário (500, rede): mantém sessão local
-        })
-        .finally(() => setLoading(false));
-    } catch (err) {
-      console.error("Erro ao ler sessão do localStorage:", err);
-      handleLogout();
-      setLoading(false);
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Login: recebe user básico do /auth/login, mas já consulta /auth/me
+  /* ============================================================
+     Login ( /auth/login -> /auth/me )
+     ============================================================ */
+
   async function handleLogin(loginUser, newToken) {
     try {
       setToken(newToken);
@@ -316,10 +418,16 @@ export function AuthProvider({ children }) {
       setUser(fullUser);
       setHasCaregiverProfile(has);
 
+      // mantém modo salvo se válido
+      const savedMode = readSession()?.activeMode || "tutor";
+      const nextMode = pickInitialMode(savedMode, has);
+      setActiveMode(nextMode);
+
       persistSession({
         user: fullUser,
         token: newToken,
         hasCaregiverProfile: has,
+        activeMode: nextMode,
       });
     } catch (err) {
       console.error("Erro ao buscar /auth/me após login:", err);
@@ -327,24 +435,25 @@ export function AuthProvider({ children }) {
       const status = err?.status ?? err?.response?.status ?? null;
       const bi = pickBlockedPayload(err);
 
-      // se o /auth/me responder bloqueado por algum motivo, mostra modal e limpa sessão
       if (status === 403 && bi) {
         showBlockedModal(bi);
         handleLogout();
         return;
       }
 
-      // mantém sessão (útil em instabilidade momentânea)
+      // fallback: mantém sessão com o loginUser
       const full = normalizeUser(loginUser);
       setUser(full);
 
-      // sem /me não sabemos o perfil -> assume "não cuidador" até provar o contrário
+      // sem /me não sabemos se tem perfil
       setHasCaregiverProfile(false);
+      setActiveMode("tutor");
 
       persistSession({
         user: full,
         token: newToken,
         hasCaregiverProfile: false,
+        activeMode: "tutor",
       });
     } finally {
       setLoading(false);
@@ -361,8 +470,12 @@ export function AuthProvider({ children }) {
       logout: handleLogout,
       isAuthenticated: !!user && !!token,
 
-      // ✅ capacidade (Dashboard decide o perfil ativo)
+      // ✅ multi-perfil
       hasCaregiverProfile,
+      activeMode,
+      setMode,
+      createCaregiverProfile,
+      refreshMe,
 
       // bloqueio
       showBlockedModal,
@@ -370,7 +483,15 @@ export function AuthProvider({ children }) {
       blockedModalOpen,
       blockedInfo,
     }),
-    [user, token, loading, hasCaregiverProfile, blockedModalOpen, blockedInfo]
+    [
+      user,
+      token,
+      loading,
+      hasCaregiverProfile,
+      activeMode,
+      blockedModalOpen,
+      blockedInfo,
+    ]
   );
 
   return (

@@ -2,6 +2,7 @@
 const express = require("express");
 const reservationController = require("../controllers/reservationController");
 const authMiddleware = require("../middleware/authMiddleware");
+const requireCaregiverProfile = require("../middleware/requireCaregiverProfile");
 
 const router = express.Router();
 
@@ -15,8 +16,8 @@ function requireAuth(req, res, next) {
 }
 
 /**
- * Guard simples por papel.
- * Observação: ownership (tutor/caregiver daquela reserva) é diferente de role.
+ * Guard simples por papel (role do token).
+ * Observação: agora "ser cuidador" NÃO é role, é perfil (caregiver_profiles).
  */
 function requireRole(...allowedRoles) {
   return (req, res, next) => {
@@ -40,15 +41,28 @@ function requireRole(...allowedRoles) {
 }
 
 /**
+ * ✅ Admin OU Perfil Cuidador
+ * - Admin (admin/admin_master) passa
+ * - Usuário comum passa se tiver caregiver_profiles
+ */
+function requireAdminOrCaregiverProfile() {
+  return (req, res, next) => {
+    const role = String(req.user?.role || "").toLowerCase().trim();
+    const isAdminLike = role === "admin" || role === "admin_master";
+
+    if (isAdminLike) return next();
+
+    // ✅ aqui valida "perfil cuidador" (e não role)
+    return requireCaregiverProfile(req, res, next);
+  };
+}
+
+/**
  * Fail-closed: se o middleware de ownership ainda não existir,
  * bloqueia rotas sensíveis ao invés de deixar inseguro.
  */
 function safeRequireReservationOwnership() {
   try {
-    // Vamos criar este arquivo na próxima etapa (ownership real por reserva).
-    // Sugestão de caminho:
-    // backend/src/middleware/ownership/reservationOwnership.js
-    // e exportar funções: mustBeReservationParticipant, etc.
     // eslint-disable-next-line global-require
     const ownership = require("../middleware/ownership/reservationOwnership");
     return ownership;
@@ -97,29 +111,28 @@ router.use(requireAuth);
 
 // POST /reservations
 // Tutor cria pré-reserva (admin pode testar/operar se você quiser)
-router.post("/", requireRole("tutor", "admin"), pickHandler("createReservationController"));
+router.post("/", requireRole("tutor", "admin", "admin_master"), pickHandler("createReservationController"));
 
 // GET /reservations/tutor
-// Lista apenas reservas do tutor autenticado (ownership dentro do controller)
+// Lista apenas reservas do tutor autenticado
 router.get(
   "/tutor",
-  requireRole("tutor", "admin"),
+  requireRole("tutor", "admin", "admin_master"),
   pickHandler("listTutorReservationsController")
 );
 
 // GET /reservations/caregiver
-// Lista apenas reservas do cuidador autenticado (ownership dentro do controller)
+// ✅ Agora é: admin OU tem caregiver_profiles (perfil cuidador)
 router.get(
   "/caregiver",
-  requireRole("caregiver", "admin"),
+  requireAdminOrCaregiverProfile(),
   pickHandler("listCaregiverReservationsController")
 );
 
 // GET /reservations/my-evaluations
-// Mantido por compatibilidade (mas ideal é reviews em /reviews/me)
 router.get(
   "/my-evaluations",
-  requireRole("tutor", "caregiver", "admin"),
+  requireRole("tutor", "caregiver", "admin", "admin_master"),
   pickHandler("listMyEvaluationsController")
 );
 
@@ -131,10 +144,7 @@ router.get(
   pickHandler("getReservationDetailController")
 );
 
-// PATCH /reservations/:id/status
-// ✅ ownership obrigatório: só envolvidos (com regras de transição no controller) ou admin
 // PATCH/PUT /reservations/:id/status
-// ✅ ownership obrigatório: só envolvidos (com regras de transição no controller) ou admin
 router.patch(
   "/:id/status",
   mustBeReservationParticipant,
@@ -147,10 +157,7 @@ router.put(
   pickHandler("updateReservationStatusController")
 );
 
-// PATCH /reservations/:id/rating
-// ⚠️ Endpoint legado (rating dentro de reserva). Você já tem reviews como entidade.
-// Mantido enquanto você não remove do front.
-// ✅ ownership obrigatório também.
+// PATCH /reservations/:id/rating (legado)
 router.patch(
   "/:id/rating",
   mustBeReservationParticipant,
