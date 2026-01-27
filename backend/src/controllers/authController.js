@@ -38,12 +38,6 @@ function safeJsonParse(raw) {
   }
 }
 
-/**
- * Lê o body de forma robusta:
- * - se req.body já for objeto (express.json), retorna.
- * - se vier como string JSON (algum middleware/proxy), tenta parse.
- * - fallback: {}
- */
 function readBody(req) {
   if (req?.body && typeof req.body === "object") return req.body;
 
@@ -69,31 +63,109 @@ function pickBlockInfo(user) {
   };
 }
 
-/**
- * ✅ Multi-perfil (tolerante ao schema):
- * Em alguns bancos o vínculo do perfil cuidador pode estar em:
- * - caregiver_profiles.user_id
- * - caregiver_profiles.caregiver_id
- * - caregiver_profiles.id (quando id == users.id)
- */
+/* ============================================================
+   ✅ Multi-perfil (tolerante ao schema) — FAIL-SAFE
+   - NÃO referencia caregiver_id se a coluna não existir
+   - checa também "id == users.id" (bases antigas)
+   ============================================================ */
+
+let cachedCaregiverCols = null; // { hasUserId, hasCaregiverId, hasId } | null
+let cachedCaregiverColsAt = 0;
+
+async function detectCaregiverProfilesColumns() {
+  const now = Date.now();
+  if (cachedCaregiverCols && now - cachedCaregiverColsAt < 5 * 60 * 1000) {
+    return cachedCaregiverCols;
+  }
+
+  try {
+    const sql = `
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'caregiver_profiles'
+        AND column_name IN ('user_id', 'caregiver_id', 'id')
+    `;
+    const { rows } = await pool.query(sql);
+    const set = new Set((rows || []).map((r) => String(r.column_name)));
+
+    cachedCaregiverCols = {
+      hasUserId: set.has("user_id"),
+      hasCaregiverId: set.has("caregiver_id"),
+      hasId: set.has("id"),
+    };
+    cachedCaregiverColsAt = now;
+    return cachedCaregiverCols;
+  } catch {
+    cachedCaregiverCols = null;
+    cachedCaregiverColsAt = now;
+    return null;
+  }
+}
+
 async function hasCaregiverProfileByUserId(userId) {
   const id = Number(userId);
   if (!Number.isFinite(id) || id <= 0) return false;
+  const idStr = String(id);
 
   try {
-    const { rows } = await pool.query(
-      `
-      SELECT 1
-      FROM caregiver_profiles
-      WHERE
-        (user_id::text = $1)
-        OR (caregiver_id::text = $1)
-        OR (id::text = $1)
-      LIMIT 1
-      `,
-      [String(id)]
-    );
-    return rows.length > 0;
+    const cols = await detectCaregiverProfilesColumns();
+
+    // 1) caminho ideal: usamos SOMENTE colunas existentes
+    if (cols) {
+      // prioridade: user_id (se existir)
+      if (cols.hasUserId) {
+        const { rows } = await pool.query(
+          `SELECT 1 FROM caregiver_profiles WHERE user_id::text = $1 LIMIT 1`,
+          [idStr]
+        );
+        if (rows?.length) return true;
+      }
+
+      // fallback: id == users.id (se existir)
+      if (cols.hasId) {
+        const { rows } = await pool.query(
+          `SELECT 1 FROM caregiver_profiles WHERE id::text = $1 LIMIT 1`,
+          [idStr]
+        );
+        if (rows?.length) return true;
+      }
+
+      // só tenta caregiver_id se EXISTE mesmo
+      if (cols.hasCaregiverId) {
+        const { rows } = await pool.query(
+          `SELECT 1 FROM caregiver_profiles WHERE caregiver_id::text = $1 LIMIT 1`,
+          [idStr]
+        );
+        if (rows?.length) return true;
+      }
+
+      return false;
+    }
+
+    // 2) fallback sem information_schema:
+    // ✅ tenta user_id, depois id. NÃO tenta caregiver_id aqui (pra não quebrar seu schema).
+    try {
+      const { rows } = await pool.query(
+        `SELECT 1 FROM caregiver_profiles WHERE user_id::text = $1 LIMIT 1`,
+        [idStr]
+      );
+      if (rows?.length) return true;
+    } catch {
+      // ignore
+    }
+
+    try {
+      const { rows } = await pool.query(
+        `SELECT 1 FROM caregiver_profiles WHERE id::text = $1 LIMIT 1`,
+        [idStr]
+      );
+      if (rows?.length) return true;
+    } catch {
+      // ignore
+    }
+
+    return false;
   } catch (err) {
     console.error("[authController] hasCaregiverProfileByUserId error:", err?.message || err);
     return false;
@@ -107,7 +179,6 @@ function computeFrontendBase(req) {
   const origin = String(req.get("origin") || "").trim().replace(/\/$/, "");
   if (origin) return origin;
 
-  // fallback extra: alguns ambientes não mandam Origin; Referer costuma vir do navegador
   const referer = String(req.get("referer") || "").trim();
   if (referer) {
     try {
@@ -142,7 +213,6 @@ function buildResetEmail({ link, minutes }) {
     `Este link expira em aproximadamente ${safeMinutes} minutos.\n\n` +
     `Se você não solicitou isso, ignore este e-mail.`;
 
-  // HTML simples e confiável (Gmail-friendly)
   const html = `
   <div style="font-family: Arial, sans-serif; background:#fff; color:#1f2937; line-height:1.4; padding: 8px 0;">
     <div style="max-width: 560px; margin: 0 auto; padding: 20px; border:1px solid #e5e7eb; border-radius: 10px;">
@@ -215,7 +285,6 @@ async function register(req, res) {
 
     const token = generateToken(newUser);
 
-    // ✅ multi-perfil: no registro ainda não tem caregiver_profile
     return res.status(201).json({
       user: newUser,
       token,
@@ -245,7 +314,6 @@ async function login(req, res) {
 
     const bi = pickBlockInfo(user);
     if (bi.blocked) {
-      // ✅ payload alinhado com o AuthContext (pickBlockedPayload)
       return res.status(403).json({
         code: "USER_BLOCKED",
         error: "Usuário bloqueado.",
@@ -261,7 +329,6 @@ async function login(req, res) {
 
     const token = generateToken(user);
 
-    // ✅ importante p/ UI: já devolve se tem perfil cuidador (tolerante ao schema)
     const hasCaregiverProfile = await hasCaregiverProfileByUserId(user.id);
 
     return res.json({ user, token, hasCaregiverProfile });
@@ -284,7 +351,6 @@ async function me(req, res) {
 
     const bi = pickBlockInfo(user);
     if (bi.blocked) {
-      // ✅ se o usuário foi bloqueado depois que já tinha token
       return res.status(403).json({
         code: "USER_BLOCKED",
         error: "Usuário bloqueado.",
@@ -293,10 +359,8 @@ async function me(req, res) {
       });
     }
 
-    // ✅ tolerante ao schema
     const hasCaregiverProfile = await hasCaregiverProfileByUserId(userId);
 
-    // ✅ retorno real que o frontend deve usar
     return res.json({ user, hasCaregiverProfile });
   } catch (err) {
     console.error("me:", err);
@@ -323,11 +387,10 @@ async function forgotPassword(req, res) {
 
     if (pickBlockInfo(user).blocked) return res.json(safeResponse);
 
-    // limpeza best-effort
     try {
       await cleanupPasswordResets();
     } catch {
-      // silencioso de propósito
+      // ignore
     }
 
     const token = crypto.randomBytes(32).toString("hex");
@@ -336,13 +399,11 @@ async function forgotPassword(req, res) {
     const safeMinutes = Number.isFinite(minutes) && minutes > 0 ? minutes : 60;
     const expiresAt = new Date(Date.now() + safeMinutes * 60 * 1000);
 
-    // invalida tokens antigos e cria novo
     await invalidateAllActiveByUserId(user.id);
     await createPasswordReset({ userId: user.id, token, expiresAt });
 
     const base = computeFrontendBase(req);
 
-    // Em produção, não envie link relativo (quebra no e-mail).
     if (!base) {
       console.warn(
         "[forgotPassword] FRONTEND_URL/origin ausente. Configure FRONTEND_URL no Render. " +
@@ -353,7 +414,6 @@ async function forgotPassword(req, res) {
 
     const link = `${base}/reset-password?token=${encodeURIComponent(token)}`;
 
-    // monta e-mail (HTML + text)
     const { subject, text, html } = buildResetEmail({ link, minutes: safeMinutes });
 
     try {
@@ -365,7 +425,6 @@ async function forgotPassword(req, res) {
       });
     } catch (e) {
       console.error("[forgotPassword] Falha ao enviar email:", e?.message || e);
-      // retorna safeResponse mesmo assim (não vaza info)
     }
 
     return res.json(safeResponse);
@@ -382,7 +441,6 @@ async function resetPassword(req, res) {
   try {
     const body = readBody(req);
 
-    // aceita tanto "password" (seu frontend atual) quanto "newPassword"
     const token = String(body?.token || "").trim();
     const newPassword = String(body?.newPassword || body?.password || "").trim();
 
@@ -398,10 +456,7 @@ async function resetPassword(req, res) {
     const passwordHash = await bcrypt.hash(newPassword, 10);
     await updateUserPassword(reset.user_id, passwordHash);
 
-    // marca este token como usado
     await markPasswordResetUsed(reset.id);
-
-    // segurança extra: invalida qualquer outro token ativo do usuário
     await invalidateAllActiveByUserId(reset.user_id);
 
     return res.json({ ok: true, message: "Senha atualizada com sucesso." });

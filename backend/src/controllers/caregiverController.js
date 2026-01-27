@@ -1,8 +1,205 @@
 // backend/src/controllers/caregiverController.js
-const {
-  listAllCaregivers,
-  getCaregiverById,
-} = require("../models/caregiverModel");
+const pool = require("../config/db");
+
+const { listAllCaregivers, getCaregiverById } = require("../models/caregiverModel");
+
+/**
+ * ============================================================
+ * Helpers (schema-tolerant)
+ * ============================================================
+ */
+
+let cachedLinkCol = null; // "user_id" | "caregiver_id" | null
+let cachedAt = 0;
+
+async function detectCaregiverProfilesLinkColumn() {
+  const now = Date.now();
+  if (cachedAt && now - cachedAt < 5 * 60 * 1000) return cachedLinkCol;
+
+  try {
+    const { rows } = await pool.query(
+      `
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'caregiver_profiles'
+        AND column_name IN ('user_id', 'caregiver_id')
+      `
+    );
+
+    const cols = new Set((rows || []).map((r) => String(r.column_name)));
+
+    if (cols.has("user_id")) cachedLinkCol = "user_id";
+    else if (cols.has("caregiver_id")) cachedLinkCol = "caregiver_id";
+    else cachedLinkCol = null;
+
+    cachedAt = now;
+    return cachedLinkCol;
+  } catch {
+    cachedLinkCol = null;
+    cachedAt = now;
+    return null;
+  }
+}
+
+async function hasCaregiverProfileForUserId(userId) {
+  const id = Number(userId);
+  if (!Number.isFinite(id) || id <= 0) return false;
+
+  const idStr = String(id);
+  const linkCol = await detectCaregiverProfilesLinkColumn();
+
+  // monta query só com o que existe
+  try {
+    if (linkCol === "user_id") {
+      const { rows } = await pool.query(
+        `
+        SELECT 1
+        FROM caregiver_profiles
+        WHERE (user_id::text = $1) OR (id::text = $1)
+        LIMIT 1
+        `,
+        [idStr]
+      );
+      return rows?.length > 0;
+    }
+
+    if (linkCol === "caregiver_id") {
+      const { rows } = await pool.query(
+        `
+        SELECT 1
+        FROM caregiver_profiles
+        WHERE (caregiver_id::text = $1) OR (id::text = $1)
+        LIMIT 1
+        `,
+        [idStr]
+      );
+      return rows?.length > 0;
+    }
+
+    // se não detectou, tenta primeiro user_id e depois caregiver_id
+    try {
+      const { rows } = await pool.query(
+        `
+        SELECT 1
+        FROM caregiver_profiles
+        WHERE (user_id::text = $1) OR (id::text = $1)
+        LIMIT 1
+        `,
+        [idStr]
+      );
+      cachedLinkCol = "user_id";
+      cachedAt = Date.now();
+      return rows?.length > 0;
+    } catch {
+      const { rows } = await pool.query(
+        `
+        SELECT 1
+        FROM caregiver_profiles
+        WHERE (caregiver_id::text = $1) OR (id::text = $1)
+        LIMIT 1
+        `,
+        [idStr]
+      );
+      cachedLinkCol = "caregiver_id";
+      cachedAt = Date.now();
+      return rows?.length > 0;
+    }
+  } catch {
+    return false;
+  }
+}
+
+async function createCaregiverProfileForUserId(userId) {
+  const id = Number(userId);
+  if (!Number.isFinite(id) || id <= 0) {
+    const e = new Error("INVALID_USER_ID");
+    e.status = 400;
+    throw e;
+  }
+
+  // idempotência: se já existe, retorna
+  const already = await hasCaregiverProfileForUserId(id);
+  if (already) return { created: false };
+
+  const linkCol = await detectCaregiverProfilesLinkColumn();
+
+  // 1) tenta com coluna detectada
+  try {
+    if (linkCol === "user_id") {
+      await pool.query(
+        `
+        INSERT INTO caregiver_profiles (user_id)
+        VALUES ($1)
+        ON CONFLICT DO NOTHING
+        `,
+        [id]
+      );
+      return { created: true };
+    }
+
+    if (linkCol === "caregiver_id") {
+      await pool.query(
+        `
+        INSERT INTO caregiver_profiles (caregiver_id)
+        VALUES ($1)
+        ON CONFLICT DO NOTHING
+        `,
+        [id]
+      );
+      return { created: true };
+    }
+  } catch {
+    // cai pro fallback
+  }
+
+  // 2) fallback por tentativa/erro (user_id -> caregiver_id)
+  try {
+    await pool.query(
+      `
+      INSERT INTO caregiver_profiles (user_id)
+      VALUES ($1)
+      ON CONFLICT DO NOTHING
+      `,
+      [id]
+    );
+    cachedLinkCol = "user_id";
+    cachedAt = Date.now();
+    return { created: true };
+  } catch {
+    try {
+      await pool.query(
+        `
+        INSERT INTO caregiver_profiles (caregiver_id)
+        VALUES ($1)
+        ON CONFLICT DO NOTHING
+        `,
+        [id]
+      );
+      cachedLinkCol = "caregiver_id";
+      cachedAt = Date.now();
+      return { created: true };
+    } catch {
+      // 3) último recurso: schema onde o vínculo é pelo id (id = users.id)
+      // (pode falhar se existir NOT NULL sem default; mas é o melhor fallback sem saber o schema)
+      await pool.query(
+        `
+        INSERT INTO caregiver_profiles (id)
+        VALUES ($1)
+        ON CONFLICT (id) DO NOTHING
+        `,
+        [id]
+      );
+      return { created: true };
+    }
+  }
+}
+
+/**
+ * ============================================================
+ * Controllers
+ * ============================================================
+ */
 
 /**
  * GET /caregivers
@@ -51,7 +248,44 @@ async function getCaregiverByIdController(req, res) {
   }
 }
 
+/**
+ * POST /caregivers/me
+ * ✅ Cria perfil de cuidador para o usuário logado (idempotente).
+ * - Se já existir, retorna ok sem duplicar.
+ * - Se criar, retorna created=true.
+ */
+async function createMyCaregiverProfileController(req, res) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({
+        error: "Não autenticado.",
+        code: "UNAUTHENTICATED",
+      });
+    }
+
+    const result = await createCaregiverProfileForUserId(userId);
+
+    // revalida
+    const has = await hasCaregiverProfileForUserId(userId);
+
+    return res.status(200).json({
+      ok: true,
+      created: Boolean(result?.created),
+      hasCaregiverProfile: Boolean(has),
+    });
+  } catch (err) {
+    const status = err?.status || 500;
+    console.error("Erro em POST /caregivers/me:", err?.message || err);
+    return res.status(status).json({
+      error: "Erro ao criar perfil de cuidador.",
+      code: "CARE_GIVER_PROFILE_CREATE_FAILED",
+    });
+  }
+}
+
 module.exports = {
   listCaregiversController,
   getCaregiverByIdController,
+  createMyCaregiverProfileController,
 };

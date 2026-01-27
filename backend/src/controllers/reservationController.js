@@ -138,7 +138,6 @@ function computeFrontendBase(req) {
 function formatDateBRFromKey(dateKey) {
   const k = toDateKey(dateKey);
   if (!k) return "";
-  // k = YYYY-MM-DD
   const [y, m, d] = k.split("-");
   if (!y || !m || !d) return k;
   return `${d}/${m}/${y}`;
@@ -202,7 +201,6 @@ function normalizeStatusInput(raw) {
 
   if (s === "concluida" || s === "finalizada" || s === "finalizado") return "Concluída";
 
-  // se vier já certinho:
   if (String(raw || "").trim() === "Concluída") return "Concluída";
 
   return String(raw || "").trim();
@@ -229,9 +227,14 @@ function getResIds(reservation) {
   };
 }
 
+function isAdminLikeRole(roleRaw) {
+  const role = String(roleRaw || "").toLowerCase().trim();
+  return role === "admin" || role === "admin_master";
+}
+
 function canAccessReservation(user, reservation) {
-  if (!user?.id || !user?.role) return false;
-  if (user.role === "admin") return true;
+  if (!user?.id) return false;
+  if (isAdminLikeRole(user.role)) return true;
 
   const uid = String(user.id);
   const { tutorId, caregiverId } = getResIds(reservation);
@@ -250,9 +253,30 @@ function getStartEndSafe(obj, fallbackReservation) {
       fallbackReservation?.start_date
   );
   const end = toDateKey(
-    obj?.endDate ?? obj?.end_date ?? fallbackReservation?.endDate ?? fallbackReservation?.end_date
+    obj?.endDate ??
+      obj?.end_date ??
+      fallbackReservation?.endDate ??
+      fallbackReservation?.end_date
   );
   return { start, end };
+}
+
+/**
+ * ✅ Papel efetivo por reserva (multi-perfil):
+ * - se o usuário é tutor da reserva -> "tutor"
+ * - se o usuário é cuidador da reserva -> "caregiver"
+ * - admin -> "admin"
+ */
+function getEffectiveRoleForReservation(user, reservation) {
+  if (!user?.id) return "";
+  if (isAdminLikeRole(user.role)) return "admin";
+
+  const uid = String(user.id);
+  const { tutorId, caregiverId } = getResIds(reservation);
+
+  if (tutorId != null && String(tutorId) === uid) return "tutor";
+  if (caregiverId != null && String(caregiverId) === uid) return "caregiver";
+  return "";
 }
 
 /* ===========================================================
@@ -362,14 +386,12 @@ async function assertRangeIsFullyAvailableOrThrow(caregiverId, startKey, endKey)
     };
   }
 
-  // Preferir model (se existir)
   if (availabilityModel && typeof availabilityModel.isRangeAvailable === "function") {
     const ok = await availabilityModel.isRangeAvailable(caregiverIdStr, s, e);
     if (!ok) return { ok: false, code: "NOT_AVAILABLE", message: "Período sem disponibilidade." };
     return { ok: true };
   }
 
-  // Fallback SQL simples
   try {
     const sql = `
       WITH days AS (
@@ -507,12 +529,10 @@ async function getUserDisplayNameById(id) {
    =========================================================== */
 
 async function updateReservationStatusDb(id, status, rejectReason = null) {
-  // prefer model
   if (typeof reservationModel.updateReservationStatus === "function") {
     return reservationModel.updateReservationStatus(id, status, rejectReason);
   }
 
-  // fallback SQL
   const rid = toPosInt(id);
   if (!rid) return null;
 
@@ -539,7 +559,9 @@ async function createReservationController(req, res) {
     if (!user?.id) {
       return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
     }
-    if (user.role !== "tutor") {
+
+    // mantém regra original (tutor cria reserva)
+    if (String(user.role || "").toLowerCase() !== "tutor" && !isAdminLikeRole(user.role)) {
       return res.status(403).json({
         error: "Apenas tutor pode criar reserva.",
         code: "FORBIDDEN_ROLE",
@@ -678,7 +700,6 @@ async function createReservationController(req, res) {
     });
 
     // ✅ e-mail: Nova reserva (para o cuidador) — best-effort
-    // Não deve quebrar criação da reserva se o e-mail falhar.
     try {
       const base = computeFrontendBase(req);
       if (!base) {
@@ -696,7 +717,6 @@ async function createReservationController(req, res) {
           const startBR = formatDateBRFromKey(range.startDate);
           const endBR = formatDateBRFromKey(range.endDate);
 
-          // Link simples e seguro (leva ao app; o cuidador vê no painel)
           const dashboardUrl = `${base}/dashboard`;
 
           const emailPayload = buildNewReservationEmail({
@@ -715,7 +735,6 @@ async function createReservationController(req, res) {
       }
     } catch (e) {
       console.error("[createReservation] Falha ao enviar e-mail de nova reserva:", e?.message || e);
-      // segue o fluxo normalmente
     }
 
     return res.status(201).json({
@@ -741,9 +760,11 @@ async function createReservationController(req, res) {
 async function listTutorReservationsController(req, res) {
   try {
     const user = req.user;
-    if (!user?.id) return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
+    if (!user?.id) {
+      return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
+    }
 
-    if (String(user.role) === "admin") {
+    if (isAdminLikeRole(user.role)) {
       const qTutorId = req.query?.tutorId != null ? String(req.query.tutorId) : null;
 
       let rows = [];
@@ -781,9 +802,11 @@ async function listTutorReservationsController(req, res) {
 async function listCaregiverReservationsController(req, res) {
   try {
     const user = req.user;
-    if (!user?.id) return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
+    if (!user?.id) {
+      return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
+    }
 
-    if (String(user.role) === "admin") {
+    if (isAdminLikeRole(user.role)) {
       const qCaregiverId = req.query?.caregiverId != null ? String(req.query.caregiverId) : null;
 
       let rows = [];
@@ -821,7 +844,9 @@ async function listCaregiverReservationsController(req, res) {
 async function getReservationDetailController(req, res) {
   try {
     const user = req.user;
-    if (!user?.id) return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
+    if (!user?.id) {
+      return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
+    }
 
     const { id } = req.params;
 
@@ -868,7 +893,9 @@ async function getReservationDetailController(req, res) {
 async function updateReservationStatusController(req, res) {
   try {
     const user = req.user;
-    if (!user?.id) return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
+    if (!user?.id) {
+      return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
+    }
 
     const { id } = req.params;
 
@@ -891,15 +918,15 @@ async function updateReservationStatusController(req, res) {
       });
     }
 
-    const role = String(user.role || "").toLowerCase();
-    const uid = String(user.id);
-    const { tutorId, caregiverId } = getResIds(reservation);
+    if (!canAccessReservation(user, reservation)) {
+      return res.status(403).json({
+        error: "Sem permissão para alterar esta reserva.",
+        code: "FORBIDDEN_OWNERSHIP",
+      });
+    }
 
-    const isOwnerTutor = tutorId != null && String(tutorId) === uid;
-    const isOwnerCaregiver = caregiverId != null && String(caregiverId) === uid;
-    const isAdmin = role === "admin";
-
-    if (!isAdmin && !isOwnerTutor && !isOwnerCaregiver) {
+    const effectiveRole = getEffectiveRoleForReservation(user, reservation);
+    if (!effectiveRole) {
       return res.status(403).json({
         error: "Sem permissão para alterar esta reserva.",
         code: "FORBIDDEN_OWNERSHIP",
@@ -917,18 +944,14 @@ async function updateReservationStatusController(req, res) {
       });
     }
 
+    const { tutorId, caregiverId } = getResIds(reservation);
+
     // =======================================================
-    // REGRAS POR ROLE
+    // REGRAS POR PAPEL EFETIVO (pela reserva)
     // =======================================================
 
-    // Tutor: só pode Cancelar quando Pendente/Aceita
-    if (!isAdmin && role === "tutor") {
-      if (!isOwnerTutor) {
-        return res.status(403).json({
-          error: "Apenas o tutor responsável pode cancelar.",
-          code: "FORBIDDEN_OWNERSHIP",
-        });
-      }
+    // TUTOR (da reserva): só pode Cancelar quando Pendente/Aceita
+    if (effectiveRole === "tutor") {
       if (nextStatus !== "Cancelada") {
         return res.status(403).json({
           error: "Tutor só pode alterar o status para Cancelada.",
@@ -960,15 +983,8 @@ async function updateReservationStatusController(req, res) {
       });
     }
 
-    // Caregiver: Aceita/Recusada (somente se Pendente), Concluída (somente se Aceita)
-    if (!isAdmin && role === "caregiver") {
-      if (!isOwnerCaregiver) {
-        return res.status(403).json({
-          error: "Apenas o cuidador responsável pode alterar o status.",
-          code: "FORBIDDEN_OWNERSHIP",
-        });
-      }
-
+    // CAREGIVER (da reserva): Aceita/Recusada (se Pendente), Concluída (se Aceita)
+    if (effectiveRole === "caregiver") {
       const allowed = new Set(["Aceita", "Recusada", "Concluída"]);
       if (!allowed.has(nextStatus)) {
         return res.status(400).json({
@@ -1041,7 +1057,6 @@ async function updateReservationStatusController(req, res) {
       });
 
       // ✅ e-mail: Reserva aceita (para o tutor) — best-effort
-      // Só dispara quando o cuidador mudou para "Aceita".
       if (nextStatus === "Aceita") {
         try {
           const base = computeFrontendBase(req);
@@ -1060,7 +1075,6 @@ async function updateReservationStatusController(req, res) {
               const startBR = formatDateBRFromKey(startKey);
               const endBR = formatDateBRFromKey(endKey);
 
-              // Link simples e seguro (leva ao app; tutor vê a reserva no painel)
               const reservationUrl = `${base}/dashboard`;
 
               const emailPayload = buildReservationAcceptedEmail({
@@ -1095,8 +1109,8 @@ async function updateReservationStatusController(req, res) {
       });
     }
 
-    // Admin: pode alterar (com validações quando Aceita / Concluída)
-    if (isAdmin) {
+    // ADMIN: pode alterar (com validações quando Aceita / Concluída)
+    if (effectiveRole === "admin") {
       if (nextStatus === "Aceita") {
         const availCheck = await assertRangeIsFullyAvailableOrThrow(caregiverId, startKey, endKey);
         if (!availCheck.ok) {
@@ -1123,7 +1137,6 @@ async function updateReservationStatusController(req, res) {
         });
       }
 
-      // opcional: só concluir se Aceita (mantém consistência)
       if (nextStatus === "Concluída" && currentStatus !== "Aceita") {
         return res.status(409).json({
           code: "INVALID_STATUS",
@@ -1170,7 +1183,9 @@ async function updateReservationStatusController(req, res) {
 async function updateReservationRatingController(req, res) {
   try {
     const user = req.user;
-    if (!user?.id) return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
+    if (!user?.id) {
+      return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
+    }
 
     const { id } = req.params;
 
@@ -1208,16 +1223,18 @@ async function updateReservationRatingController(req, res) {
       });
     }
 
-    if (!["tutor", "caregiver"].includes(String(user.role || "").toLowerCase())) {
+    // ✅ papel efetivo pela reserva (não pelo user.role)
+    const effectiveRole = getEffectiveRoleForReservation(user, reservation);
+    if (effectiveRole !== "tutor" && effectiveRole !== "caregiver") {
       return res.status(403).json({
-        error: "Apenas tutor ou cuidador podem avaliar.",
+        error: "Apenas tutor ou cuidador da reserva podem avaliar.",
         code: "FORBIDDEN_ROLE",
       });
     }
 
     const updated = await reservationModel.updateReservationRating(
       id,
-      user.role,
+      effectiveRole, // "tutor" | "caregiver"
       r,
       typeof comment === "string" ? comment.trim() : null
     );
@@ -1226,7 +1243,7 @@ async function updateReservationRatingController(req, res) {
       reservation: updated,
       actorUser: user,
       type: "rating",
-      payload: { reservationId: updated?.id, fromRole: user.role, rating: r },
+      payload: { reservationId: updated?.id, fromRole: effectiveRole, rating: r },
     });
 
     return res.json({ reservation: updated });
@@ -1250,15 +1267,12 @@ async function listMyEvaluationsController(req, res) {
       return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
     }
 
-    const isAdmin = String(user.role || "").toLowerCase() === "admin";
+    const isAdmin = isAdminLikeRole(user.role);
     const idStr = String(user.id);
 
-    // ✅ modo vindo do front: /avaliacoes?mode=tutor|caregiver
     const modeRaw = String(req.query?.mode || "").trim().toLowerCase();
     const mode = modeRaw === "caregiver" ? "caregiver" : modeRaw === "tutor" ? "tutor" : "";
 
-    // ✅ filtro por papel na reserva
-    // Se não vier mode, mantém compat (traz tudo do reviewed_id)
     const roleFilterSql =
       mode === "tutor"
         ? "AND r.tutor_id::text = $1"
@@ -1302,7 +1316,6 @@ async function listMyEvaluationsController(req, res) {
 
     const { rows } = await pool.query(sql, [idStr]);
 
-    // ✅ compat: alguns fronts esperam "reviews"
     return res.json({
       evaluations: rows || [],
       reviews: rows || [],

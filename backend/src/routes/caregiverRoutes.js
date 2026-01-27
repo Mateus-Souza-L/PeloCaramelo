@@ -67,10 +67,103 @@ LEFT JOIN LATERAL (
 `;
 
 /* ============================================================
-   ✅ POST /caregivers/me
-   Cria o "perfil cuidador" para o usuário logado, sem duplicar.
-   - NÃO cria novo user
-   - NÃO permite duplicar caregiver_profiles
+   ✅ Schema-tolerant: caregiver_profiles pode ter:
+   - user_id
+   - caregiver_id
+   (e em alguns casos id == users.id, mas aqui usamos linkCol)
+   ============================================================ */
+
+let cachedLinkCol = null; // "user_id" | "caregiver_id" | null
+let cachedAt = 0;
+
+async function detectLinkColumn() {
+  const now = Date.now();
+  if (cachedAt && now - cachedAt < 5 * 60 * 1000) return cachedLinkCol;
+
+  try {
+    const { rows } = await pool.query(
+      `
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'caregiver_profiles'
+        AND column_name IN ('user_id', 'caregiver_id')
+      `
+    );
+
+    const cols = new Set((rows || []).map((r) => String(r.column_name)));
+
+    if (cols.has("user_id")) cachedLinkCol = "user_id";
+    else if (cols.has("caregiver_id")) cachedLinkCol = "caregiver_id";
+    else cachedLinkCol = null;
+
+    cachedAt = now;
+    return cachedLinkCol;
+  } catch {
+    cachedLinkCol = null;
+    cachedAt = now;
+    return null;
+  }
+}
+
+async function hasCaregiverProfile(userId) {
+  const id = Number(userId);
+  if (!Number.isFinite(id) || id <= 0) return false;
+
+  const idStr = String(id);
+  const linkCol = await detectLinkColumn();
+
+  try {
+    if (linkCol === "user_id") {
+      const { rows } = await pool.query(
+        `SELECT 1 FROM caregiver_profiles WHERE user_id::text = $1 LIMIT 1`,
+        [idStr]
+      );
+      return rows?.length > 0;
+    }
+
+    if (linkCol === "caregiver_id") {
+      const { rows } = await pool.query(
+        `SELECT 1 FROM caregiver_profiles WHERE caregiver_id::text = $1 LIMIT 1`,
+        [idStr]
+      );
+      return rows?.length > 0;
+    }
+
+    // fallback por tentativa/erro (não quebra o server)
+    try {
+      const { rows } = await pool.query(
+        `SELECT 1 FROM caregiver_profiles WHERE user_id::text = $1 LIMIT 1`,
+        [idStr]
+      );
+      cachedLinkCol = "user_id";
+      cachedAt = Date.now();
+      return rows?.length > 0;
+    } catch {
+      const { rows } = await pool.query(
+        `SELECT 1 FROM caregiver_profiles WHERE caregiver_id::text = $1 LIMIT 1`,
+        [idStr]
+      );
+      cachedLinkCol = "caregiver_id";
+      cachedAt = Date.now();
+      return rows?.length > 0;
+    }
+  } catch {
+    return false;
+  }
+}
+
+function joinOnCaregiverProfiles(linkCol) {
+  // join padrão: cp.<linkCol> = u.id
+  if (linkCol === "caregiver_id") return "cp.caregiver_id = u.id";
+  // default user_id (se existir)
+  return "cp.user_id = u.id";
+}
+
+/* ============================================================
+   ✅ POST /caregivers/me (idempotente)
+   - cria perfil se não existe
+   - se já existir: 200 com hasCaregiverProfile true
    ============================================================ */
 router.post("/me", authMiddleware, async (req, res) => {
   const userId = req.user?.id;
@@ -80,57 +173,39 @@ router.post("/me", authMiddleware, async (req, res) => {
   }
 
   try {
-    // já tem perfil?
-    const exists = await pool.query(
-      "SELECT 1 FROM caregiver_profiles WHERE user_id = $1 LIMIT 1",
-      [userId]
-    );
+    const linkCol = (await detectLinkColumn()) || "user_id";
 
-    if (exists.rowCount > 0) {
-      return res.status(409).json({
-        code: "CAREGIVER_PROFILE_EXISTS",
-        error: "Este usuário já possui perfil de cuidador.",
+    const already = await hasCaregiverProfile(userId);
+    if (already) {
+      return res.status(200).json({
+        ok: true,
+        created: false,
         hasCaregiverProfile: true,
       });
     }
 
-    /**
-     * Recomendado: ter UNIQUE(user_id) na tabela caregiver_profiles.
-     * Se tiver, ON CONFLICT garante idempotência em corrida (duplo clique).
-     */
-    const created = await pool.query(
-      `
-      INSERT INTO caregiver_profiles (user_id, created_at)
-      VALUES ($1, NOW())
-      ON CONFLICT (user_id) DO NOTHING
-      RETURNING id, user_id, created_at
-      `,
-      [userId]
-    );
-
-    // Se não retornou nada (conflito), trata como já existente
-    if (!created.rowCount) {
-      return res.status(409).json({
-        code: "CAREGIVER_PROFILE_EXISTS",
-        error: "Este usuário já possui perfil de cuidador.",
-        hasCaregiverProfile: true,
-      });
+    // tenta inserir usando a coluna existente
+    if (linkCol === "caregiver_id") {
+      await pool.query(`INSERT INTO caregiver_profiles (caregiver_id) VALUES ($1)`, [userId]);
+    } else {
+      // default user_id
+      await pool.query(`INSERT INTO caregiver_profiles (user_id) VALUES ($1)`, [userId]);
     }
 
     return res.status(201).json({
       ok: true,
+      created: true,
       hasCaregiverProfile: true,
-      caregiverProfile: created.rows?.[0] || null,
     });
   } catch (err) {
-    console.error("Erro em POST /caregivers/me:", err);
+    console.error("Erro em POST /caregivers/me:", err?.message || err);
 
-    // fallback extra (mensagens variam conforme driver)
+    // se deu corrida/duplicidade, trata como idempotente
     const msg = String(err?.message || "").toLowerCase();
     if (msg.includes("duplicate") || msg.includes("unique")) {
-      return res.status(409).json({
-        code: "CAREGIVER_PROFILE_EXISTS",
-        error: "Este usuário já possui perfil de cuidador.",
+      return res.status(200).json({
+        ok: true,
+        created: false,
         hasCaregiverProfile: true,
       });
     }
@@ -145,6 +220,9 @@ router.post("/me", authMiddleware, async (req, res) => {
    ============================================================ */
 router.get("/", async (req, res) => {
   try {
+    const linkCol = (await detectLinkColumn()) || "user_id";
+    const joinExpr = joinOnCaregiverProfiles(linkCol);
+
     const query = `
       SELECT
         ${BASE_FIELDS},
@@ -154,7 +232,7 @@ router.get("/", async (req, res) => {
         COALESCE(done.completed_reservations, 0) AS completed_reservations
       FROM users u
       INNER JOIN caregiver_profiles cp
-        ON cp.user_id = u.id
+        ON ${joinExpr}
       ${RATING_LATERAL}
       ${COMPLETED_LATERAL}
       WHERE (u.blocked IS NOT TRUE)
@@ -180,6 +258,9 @@ router.get("/:id", async (req, res) => {
       return res.status(400).json({ error: "ID inválido." });
     }
 
+    const linkCol = (await detectLinkColumn()) || "user_id";
+    const joinExpr = joinOnCaregiverProfiles(linkCol);
+
     const query = `
       SELECT
         ${BASE_FIELDS},
@@ -189,7 +270,7 @@ router.get("/:id", async (req, res) => {
         COALESCE(done.completed_reservations, 0) AS completed_reservations
       FROM users u
       INNER JOIN caregiver_profiles cp
-        ON cp.user_id = u.id
+        ON ${joinExpr}
       ${RATING_LATERAL}
       ${COMPLETED_LATERAL}
       WHERE (u.blocked IS NOT TRUE)

@@ -35,14 +35,11 @@ function normalizeRangeFromQuery(req) {
 function defaultRange(daysAhead = 120) {
   const now = new Date();
   const start = now.toISOString().slice(0, 10);
-  const end = new Date(now.getTime() + daysAhead * 86400000)
-    .toISOString()
-    .slice(0, 10);
+  const end = new Date(now.getTime() + daysAhead * 86400000).toISOString().slice(0, 10);
   return { start, end };
 }
 
 /**
- * 🔑 NORMALIZA PARA ARRAY DE STRINGS
  * ["YYYY-MM-DD", ...]
  */
 function rowsToKeys(rows) {
@@ -56,15 +53,8 @@ function rowsToKeys(rows) {
 }
 
 async function fetchAvailabilitySafe(caregiverId, rangeOrNull) {
-  if (
-    rangeOrNull &&
-    typeof availabilityModel.getCaregiverAvailability === "function"
-  ) {
-    return availabilityModel.getCaregiverAvailability(
-      caregiverId,
-      rangeOrNull.start,
-      rangeOrNull.end
-    );
+  if (rangeOrNull && typeof availabilityModel.getCaregiverAvailability === "function") {
+    return availabilityModel.getCaregiverAvailability(caregiverId, rangeOrNull.start, rangeOrNull.end);
   }
   return availabilityModel.listAvailability(caregiverId);
 }
@@ -83,9 +73,7 @@ function extractAvailableKeysFromBody(body) {
   }
 
   const keys = rawArray
-    .map((it) =>
-      normalizeKey(it?.dateKey ?? it?.date_key ?? it?.date)
-    )
+    .map((it) => normalizeKey(it?.dateKey ?? it?.date_key ?? it?.date))
     .filter(Boolean);
 
   return Array.from(new Set(keys)).sort();
@@ -103,7 +91,7 @@ async function getCaregiverAvailability(req, res) {
     const rows = await fetchAvailabilitySafe(caregiverId, range);
 
     return res.json({
-      availability: rowsToKeys(rows), // ✅ ARRAY DE STRINGS
+      availability: rowsToKeys(rows),
     });
   } catch (e) {
     console.error("getCaregiverAvailability error:", e);
@@ -111,16 +99,18 @@ async function getCaregiverAvailability(req, res) {
   }
 }
 
-// 🔒 PRIVADO — cuidador
+// 🔒 PRIVADO — cuidador (multi-perfil)
 async function getMyAvailability(req, res) {
   try {
     const caregiverId = toStr(req.user?.id);
-    const role = toStr(req.user?.role);
-
     if (!caregiverId) {
       return res.status(401).json({ error: "Não autenticado." });
     }
-    if (role !== "caregiver") {
+
+    // ✅ Multi-perfil: NÃO trava por role.
+    // Quem garante acesso é o requireCaregiverProfile no router.
+    // Mas deixamos um fallback defensivo:
+    if (req.user?.hasCaregiverProfile !== true && String(req.user?.role || "").toLowerCase() !== "admin") {
       return res.status(403).json({ error: "Apenas cuidadores podem acessar." });
     }
 
@@ -128,7 +118,7 @@ async function getMyAvailability(req, res) {
     const rows = await fetchAvailabilitySafe(caregiverId, range);
 
     return res.json({
-      availability: rowsToKeys(rows), // ✅ ARRAY DE STRINGS
+      availability: rowsToKeys(rows),
     });
   } catch (e) {
     console.error("getMyAvailability error:", e);
@@ -136,16 +126,15 @@ async function getMyAvailability(req, res) {
   }
 }
 
-// 🔒 PRIVADO — salvar
+// 🔒 PRIVADO — salvar (multi-perfil)
 async function updateMyAvailability(req, res) {
   try {
     const caregiverId = toStr(req.user?.id);
-    const role = toStr(req.user?.role);
-
     if (!caregiverId) {
       return res.status(401).json({ error: "Não autenticado." });
     }
-    if (role !== "caregiver") {
+
+    if (req.user?.hasCaregiverProfile !== true && String(req.user?.role || "").toLowerCase() !== "admin") {
       return res.status(403).json({ error: "Apenas cuidadores podem atualizar." });
     }
 
@@ -157,7 +146,7 @@ async function updateMyAvailability(req, res) {
 
     return res.json({
       ok: true,
-      availability: rowsToKeys(rows), // ✅ ARRAY DE STRINGS
+      availability: rowsToKeys(rows),
     });
   } catch (e) {
     console.error("updateMyAvailability error:", e);

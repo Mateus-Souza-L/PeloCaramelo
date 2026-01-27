@@ -13,11 +13,9 @@ function pickBlockedPayload(row) {
 
   const blocked = row.blocked ?? row.is_blocked ?? row.isBlocked ?? false;
 
-  const blockedReason =
-    row.blocked_reason ?? row.block_reason ?? row.blockReason ?? null;
+  const blockedReason = row.blocked_reason ?? row.block_reason ?? row.blockReason ?? null;
 
-  const blockedUntil =
-    row.blocked_until ?? row.block_until ?? row.blockedUntil ?? null;
+  const blockedUntil = row.blocked_until ?? row.block_until ?? row.blockedUntil ?? null;
 
   return {
     blocked: Boolean(blocked),
@@ -27,6 +25,8 @@ function pickBlockedPayload(row) {
 }
 
 function isUntilActive(blockedUntil) {
+  // Se não tem "until", considera bloqueio ativo enquanto blocked=true.
+  // (mantém comportamento conservador)
   if (!blockedUntil) return true;
   const dt = new Date(blockedUntil);
   if (Number.isNaN(dt.getTime())) return true;
@@ -44,26 +44,141 @@ function computeAdminLevel(role) {
   return 0;
 }
 
+/* ============================================================
+   ✅ Multi-perfil tolerante ao schema de caregiver_profiles
+   - Alguns ambientes têm caregiver_profiles.user_id
+   - Outros têm caregiver_profiles.caregiver_id
+   - Outros usam caregiver_profiles.id == users.id
+   Precisamos checar sem referenciar coluna inexistente.
+   ============================================================ */
+
+// cache simples (5 min)
+let cachedCaregiverLinkCol = null; // "user_id" | "caregiver_id" | null
+let cachedCaregiverColsAt = 0;
+
+async function detectCaregiverProfilesLinkColumn() {
+  const now = Date.now();
+  if (cachedCaregiverColsAt && now - cachedCaregiverColsAt < 5 * 60 * 1000) {
+    return cachedCaregiverLinkCol;
+  }
+
+  try {
+    const sql = `
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'caregiver_profiles'
+        AND column_name IN ('user_id', 'caregiver_id')
+    `;
+    const { rows } = await pool.query(sql);
+
+    const cols = new Set((rows || []).map((r) => String(r.column_name)));
+
+    if (cols.has("user_id")) cachedCaregiverLinkCol = "user_id";
+    else if (cols.has("caregiver_id")) cachedCaregiverLinkCol = "caregiver_id";
+    else cachedCaregiverLinkCol = null;
+
+    cachedCaregiverColsAt = now;
+    return cachedCaregiverLinkCol;
+  } catch {
+    cachedCaregiverLinkCol = null;
+    cachedCaregiverColsAt = now;
+    return null;
+  }
+}
+
+async function existsCaregiverProfileForUserId(userId) {
+  const idStr = String(userId ?? "").trim();
+  if (!idStr) return false;
+
+  // 1) tenta via detecção
+  const linkCol = await detectCaregiverProfilesLinkColumn();
+
+  try {
+    if (linkCol === "user_id") {
+      const { rows } = await pool.query(
+        `
+        SELECT 1
+        FROM caregiver_profiles cp
+        WHERE (cp.user_id::text = $1::text)
+           OR (cp.id::text = $1::text)
+        LIMIT 1
+        `,
+        [idStr]
+      );
+      return rows?.length > 0;
+    }
+
+    if (linkCol === "caregiver_id") {
+      const { rows } = await pool.query(
+        `
+        SELECT 1
+        FROM caregiver_profiles cp
+        WHERE (cp.caregiver_id::text = $1::text)
+           OR (cp.id::text = $1::text)
+        LIMIT 1
+        `,
+        [idStr]
+      );
+      return rows?.length > 0;
+    }
+
+    // 2) se não detectou, fallback por tentativa/erro
+    try {
+      const { rows } = await pool.query(
+        `
+        SELECT 1
+        FROM caregiver_profiles cp
+        WHERE (cp.user_id::text = $1::text)
+           OR (cp.id::text = $1::text)
+        LIMIT 1
+        `,
+        [idStr]
+      );
+      cachedCaregiverLinkCol = "user_id";
+      cachedCaregiverColsAt = Date.now();
+      return rows?.length > 0;
+    } catch (e1) {
+      const { rows } = await pool.query(
+        `
+        SELECT 1
+        FROM caregiver_profiles cp
+        WHERE (cp.caregiver_id::text = $1::text)
+           OR (cp.id::text = $1::text)
+        LIMIT 1
+        `,
+        [idStr]
+      );
+      cachedCaregiverLinkCol = "caregiver_id";
+      cachedCaregiverColsAt = Date.now();
+      return rows?.length > 0;
+    }
+  } catch (err) {
+    // Se a tabela nem existir em algum ambiente, evita quebrar login/me.
+    const msg = String(err?.message || "").toLowerCase();
+    if (msg.includes("does not exist") || err?.code === "42P01") {
+      return false;
+    }
+    throw err;
+  }
+}
+
 /**
- * ✅ Busca info de bloqueio + capacidade de cuidador (multi-perfil)
+ * ✅ Busca info de bloqueio + multi-perfil
  * - blocked / blocked_reason / blocked_until (se existirem)
- * - hasCaregiverProfile (EXISTS caregiver_profiles)
+ * - hasCaregiverProfile (EXISTS caregiver_profiles com schema tolerante)
  */
 async function fetchUserSecurityAndProfiles(userId) {
   const id = String(userId);
 
+  // 1) carrega bloqueio (tenta colunas completas; se falhar, fallback)
   try {
     const { rows } = await pool.query(
       `
       SELECT
         u.blocked,
         u.blocked_reason,
-        u.blocked_until,
-        EXISTS (
-          SELECT 1
-          FROM caregiver_profiles cp
-          WHERE cp.user_id = u.id
-        ) AS has_caregiver_profile
+        u.blocked_until
       FROM users u
       WHERE u.id::text = $1::text
       LIMIT 1;
@@ -75,22 +190,27 @@ async function fetchUserSecurityAndProfiles(userId) {
     if (!row) return null;
 
     const blockInfo = pickBlockedPayload(row);
+
+    // 2) checa perfil cuidador com schema tolerante (best-effort)
+    let hasCaregiverProfile = false;
+    try {
+      hasCaregiverProfile = await existsCaregiverProfileForUserId(id);
+    } catch (e) {
+      console.error("[authMiddleware] existsCaregiverProfileForUserId error:", e?.message || e);
+      hasCaregiverProfile = false;
+    }
+
     return {
       ...blockInfo,
-      hasCaregiverProfile: Boolean(row.has_caregiver_profile),
+      hasCaregiverProfile: Boolean(hasCaregiverProfile),
     };
   } catch (err) {
-    // fallback: se algum ambiente não tiver blocked_reason/blocked_until (ou outras colunas)
+    // fallback: se algum ambiente não tiver blocked_reason/blocked_until
     if (err?.code === "42703") {
       const { rows } = await pool.query(
         `
         SELECT
-          u.blocked,
-          EXISTS (
-            SELECT 1
-            FROM caregiver_profiles cp
-            WHERE cp.user_id = u.id
-          ) AS has_caregiver_profile
+          u.blocked
         FROM users u
         WHERE u.id::text = $1::text
         LIMIT 1;
@@ -102,11 +222,21 @@ async function fetchUserSecurityAndProfiles(userId) {
       if (!row) return null;
 
       const blockInfo = pickBlockedPayload(row);
+
+      let hasCaregiverProfile = false;
+      try {
+        hasCaregiverProfile = await existsCaregiverProfileForUserId(id);
+      } catch (e) {
+        console.error("[authMiddleware] existsCaregiverProfileForUserId error:", e?.message || e);
+        hasCaregiverProfile = false;
+      }
+
       return {
         ...blockInfo,
-        hasCaregiverProfile: Boolean(row.has_caregiver_profile),
+        hasCaregiverProfile: Boolean(hasCaregiverProfile),
       };
     }
+
     throw err;
   }
 }
@@ -181,7 +311,7 @@ async function authMiddleware(req, res, next) {
     // ✅ Usuário autenticado (do token)
     req.user = {
       id: String(decoded.id),
-      role, // "admin", "admin_master", "tutor", ...
+      role, // "admin", "admin_master", "tutor", "caregiver", ...
       admin_level,
       isAdminLike,
       hasCaregiverProfile: false, // ✅ preenchido via banco
