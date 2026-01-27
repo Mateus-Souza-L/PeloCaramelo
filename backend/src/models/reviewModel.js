@@ -6,7 +6,14 @@ const pool = require("../config/db");
 ========================= */
 function toInt(v) {
   const n = Number(v);
-  return Number.isFinite(n) ? n : null;
+  if (!Number.isFinite(n)) return null;
+  return Math.trunc(n);
+}
+
+function toPosInt(v) {
+  const i = toInt(v);
+  if (!i || i <= 0) return null;
+  return i;
 }
 
 function clampInt(v, def, min, max) {
@@ -24,12 +31,7 @@ function normStatus(s) {
 
 function isConcludedStatus(status) {
   const s = normStatus(status).toLowerCase();
-  return (
-    s === "concluida" ||
-    s === "concluída" ||
-    s === "finalizada" ||
-    s === "completed"
-  );
+  return s === "concluida" || s === "concluída" || s === "finalizada" || s === "completed";
 }
 
 function cleanComment(comment) {
@@ -47,22 +49,19 @@ function cleanReason(reason) {
 
 /* ==========================================================
    CREATE REVIEW + SYNC RESERVATION
+   ✅ Correções (Camada B):
+   - trava concorrência: SELECT ... FOR UPDATE
+   - bloqueia duplicada via legado (reservations.tutor_rating/caregiver_rating)
+   - ids estritos (int positivo)
 ========================================================== */
-async function createReviewAndSyncReservation({
-  reservationId,
-  reviewerId,
-  rating,
-  comment,
-}) {
-  const rid = toInt(reservationId);
-  const revid = toInt(reviewerId);
+async function createReviewAndSyncReservation({ reservationId, reviewerId, rating, comment }) {
+  const rid = toPosInt(reservationId);
+  const revid = toPosInt(reviewerId);
   const rate = Number(rating);
   const cmt = cleanComment(comment);
 
-  if (!rid)
-    throw Object.assign(new Error("reservationId inválido."), { status: 400 });
-  if (!revid)
-    throw Object.assign(new Error("reviewerId inválido."), { status: 400 });
+  if (!rid) throw Object.assign(new Error("reservationId inválido."), { status: 400 });
+  if (!revid) throw Object.assign(new Error("reviewerId inválido."), { status: 400 });
   if (!Number.isFinite(rate) || rate < 1 || rate > 5) {
     throw Object.assign(new Error("rating inválido (1..5)."), { status: 400 });
   }
@@ -71,49 +70,61 @@ async function createReviewAndSyncReservation({
   try {
     await client.query("BEGIN");
 
+    // ✅ trava a reserva para evitar corrida entre dup-check e insert
     const r0 = await client.query(
       `
-      SELECT id, tutor_id, caregiver_id, status,
-             tutor_rating, tutor_review,
-             caregiver_rating, caregiver_review
+      SELECT
+        id,
+        tutor_id,
+        caregiver_id,
+        status,
+        tutor_rating,
+        tutor_review,
+        caregiver_rating,
+        caregiver_review
       FROM reservations
       WHERE id = $1
-      LIMIT 1;
+      LIMIT 1
+      FOR UPDATE;
       `,
       [rid]
     );
 
     const r = r0.rows?.[0];
-    if (!r)
-      throw Object.assign(new Error("Reserva não encontrada."), { status: 404 });
+    if (!r) throw Object.assign(new Error("Reserva não encontrada."), { status: 404 });
 
-    const tutorId = toInt(r.tutor_id);
-    const caregiverId = toInt(r.caregiver_id);
+    const tutorId = toPosInt(r.tutor_id);
+    const caregiverId = toPosInt(r.caregiver_id);
 
     const isTutor = tutorId === revid;
     const isCaregiver = caregiverId === revid;
 
     if (!isTutor && !isCaregiver) {
-      throw Object.assign(
-        new Error("Você não pode avaliar uma reserva que não é sua."),
-        { status: 403 }
-      );
+      throw Object.assign(new Error("Você não pode avaliar uma reserva que não é sua."), {
+        status: 403,
+      });
     }
 
     if (!isConcludedStatus(r.status)) {
-      throw Object.assign(
-        new Error("Só é possível avaliar após a reserva ser concluída."),
-        { status: 409 }
-      );
-    }
-
-    const reviewedId = isTutor ? caregiverId : tutorId;
-    if (!reviewedId) {
-      throw Object.assign(new Error("Reserva sem tutor/cuidador definido."), {
+      throw Object.assign(new Error("Só é possível avaliar após a reserva ser concluída."), {
         status: 409,
       });
     }
 
+    const reviewedId = isTutor ? caregiverId : tutorId;
+    if (!reviewedId) {
+      throw Object.assign(new Error("Reserva sem tutor/cuidador definido."), { status: 409 });
+    }
+
+    // ✅ trava duplicada também pelo legado (caso já exista avaliação salva em reservations)
+    if (isTutor && r.tutor_rating != null) {
+      throw Object.assign(new Error("Você já avaliou esta reserva."), { status: 409 });
+    }
+    if (isCaregiver && r.caregiver_rating != null) {
+      throw Object.assign(new Error("Você já avaliou esta reserva."), { status: 409 });
+    }
+
+    // ✅ dup-check (reviews)
     const dup = await client.query(
       `
       SELECT 1
@@ -125,11 +136,10 @@ async function createReviewAndSyncReservation({
       [rid, revid]
     );
     if (dup.rows.length) {
-      throw Object.assign(new Error("Você já avaliou esta reserva."), {
-        status: 409,
-      });
+      throw Object.assign(new Error("Você já avaliou esta reserva."), { status: 409 });
     }
 
+    // INSERT (com fallback para unique constraint)
     let ins;
     try {
       ins = await client.query(
@@ -146,14 +156,14 @@ async function createReviewAndSyncReservation({
         [rid, tutorId, caregiverId, revid, reviewedId, rate, cmt]
       );
     } catch (e) {
+      // unique violation (ex: unique(reservation_id, reviewer_id))
       if (e?.code === "23505") {
-        throw Object.assign(new Error("Você já avaliou esta reserva."), {
-          status: 409,
-        });
+        throw Object.assign(new Error("Você já avaliou esta reserva."), { status: 409 });
       }
       throw e;
     }
 
+    // sync legado em reservations (mantém compat com telas antigas)
     await client.query(
       `
       UPDATE reservations
@@ -209,9 +219,8 @@ async function createReviewAndSyncReservation({
    SUMMARY (PÚBLICO — nunca inclui ocultas)
 ========================================================== */
 async function getSummaryForReviewedUser(reviewedId) {
-  const uid = toInt(reviewedId);
-  if (!uid)
-    throw Object.assign(new Error("reviewedId inválido."), { status: 400 });
+  const uid = toPosInt(reviewedId);
+  if (!uid) throw Object.assign(new Error("reviewedId inválido."), { status: 400 });
 
   const { rows } = await pool.query(
     `
@@ -242,9 +251,8 @@ const SORT_MAP = {
    COUNT (com ou sem ocultas)
 ========================================================== */
 async function countForReviewedUser(reviewedId, includeHidden = false) {
-  const uid = toInt(reviewedId);
-  if (!uid)
-    throw Object.assign(new Error("reviewedId inválido."), { status: 400 });
+  const uid = toPosInt(reviewedId);
+  if (!uid) throw Object.assign(new Error("reviewedId inválido."), { status: 400 });
 
   const { rows } = await pool.query(
     `
@@ -262,16 +270,9 @@ async function countForReviewedUser(reviewedId, includeHidden = false) {
 /* ==========================================================
    LIST (por usuário AVALIADO)
 ========================================================== */
-async function listForReviewedUser(
-  reviewedId,
-  limit = 50,
-  offset = 0,
-  sort = "recent",
-  includeHidden = false
-) {
-  const uid = toInt(reviewedId);
-  if (!uid)
-    throw Object.assign(new Error("reviewedId inválido."), { status: 400 });
+async function listForReviewedUser(reviewedId, limit = 50, offset = 0, sort = "recent", includeHidden = false) {
+  const uid = toPosInt(reviewedId);
+  if (!uid) throw Object.assign(new Error("reviewedId inválido."), { status: 400 });
 
   const orderBy = SORT_MAP[sort] || SORT_MAP.recent;
 
@@ -311,9 +312,8 @@ async function listForReviewedUser(
    ✅ LIST (por usuário AVALIADOR) — /reviews/me
 ========================================================== */
 async function listForReviewerUser(reviewerId, limit = 200, offset = 0) {
-  const uid = toInt(reviewerId);
-  if (!uid)
-    throw Object.assign(new Error("reviewerId inválido."), { status: 400 });
+  const uid = toPosInt(reviewerId);
+  if (!uid) throw Object.assign(new Error("reviewerId inválido."), { status: 400 });
 
   const cleanLimit = clampInt(limit, 200, 1, 500);
   const cleanOffset = clampInt(offset, 0, 0, 100000);
@@ -355,8 +355,6 @@ async function listForReviewerUser(reviewerId, limit = 200, offset = 0) {
 
 /* ==========================================================
    ✅ ADMIN: LIST ALL (para /admin/reviews)
-   - Retorna até 500 mais recentes
-   - Com nomes de tutor e caregiver (para o AdminDashboard)
 ========================================================== */
 async function listAll(limit = 500) {
   const cleanLimit = clampInt(limit, 500, 1, 500);
@@ -393,18 +391,15 @@ async function listAll(limit = 500) {
 
 /* ==========================================================
    ✅ ADMIN: HIDE
-   - Tenta gravar hidden_by se a coluna existir
-   - Se não existir, faz fallback sem hidden_by
 ========================================================== */
 async function hide(id, adminId, reason) {
-  const rid = toInt(id);
-  const aid = toInt(adminId);
+  const rid = toPosInt(id);
+  const aid = toPosInt(adminId);
   const rsn = cleanReason(reason) || "Conteúdo fora das diretrizes";
 
   if (!rid) throw Object.assign(new Error("ID inválido."), { status: 400 });
   if (!aid) throw Object.assign(new Error("Admin inválido."), { status: 401 });
 
-  // tenta com hidden_by (se existir)
   try {
     const sql = `
       UPDATE reviews
@@ -419,7 +414,6 @@ async function hide(id, adminId, reason) {
     const { rows } = await pool.query(sql, [rsn, aid, rid]);
     return rows?.[0] || null;
   } catch (e) {
-    // coluna hidden_by não existe → 42703
     if (e?.code !== "42703") throw e;
 
     const sql2 = `
@@ -438,13 +432,11 @@ async function hide(id, adminId, reason) {
 
 /* ==========================================================
    ✅ ADMIN: UNHIDE
-   - Limpa is_hidden + campos de motivo/data (+ hidden_by se existir)
 ========================================================== */
 async function unhide(id) {
-  const rid = toInt(id);
+  const rid = toPosInt(id);
   if (!rid) throw Object.assign(new Error("ID inválido."), { status: 400 });
 
-  // tenta limpar hidden_by também
   try {
     const sql = `
       UPDATE reviews
@@ -488,6 +480,7 @@ async function listVisibleForReviewedUser(id, limit, offset, sort) {
 
 module.exports = {
   toInt,
+  toPosInt,
   clampInt,
 
   createReviewAndSyncReservation,

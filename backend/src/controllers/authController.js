@@ -5,6 +5,9 @@ const crypto = require("crypto");
 const pool = require("../config/db");
 const { sendEmail } = require("../services/emailService");
 
+// ✅ templates transacionais
+const { buildConfirmSignupEmail } = require("../email/templates/confirmSignup");
+
 const {
   createUser,
   findUserByEmail,
@@ -192,6 +195,31 @@ async function register(req, res) {
       passwordHash,
       role,
     });
+
+    // ✅ envio de e-mail de boas-vindas/confirm. cadastro (best-effort)
+    // Não deve quebrar o registro se o e-mail falhar.
+    try {
+      const appUrl = computeFrontendBase(req);
+      if (!appUrl) {
+        console.warn(
+          "[register] FRONTEND_URL/origin ausente. Configure FRONTEND_URL no ambiente. " +
+            "E-mail de confirmação não será enviado para evitar link quebrado."
+        );
+      } else {
+        const emailPayload = buildConfirmSignupEmail({
+          userName: newUser?.name,
+          appUrl,
+        });
+
+        await sendEmail({
+          to: newUser.email,
+          ...emailPayload,
+        });
+      }
+    } catch (e) {
+      console.error("[register] Falha ao enviar e-mail de confirmação:", e?.message || e);
+      // segue o fluxo normalmente
+    }
 
     const token = generateToken(newUser);
 
