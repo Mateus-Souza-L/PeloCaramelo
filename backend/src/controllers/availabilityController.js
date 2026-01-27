@@ -40,6 +40,7 @@ function defaultRange(daysAhead = 120) {
 }
 
 /**
+ * 🔑 NORMALIZA PARA ARRAY DE STRINGS
  * ["YYYY-MM-DD", ...]
  */
 function rowsToKeys(rows) {
@@ -83,16 +84,12 @@ function extractAvailableKeysFromBody(body) {
 async function getCaregiverAvailability(req, res) {
   try {
     const caregiverId = toStr(req.params.caregiverId);
-    if (!caregiverId) {
-      return res.status(400).json({ error: "caregiverId inválido." });
-    }
+    if (!caregiverId) return res.status(400).json({ error: "caregiverId inválido." });
 
     const range = normalizeRangeFromQuery(req) || defaultRange(120);
     const rows = await fetchAvailabilitySafe(caregiverId, range);
 
-    return res.json({
-      availability: rowsToKeys(rows),
-    });
+    return res.json({ availability: rowsToKeys(rows) });
   } catch (e) {
     console.error("getCaregiverAvailability error:", e);
     return res.status(500).json({ error: "Erro ao buscar disponibilidade." });
@@ -100,26 +97,16 @@ async function getCaregiverAvailability(req, res) {
 }
 
 // 🔒 PRIVADO — cuidador (multi-perfil)
+// ✅ NÃO checa role aqui: a proteção é via requireCaregiverProfile na rota.
 async function getMyAvailability(req, res) {
   try {
     const caregiverId = toStr(req.user?.id);
-    if (!caregiverId) {
-      return res.status(401).json({ error: "Não autenticado." });
-    }
-
-    // ✅ Multi-perfil: NÃO trava por role.
-    // Quem garante acesso é o requireCaregiverProfile no router.
-    // Mas deixamos um fallback defensivo:
-    if (req.user?.hasCaregiverProfile !== true && String(req.user?.role || "").toLowerCase() !== "admin") {
-      return res.status(403).json({ error: "Apenas cuidadores podem acessar." });
-    }
+    if (!caregiverId) return res.status(401).json({ error: "Não autenticado." });
 
     const range = normalizeRangeFromQuery(req) || null;
     const rows = await fetchAvailabilitySafe(caregiverId, range);
 
-    return res.json({
-      availability: rowsToKeys(rows),
-    });
+    return res.json({ availability: rowsToKeys(rows) });
   } catch (e) {
     console.error("getMyAvailability error:", e);
     return res.status(500).json({ error: "Erro ao buscar disponibilidade." });
@@ -127,16 +114,11 @@ async function getMyAvailability(req, res) {
 }
 
 // 🔒 PRIVADO — salvar (multi-perfil)
+// ✅ NÃO checa role aqui: a proteção é via requireCaregiverProfile na rota.
 async function updateMyAvailability(req, res) {
   try {
     const caregiverId = toStr(req.user?.id);
-    if (!caregiverId) {
-      return res.status(401).json({ error: "Não autenticado." });
-    }
-
-    if (req.user?.hasCaregiverProfile !== true && String(req.user?.role || "").toLowerCase() !== "admin") {
-      return res.status(403).json({ error: "Apenas cuidadores podem atualizar." });
-    }
+    if (!caregiverId) return res.status(401).json({ error: "Não autenticado." });
 
     const availableKeys = extractAvailableKeysFromBody(req.body);
 

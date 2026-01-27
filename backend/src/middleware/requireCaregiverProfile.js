@@ -38,7 +38,6 @@ async function detectCaregiverProfilesColumns() {
     cachedAt = now;
     return cols;
   } catch {
-    // se falhar (permissão/ambiente), deixa sem cache e cai no fallback por tentativa/erro
     cachedCols = null;
     cachedAt = now;
     return null;
@@ -59,7 +58,6 @@ async function existsCaregiverProfileByUserId(userId) {
       if (rows?.length) return true;
     }
 
-    // ✅ só tenta caregiver_id se a coluna EXISTE mesmo
     if (detected.hasCaregiverId) {
       const { rows } = await pool.query(
         `SELECT 1 FROM caregiver_profiles WHERE caregiver_id::text = $1 LIMIT 1`,
@@ -68,7 +66,6 @@ async function existsCaregiverProfileByUserId(userId) {
       if (rows?.length) return true;
     }
 
-    // ✅ fallback extra: id == users.id (bases antigas)
     if (detected.hasId) {
       const { rows } = await pool.query(
         `SELECT 1 FROM caregiver_profiles WHERE id::text = $1 LIMIT 1`,
@@ -87,27 +84,42 @@ async function existsCaregiverProfileByUserId(userId) {
       "SELECT 1 FROM caregiver_profiles WHERE user_id::text = $1 LIMIT 1",
       [idStr]
     );
-    return !!rows?.length;
+    if (rows?.length) return true;
   } catch (eUserId) {
-    // ✅ Depois tenta id (bases antigas)
-    try {
-      const { rows } = await pool.query(
-        "SELECT 1 FROM caregiver_profiles WHERE id::text = $1 LIMIT 1",
-        [idStr]
-      );
-      return !!rows?.length;
-    } catch (eId) {
-      // ⚠️ NÃO tenta caregiver_id aqui (porque no seu ambiente isso está quebrando)
-      const msg =
-        eId?.message ||
-        eUserId?.message ||
-        "Falha ao validar caregiver_profiles (user_id/id)";
-
-      const err = new Error(msg);
-      err._caregiverProfileCheckError = true;
-      throw err;
-    }
+    // ignore
   }
+
+  // ✅ Depois tenta id (bases antigas)
+  try {
+    const { rows } = await pool.query(
+      "SELECT 1 FROM caregiver_profiles WHERE id::text = $1 LIMIT 1",
+      [idStr]
+    );
+    if (rows?.length) return true;
+  } catch (eId) {
+    // ignore
+  }
+
+  // ✅ Por último tenta caregiver_id, MAS sem quebrar se a coluna não existir
+  try {
+    const { rows } = await pool.query(
+      "SELECT 1 FROM caregiver_profiles WHERE caregiver_id::text = $1 LIMIT 1",
+      [idStr]
+    );
+    if (rows?.length) return true;
+  } catch (eCaregiverId) {
+    // se a coluna não existe, só ignora
+    if (eCaregiverId?.code === "42703") return false;
+    // se a tabela não existe, ignora
+    if (eCaregiverId?.code === "42P01") return false;
+
+    const msg = eCaregiverId?.message || "Falha ao validar caregiver_profiles";
+    const err = new Error(msg);
+    err._caregiverProfileCheckError = true;
+    throw err;
+  }
+
+  return false;
 }
 
 async function requireCaregiverProfile(req, res, next) {
@@ -120,6 +132,10 @@ async function requireCaregiverProfile(req, res, next) {
         code: "UNAUTHENTICATED",
       });
     }
+
+    // ✅ Admin passa sempre
+    const role = String(req.user?.role || "").toLowerCase().trim();
+    if (role === "admin" || role === "admin_master") return next();
 
     // ✅ fast-path: se authMiddleware injetou a flag
     if (req.user?.hasCaregiverProfile === true) return next();
