@@ -5,9 +5,15 @@ const pool = require("../config/db");
 const { createReservationNotification } = require("../models/notificationModel");
 
 const { reservationRejectedTutorEmail } = require("../email/templates/reservationRejectedTutorEmail");
-const { reservationRejectedCaregiverEmail } = require("../email/templates/reservationRejectedCaregiverEmail");
-const { reservationCanceledToCaregiverEmail } = require("../email/templates/reservationCanceledToCaregiverEmail");
+const {
+  reservationRejectedCaregiverEmail,
+} = require("../email/templates/reservationRejectedCaregiverEmail");
+const {
+  reservationCanceledToCaregiverEmail,
+} = require("../email/templates/reservationCanceledToCaregiverEmail");
 const { reservationCanceledToTutorEmail } = require("../email/templates/reservationCanceledToTutorEmail");
+const { reviewRequestTutorEmail } = require("../email/templates/reviewRequestTutorEmail");
+const { reviewRequestCaregiverEmail } = require("../email/templates/reviewRequestCaregiverEmail");
 
 // ✅ e-mails transacionais (Resend)
 const { sendEmail } = require("../services/emailService");
@@ -178,6 +184,46 @@ async function getUserBasicById(id) {
 }
 
 /* ===========================================================
+   ✅ ANTI-SPAM: e-mail de avaliação enviado por reserva
+   (requer coluna: reservations.review_email_sent_at)
+   =========================================================== */
+
+async function wasReviewEmailSent(reservationId) {
+  const rid = toPosInt(reservationId);
+  if (!rid) return false;
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT review_email_sent_at FROM reservations WHERE id = $1 LIMIT 1`,
+      [rid]
+    );
+    const v = rows?.[0]?.review_email_sent_at;
+    return !!v;
+  } catch (e) {
+    console.error("[reviewEmail] wasReviewEmailSent error:", e?.message || e);
+    // fail-safe: se não conseguir checar, não bloqueia (mas evita quebrar fluxo)
+    return false;
+  }
+}
+
+async function markReviewEmailSent(reservationId) {
+  const rid = toPosInt(reservationId);
+  if (!rid) return;
+
+  try {
+    await pool.query(
+      `UPDATE reservations
+         SET review_email_sent_at = NOW()
+       WHERE id = $1
+         AND review_email_sent_at IS NULL`,
+      [rid]
+    );
+  } catch (e) {
+    console.error("[reviewEmail] markReviewEmailSent error:", e?.message || e);
+  }
+}
+
+/* ===========================================================
    STATUS NORMALIZATION + RULES
    =========================================================== */
 
@@ -253,15 +299,15 @@ function canAccessReservation(user, reservation) {
 function getStartEndSafe(obj, fallbackReservation) {
   const start = toDateKey(
     obj?.startDate ??
-    obj?.start_date ??
-    fallbackReservation?.startDate ??
-    fallbackReservation?.start_date
+      obj?.start_date ??
+      fallbackReservation?.startDate ??
+      fallbackReservation?.start_date
   );
   const end = toDateKey(
     obj?.endDate ??
-    obj?.end_date ??
-    fallbackReservation?.endDate ??
-    fallbackReservation?.end_date
+      obj?.end_date ??
+      fallbackReservation?.endDate ??
+      fallbackReservation?.end_date
   );
   return { start, end };
 }
@@ -710,14 +756,16 @@ async function createReservationController(req, res) {
       if (!base) {
         console.warn(
           "[createReservation] FRONTEND_URL/origin ausente. Configure FRONTEND_URL. " +
-          "E-mail de nova reserva não será enviado para evitar link quebrado."
+            "E-mail de nova reserva não será enviado para evitar link quebrado."
         );
       } else {
         const caregiverUser = await getUserBasicById(caregiverIdStr);
         const caregiverEmail = cleanNonEmptyString(caregiverUser?.email);
 
         if (!caregiverEmail) {
-          console.warn("[createReservation] caregiver email ausente. Não foi possível enviar e-mail.");
+          console.warn(
+            "[createReservation] caregiver email ausente. Não foi possível enviar e-mail."
+          );
         } else {
           const startBR = formatDateBRFromKey(range.startDate);
           const endBR = formatDateBRFromKey(range.endDate);
@@ -1001,11 +1049,7 @@ async function updateReservationStatusController(req, res) {
             updated?.caregiverName ||
             "Cuidador";
 
-          const tutorName =
-            tutorUser?.name ||
-            updated?.tutor_name ||
-            updated?.tutorName ||
-            "Tutor";
+          const tutorName = tutorUser?.name || updated?.tutor_name || updated?.tutorName || "Tutor";
 
           // tutor (confirmação)
           if (tutorEmail) {
@@ -1124,7 +1168,7 @@ async function updateReservationStatusController(req, res) {
           if (!base) {
             console.warn(
               "[updateStatus] FRONTEND_URL/origin ausente. Configure FRONTEND_URL. " +
-              "E-mail de reserva aceita não será enviado para evitar link quebrado."
+                "E-mail de reserva aceita não será enviado para evitar link quebrado."
             );
           } else {
             const tutorUser = await getUserBasicById(tutorId);
@@ -1161,6 +1205,7 @@ async function updateReservationStatusController(req, res) {
         }
       }
 
+      // ✅ e-mails: Reserva recusada — best-effort
       if (nextStatus === "Recusada") {
         try {
           const base = computeFrontendBase(req);
@@ -1217,6 +1262,73 @@ async function updateReservationStatusController(req, res) {
           }
         } catch (e) {
           console.error("[updateStatus] Falha ao enviar e-mails de recusa:", e?.message || e);
+        }
+      }
+
+      // 📧 E-mails: solicitar avaliação pós-reserva (tutor + cuidador) — best-effort + anti-spam
+      if (nextStatus === "Concluída") {
+        try {
+          const alreadySent = await wasReviewEmailSent(updated?.id);
+          if (alreadySent) {
+            // evita spam: não reenviar e-mail de avaliação para a mesma reserva
+          } else {
+            const base = computeFrontendBase(req);
+            if (!base) {
+              console.warn(
+                "[reviewRequest] FRONTEND_URL/origin ausente. Não envia e-mails (avaliação)."
+              );
+            } else {
+              const startBR = formatDateBRFromKey(startKey);
+              const endBR = formatDateBRFromKey(endKey);
+
+              // ✅ leva direto para a reserva específica; fallback: dashboard
+              const rid = updated?.id != null ? String(updated.id) : "";
+              const reviewUrl = rid
+                ? `${base}/reserva/${encodeURIComponent(rid)}`
+                : `${base}/dashboard`;
+
+              const tutorUser = await getUserBasicById(tutorId);
+              const caregiverUser = await getUserBasicById(caregiverId);
+
+              const tutorEmail = cleanNonEmptyString(tutorUser?.email);
+              const caregiverEmail = cleanNonEmptyString(caregiverUser?.email);
+
+              const tutorName =
+                tutorUser?.name || updated?.tutor_name || updated?.tutorName || "Tutor";
+
+              const caregiverName =
+                caregiverUser?.name || updated?.caregiver_name || updated?.caregiverName || "Cuidador";
+
+              // Tutor avalia cuidador
+              if (tutorEmail) {
+                const payloadTutor = reviewRequestTutorEmail({
+                  tutorName,
+                  caregiverName,
+                  startDate: startBR,
+                  endDate: endBR,
+                  reviewUrl,
+                });
+                await sendEmail({ to: tutorEmail, ...payloadTutor });
+              }
+
+              // Cuidador avalia tutor
+              if (caregiverEmail) {
+                const payloadCaregiver = reviewRequestCaregiverEmail({
+                  caregiverName,
+                  tutorName,
+                  startDate: startBR,
+                  endDate: endBR,
+                  reviewUrl,
+                });
+                await sendEmail({ to: caregiverEmail, ...payloadCaregiver });
+              }
+
+              // ✅ marca como enviado apenas depois de tentar enviar (best-effort)
+              await markReviewEmailSent(updated?.id);
+            }
+          }
+        } catch (e) {
+          console.error("[reviewRequest] Falha ao enviar e-mails de avaliação:", e?.message || e);
         }
       }
 
@@ -1397,8 +1509,8 @@ async function listMyEvaluationsController(req, res) {
       mode === "tutor"
         ? "AND r.tutor_id::text = $1"
         : mode === "caregiver"
-          ? "AND r.caregiver_id::text = $1"
-          : "";
+        ? "AND r.caregiver_id::text = $1"
+        : "";
 
     const sql = `
       SELECT
