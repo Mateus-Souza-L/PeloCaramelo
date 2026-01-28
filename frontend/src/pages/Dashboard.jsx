@@ -257,7 +257,7 @@ function mergePreservingLocalRatings(apiList, localList) {
   });
 }
 
-export default function Dashboard() {  
+export default function Dashboard() {
   const { user, token, hasCaregiverProfile, activeMode } = useAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();
@@ -313,7 +313,7 @@ export default function Dashboard() {
     } catch {
       // ignore
     }
-    
+
     // ✅ se o AuthContext já tem activeMode, use como fonte inicial
     const m = String(activeMode || "").toLowerCase().trim();
     if (m === "caregiver" && hasCaregiverProfile) return "caregiver";
@@ -601,7 +601,22 @@ export default function Dashboard() {
           const endpoint = isTutor ? "/reservations/tutor" : "/reservations/caregiver";
 
           const data = await authRequest(endpoint, token);
-          const apiRes = data?.reservations || [];
+
+          // ✅ fallback: se o authRequest retornou string (ou algo inesperado), tenta parsear
+          let parsed = data;
+          if (typeof parsed === "string") {
+            try {
+              parsed = JSON.parse(parsed);
+            } catch {
+              parsed = null;
+            }
+          }
+
+          const apiRes = Array.isArray(parsed?.reservations)
+            ? parsed.reservations
+            : Array.isArray(parsed)
+              ? parsed
+              : [];
           const normalized = apiRes
             .map(normalizeReservationFromApi)
             .filter(Boolean)
