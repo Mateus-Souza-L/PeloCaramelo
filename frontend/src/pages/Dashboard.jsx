@@ -541,6 +541,7 @@ export default function Dashboard() {
 
   const loadReservations = useCallback(async () => {
     if (!user) {
+      const roleAtStart = activeRole;
       setReservations([]);
       setReservationsLoading(false);
       setReservationsLoaded(true);
@@ -565,6 +566,9 @@ export default function Dashboard() {
     if (!reservationsLoaded) setReservationsLoading(true);
 
     const applyReservations = (resList) => {
+      // ✅ se o role mudou enquanto buscava, IGNORA resultado velho
+      if (activeRoleRef.current !== roleAtStart) return;
+
       const safe = Array.isArray(resList) ? resList : [];
       setReservations(safe);
       refreshUnreadReservationNotifs();
