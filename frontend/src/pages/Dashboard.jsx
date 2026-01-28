@@ -306,19 +306,22 @@ export default function Dashboard() {
   }, [user?.id]);
 
   const [activeRole, setActiveRole] = useState(() => {
+    // 1) prioridade: activeMode do AuthContext (Navbar já define isso)
+    const m = String(activeMode || "").toLowerCase().trim();
+    if (m === "caregiver" && hasCaregiverProfile) return "caregiver";
+    if (m === "tutor") return "tutor";
+
+    // 2) fallback: localStorage
     try {
-      const saved = localStorage.getItem(`activeRole_${user?.id ?? "anon"}`);
-      if (saved === "tutor") return "tutor";
+      const saved = localStorage.getItem(activeRoleStorageKey);
       if (saved === "caregiver" && hasCaregiverProfile) return "caregiver";
+      if (saved === "tutor") return "tutor";
     } catch {
       // ignore
     }
 
-    // ✅ se o AuthContext já tem activeMode, use como fonte inicial
-    const m = String(activeMode || "").toLowerCase().trim();
-    if (m === "caregiver" && hasCaregiverProfile) return "caregiver";
-    if (m === "tutor") return "tutor";
-    return "tutor";
+    // 3) default
+    return hasCaregiverProfile ? "caregiver" : "tutor";
   });
 
   // garante que activeRole sempre seja um role válido pro usuário
@@ -601,6 +604,8 @@ export default function Dashboard() {
           const endpoint = isTutor ? "/reservations/tutor" : "/reservations/caregiver";
 
           const data = await authRequest(endpoint, token);
+          const list = Array.isArray(data?.reservations) ? data.reservations : [];
+          setReservations(list);
 
           // ✅ fallback: se o authRequest retornou string (ou algo inesperado), tenta parsear
           let parsed = data;
