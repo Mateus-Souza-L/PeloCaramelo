@@ -257,8 +257,8 @@ function mergePreservingLocalRatings(apiList, localList) {
   });
 }
 
-export default function Dashboard() {
-  const { user, token, hasCaregiverProfile } = useAuth();
+export default function Dashboard() {  
+  const { user, token, hasCaregiverProfile, activeMode } = useAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
@@ -313,6 +313,11 @@ export default function Dashboard() {
     } catch {
       // ignore
     }
+    
+    // ✅ se o AuthContext já tem activeMode, use como fonte inicial
+    const m = String(activeMode || "").toLowerCase().trim();
+    if (m === "caregiver" && hasCaregiverProfile) return "caregiver";
+    if (m === "tutor") return "tutor";
     return "tutor";
   });
 
