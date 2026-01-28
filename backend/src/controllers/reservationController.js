@@ -4,6 +4,11 @@ const availabilityModel = require("../models/availabilityModel");
 const pool = require("../config/db");
 const { createReservationNotification } = require("../models/notificationModel");
 
+const { reservationRejectedTutorEmail } = require("../email/templates/reservationRejectedTutorEmail");
+const { reservationRejectedCaregiverEmail } = require("../email/templates/reservationRejectedCaregiverEmail");
+const { reservationCanceledToCaregiverEmail } = require("../email/templates/reservationCanceledToCaregiverEmail");
+const { reservationCanceledToTutorEmail } = require("../email/templates/reservationCanceledToTutorEmail");
+
 // ✅ e-mails transacionais (Resend)
 const { sendEmail } = require("../services/emailService");
 const { newReservationEmail } = require("../email/templates/newReservationEmail");
@@ -248,15 +253,15 @@ function canAccessReservation(user, reservation) {
 function getStartEndSafe(obj, fallbackReservation) {
   const start = toDateKey(
     obj?.startDate ??
-      obj?.start_date ??
-      fallbackReservation?.startDate ??
-      fallbackReservation?.start_date
+    obj?.start_date ??
+    fallbackReservation?.startDate ??
+    fallbackReservation?.start_date
   );
   const end = toDateKey(
     obj?.endDate ??
-      obj?.end_date ??
-      fallbackReservation?.endDate ??
-      fallbackReservation?.end_date
+    obj?.end_date ??
+    fallbackReservation?.endDate ??
+    fallbackReservation?.end_date
   );
   return { start, end };
 }
@@ -705,7 +710,7 @@ async function createReservationController(req, res) {
       if (!base) {
         console.warn(
           "[createReservation] FRONTEND_URL/origin ausente. Configure FRONTEND_URL. " +
-            "E-mail de nova reserva não será enviado para evitar link quebrado."
+          "E-mail de nova reserva não será enviado para evitar link quebrado."
         );
       } else {
         const caregiverUser = await getUserBasicById(caregiverIdStr);
@@ -974,6 +979,62 @@ async function updateReservationStatusController(req, res) {
         payload: { reservationId: updated?.id, prevStatus: currentStatus, nextStatus: "Cancelada" },
       });
 
+      try {
+        const base = computeFrontendBase(req);
+        if (!base) {
+          console.warn("[tutorCancel] FRONTEND_URL/origin ausente. Não envia e-mail (cancelada).");
+        } else {
+          const startBR = formatDateBRFromKey(startKey);
+          const endBR = formatDateBRFromKey(endKey);
+
+          const dashboardUrl = `${base}/dashboard`;
+
+          const tutorUser = await getUserBasicById(tutorId);
+          const caregiverUser = await getUserBasicById(caregiverId);
+
+          const tutorEmail = cleanNonEmptyString(tutorUser?.email);
+          const caregiverEmail = cleanNonEmptyString(caregiverUser?.email);
+
+          const caregiverName =
+            caregiverUser?.name ||
+            updated?.caregiver_name ||
+            updated?.caregiverName ||
+            "Cuidador";
+
+          const tutorName =
+            tutorUser?.name ||
+            updated?.tutor_name ||
+            updated?.tutorName ||
+            "Tutor";
+
+          // tutor (confirmação)
+          if (tutorEmail) {
+            const payloadTutor = reservationCanceledToTutorEmail({
+              tutorName,
+              caregiverName,
+              startDate: startBR,
+              endDate: endBR,
+              reservationUrl: dashboardUrl,
+            });
+            await sendEmail({ to: tutorEmail, ...payloadTutor });
+          }
+
+          // caregiver (avisar)
+          if (caregiverEmail) {
+            const payloadCaregiver = reservationCanceledToCaregiverEmail({
+              caregiverName,
+              tutorName,
+              startDate: startBR,
+              endDate: endBR,
+              reservationUrl: dashboardUrl,
+            });
+            await sendEmail({ to: caregiverEmail, ...payloadCaregiver });
+          }
+        }
+      } catch (e) {
+        console.error("[tutorCancel] Falha ao enviar e-mails de cancelamento:", e?.message || e);
+      }
+
       return res.json({
         reservation: {
           ...updated,
@@ -1063,7 +1124,7 @@ async function updateReservationStatusController(req, res) {
           if (!base) {
             console.warn(
               "[updateStatus] FRONTEND_URL/origin ausente. Configure FRONTEND_URL. " +
-                "E-mail de reserva aceita não será enviado para evitar link quebrado."
+              "E-mail de reserva aceita não será enviado para evitar link quebrado."
             );
           } else {
             const tutorUser = await getUserBasicById(tutorId);
@@ -1097,6 +1158,65 @@ async function updateReservationStatusController(req, res) {
           }
         } catch (e) {
           console.error("[updateStatus] Falha ao enviar e-mail de reserva aceita:", e?.message || e);
+        }
+      }
+
+      if (nextStatus === "Recusada") {
+        try {
+          const base = computeFrontendBase(req);
+          if (!base) {
+            console.warn("[updateStatus] FRONTEND_URL/origin ausente. Não envia e-mail (recusada).");
+          } else {
+            const startBR = formatDateBRFromKey(startKey);
+            const endBR = formatDateBRFromKey(endKey);
+
+            const dashboardUrl = `${base}/dashboard`;
+
+            // tutor (avisar)
+            const tutorUser = await getUserBasicById(tutorId);
+            const tutorEmail = cleanNonEmptyString(tutorUser?.email);
+
+            if (tutorEmail) {
+              const payloadTutor = reservationRejectedTutorEmail({
+                tutorName: tutorUser?.name || updated?.tutor_name || updated?.tutorName || "Tutor",
+                caregiverName:
+                  cleanNonEmptyString(user?.name) ||
+                  updated?.caregiver_name ||
+                  updated?.caregiverName ||
+                  "Cuidador",
+                startDate: startBR,
+                endDate: endBR,
+                rejectReason: rejectReason || null,
+                reservationUrl: dashboardUrl,
+              });
+
+              await sendEmail({ to: tutorEmail, ...payloadTutor });
+            }
+
+            // caregiver (confirmar)
+            const caregiverUser = await getUserBasicById(caregiverId);
+            const caregiverEmail = cleanNonEmptyString(caregiverUser?.email);
+
+            if (caregiverEmail) {
+              const payloadCaregiver = reservationRejectedCaregiverEmail({
+                caregiverName:
+                  caregiverUser?.name ||
+                  cleanNonEmptyString(user?.name) ||
+                  updated?.caregiver_name ||
+                  updated?.caregiverName ||
+                  "Cuidador",
+                tutorName: tutorUser?.name || updated?.tutor_name || updated?.tutorName || "Tutor",
+                startDate: startBR,
+                endDate: endBR,
+                rejectReason: rejectReason || null,
+                dashboardUrl,
+              });
+
+              await sendEmail({ to: caregiverEmail, ...payloadCaregiver });
+            }
+          }
+        } catch (e) {
+          console.error("[updateStatus] Falha ao enviar e-mails de recusa:", e?.message || e);
         }
       }
 
@@ -1277,8 +1397,8 @@ async function listMyEvaluationsController(req, res) {
       mode === "tutor"
         ? "AND r.tutor_id::text = $1"
         : mode === "caregiver"
-        ? "AND r.caregiver_id::text = $1"
-        : "";
+          ? "AND r.caregiver_id::text = $1"
+          : "";
 
     const sql = `
       SELECT
