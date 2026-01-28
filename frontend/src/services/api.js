@@ -165,16 +165,17 @@ async function apiRequest(path, options = {}) {
 
   let data = null;
 
-  // Tenta JSON; se falhar, tenta texto
-  try {
-    data = await response.json();
-  } catch {
+  // ✅ lê o body 1x e tenta parsear
+  const rawText = await response.text();
+
+  if (rawText && looksLikeJsonString(rawText)) {
     try {
-      const text = await response.text();
-      data = text ? { message: text } : null;
+      data = JSON.parse(rawText);
     } catch {
-      data = null;
+      data = { message: rawText };
     }
+  } else {
+    data = rawText ? { message: rawText } : null;
   }
 
   if (!response.ok) {
