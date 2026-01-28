@@ -3,6 +3,10 @@
 /**
  * Template base HTML (reutilizável) para e-mails transacionais do PeloCaramelo.
  *
+ * ✅ Atualização:
+ * - Suporte a LOGO via URL pública (ENV: EMAIL_LOGO_URL)
+ *   Ex: EMAIL_LOGO_URL=https://pelocaramelo.com.br/logo-email.png
+ *
  * Objetivo:
  * - padronizar layout (tipografia, espaçamento, cores)
  * - suportar "preheader" (texto de prévia no Gmail)
@@ -24,6 +28,19 @@ function escapeHtml(s) {
     .replaceAll("'", "&#039;");
 }
 
+function safeUrl(u) {
+  const s = String(u || "").trim();
+  if (!s) return "";
+  try {
+    const parsed = new URL(s);
+    // só aceita http/https (evita data:, javascript:, etc)
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") return parsed.toString();
+    return "";
+  } catch {
+    return "";
+  }
+}
+
 function baseTemplate({
   title,
   preheader,
@@ -34,6 +51,36 @@ function baseTemplate({
 }) {
   const safeTitle = escapeHtml(title || "");
   const safePreheader = escapeHtml(preheader || "");
+
+  // ✅ Logo via env (URL pública)
+  const LOGO_URL = safeUrl(process.env.EMAIL_LOGO_URL);
+  const logoAlt = escapeHtml(brandName);
+
+  const brandHeaderHtml = `
+    <tr>
+      <td align="left" style="padding: 0 12px 12px 12px;">
+        <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
+          <tr>
+            <td style="font-family: Arial, sans-serif;">
+              ${
+                LOGO_URL
+                  ? `<img
+                      src="${LOGO_URL}"
+                      alt="${logoAlt}"
+                      width="160"
+                      style="display:block;border:0;outline:none;text-decoration:none;height:auto;max-width:160px;"
+                    />`
+                  : ""
+              }
+              <div style="margin-top:8px;font-size:14px;color:#5A3A22;font-weight:800;">
+                ${escapeHtml(brandName)}
+              </div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  `.trim();
 
   const ctaHtml =
     cta?.label && cta?.url
@@ -95,13 +142,7 @@ function baseTemplate({
           <!-- container -->
           <table role="presentation" cellpadding="0" cellspacing="0" width="600" style="width:600px; max-width:600px;">
             <!-- header / brand -->
-            <tr>
-              <td align="left" style="padding: 0 12px 12px 12px;">
-                <div style="font-family: Arial, sans-serif; font-size: 14px; color: #5A3A22; font-weight: 800;">
-                  ${escapeHtml(brandName)}
-                </div>
-              </td>
-            </tr>
+            ${brandHeaderHtml}
 
             <!-- card -->
             <tr>
