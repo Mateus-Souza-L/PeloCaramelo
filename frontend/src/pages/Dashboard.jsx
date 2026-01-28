@@ -461,6 +461,7 @@ export default function Dashboard() {
   const resFetchGuardRef = useRef({ inFlight: false, lastAt: 0, lastKey: "" });
   const availFetchGuardRef = useRef({ inFlight: false, lastAt: 0, lastKey: "" });
   const myReviewsGuardRef = useRef({ inFlight: false, lastAt: 0, lastKey: "" });
+  const activeRoleRef = useRef(activeRole);
 
   const loadUnreadChatFromServer = useCallback(async () => {
     if (!user || !token) {
@@ -548,8 +549,10 @@ export default function Dashboard() {
   }, [user?.id, activeRole, token]);
 
   const loadReservations = useCallback(async () => {
+    // ✅ captura o role no momento em que a busca começou
+    const roleAtStart = activeRole;
+
     if (!user) {
-      const roleAtStart = activeRole;
       setReservations([]);
       setReservationsLoading(false);
       setReservationsLoaded(true);
@@ -575,7 +578,7 @@ export default function Dashboard() {
 
     const applyReservations = (resList) => {
       // ✅ se o role mudou enquanto buscava, IGNORA resultado velho
-      if (activeRoleRef.current !== roleAtStart) return;
+      if (activeRoleRef?.current && activeRoleRef.current !== roleAtStart) return;
 
       const safe = Array.isArray(resList) ? resList : [];
       setReservations(safe);
@@ -602,10 +605,7 @@ export default function Dashboard() {
       if (token && (isTutor || isCaregiver)) {
         try {
           const endpoint = isTutor ? "/reservations/tutor" : "/reservations/caregiver";
-
           const data = await authRequest(endpoint, token);
-          const list = Array.isArray(data?.reservations) ? data.reservations : [];
-          setReservations(list);
 
           // ✅ fallback: se o authRequest retornou string (ou algo inesperado), tenta parsear
           let parsed = data;
@@ -622,6 +622,7 @@ export default function Dashboard() {
             : Array.isArray(parsed)
               ? parsed
               : [];
+
           const normalized = apiRes
             .map(normalizeReservationFromApi)
             .filter(Boolean)
@@ -687,6 +688,7 @@ export default function Dashboard() {
     refreshUnreadReservationNotifs,
     reservationsLoaded,
     showToast,
+    activeRole,
   ]);
 
   // ---------- disponibilidade cuidador (/availability/me) ----------
@@ -1183,6 +1185,11 @@ export default function Dashboard() {
       setTab((prev) => (prev === "pets" ? "pets" : "reservasTutor"));
     }
   }, [activeRole, user?.id, loadAvailabilityIfCaregiver]);
+
+  useEffect(() => {
+    activeRoleRef.current = activeRole;
+  }, [activeRole]);
+
 
   // ---------- status da reserva ----------
   const applyAndPersistReservation = useCallback(
