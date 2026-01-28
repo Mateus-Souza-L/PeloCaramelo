@@ -6,8 +6,8 @@ const { createReservationNotification } = require("../models/notificationModel")
 
 // ✅ e-mails transacionais (Resend)
 const { sendEmail } = require("../services/emailService");
-const { buildNewReservationEmail } = require("../email/templates/newReservation");
-const { buildReservationAcceptedEmail } = require("../email/templates/reservationAccepted");
+const { newReservationEmail } = require("../email/templates/newReservationEmail");
+const { reservationAcceptedEmail } = require("../email/templates/reservationAcceptedEmail");
 
 /* ===========================================================
    HELPERS (ids, datas, body)
@@ -719,7 +719,7 @@ async function createReservationController(req, res) {
 
           const dashboardUrl = `${base}/dashboard`;
 
-          const emailPayload = buildNewReservationEmail({
+          const emailPayload = newReservationEmail({
             caregiverName: caregiverUser?.name || caregiverName || "Cuidador",
             tutorName: tutorName || "Tutor",
             startDate: startBR,
@@ -1077,7 +1077,7 @@ async function updateReservationStatusController(req, res) {
 
               const reservationUrl = `${base}/dashboard`;
 
-              const emailPayload = buildReservationAcceptedEmail({
+              const emailPayload = reservationAcceptedEmail({
                 tutorName: tutorUser?.name || updated?.tutor_name || updated?.tutorName || "Tutor",
                 caregiverName:
                   cleanNonEmptyString(user?.name) ||

@@ -1,11 +1,11 @@
-// backend/src/email/templates/confirmSignup.js
+// backend/src/email/templates/welcomeEmail.js
 
 /**
- * Template: Confirmação de cadastro / Boas-vindas
+ * Template: Boas-vindas / Cadastro criado
  *
  * Uso:
- *   const { buildConfirmSignupEmail } = require("../email/templates/confirmSignup");
- *   const email = buildConfirmSignupEmail({ userName, appUrl });
+ *   const { welcomeEmail } = require("../email/templates/welcomeEmail");
+ *   const email = welcomeEmail({ userName, appUrl });
  *   await sendEmail({ to: user.email, ...email });
  */
 
@@ -25,9 +25,9 @@ function escapeHtml(s) {
  * @param {string=} params.userName - nome do usuário (opcional)
  * @param {string} params.appUrl - URL do app/site
  */
-function buildConfirmSignupEmail({ userName, appUrl }) {
+function welcomeEmail({ userName, appUrl }) {
   if (!appUrl) {
-    throw new Error("buildConfirmSignupEmail: appUrl ausente.");
+    throw new Error("welcomeEmail: appUrl ausente.");
   }
 
   const safeName = userName ? escapeHtml(userName) : null;
@@ -72,7 +72,8 @@ function buildConfirmSignupEmail({ userName, appUrl }) {
     bodyHtml,
     cta,
     footerNote,
+    brandName: "PeloCaramelo",
   });
 }
 
-module.exports = { buildConfirmSignupEmail };
+module.exports = { welcomeEmail };
