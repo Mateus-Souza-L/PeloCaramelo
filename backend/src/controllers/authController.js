@@ -4,6 +4,7 @@ const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const pool = require("../config/db");
 const { sendEmail } = require("../services/emailService");
+const { resetPasswordEmail } = require("../email/templates/resetPassword");
 
 const {
   createUser,
@@ -224,8 +225,8 @@ function buildResetEmail({ link, minutes }) {
 
       <p style="margin:0 0 16px; font-size:14px;">
         Clique no botão abaixo para criar uma nova senha (o link expira em aproximadamente <strong>${escapeHtml(
-          String(safeMinutes)
-        )} minutos</strong>).
+    String(safeMinutes)
+  )} minutos</strong>).
       </p>
 
       <p style="margin:0 0 18px;">
@@ -407,14 +408,19 @@ async function forgotPassword(req, res) {
     if (!base) {
       console.warn(
         "[forgotPassword] FRONTEND_URL/origin ausente. Configure FRONTEND_URL no Render. " +
-          "E-mail não será enviado para evitar link quebrado."
+        "E-mail não será enviado para evitar link quebrado."
       );
       return res.json(safeResponse);
     }
 
     const link = `${base}/reset-password?token=${encodeURIComponent(token)}`;
 
-    const { subject, text, html } = buildResetEmail({ link, minutes: safeMinutes });
+    const { subject, text, html } = resetPasswordEmail({
+      link,
+      minutes: safeMinutes,
+      brandName: "PeloCaramelo",
+    });
+
 
     try {
       await sendEmail({
