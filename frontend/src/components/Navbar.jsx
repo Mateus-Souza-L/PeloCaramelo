@@ -44,6 +44,10 @@ export default function Navbar() {
   const chatUnreadCount = chatUnreadIds.length;
   const totalUnread = chatUnreadCount + reservationUnreadCount;
 
+  // ✅ guardas de fetch (evita spam/duplicidade)
+  const chatFetchGuardRef = useRef({ inFlight: false, lastAt: 0 });
+  const resFetchGuardRef = useRef({ inFlight: false, lastAt: 0 });
+
   // ✅ helper: avisa a mesma aba (Dashboard já escuta)
   const emitRoleChanged = useCallback((nextRole) => {
     const next = nextRole === "caregiver" ? "caregiver" : "tutor";
@@ -138,6 +142,13 @@ export default function Navbar() {
       return;
     }
 
+    const now = Date.now();
+    if (chatFetchGuardRef.current.inFlight) return;
+    if (now - chatFetchGuardRef.current.lastAt < 1200) return;
+
+    chatFetchGuardRef.current.inFlight = true;
+    chatFetchGuardRef.current.lastAt = now;
+
     try {
       const data = await authRequest("/chat/unread", token);
       const ids = Array.isArray(data?.reservationIds)
@@ -153,6 +164,8 @@ export default function Navbar() {
       );
     } catch (err) {
       console.error("Erro ao carregar unread de chat (Navbar):", err);
+    } finally {
+      chatFetchGuardRef.current.inFlight = false;
     }
   }, [user, token, isAdminLike]);
 
@@ -168,6 +181,13 @@ export default function Navbar() {
       setReservationUnreadCount(0);
       return;
     }
+
+    const now = Date.now();
+    if (resFetchGuardRef.current.inFlight) return;
+    if (now - resFetchGuardRef.current.lastAt < 1200) return;
+
+    resFetchGuardRef.current.inFlight = true;
+    resFetchGuardRef.current.lastAt = now;
 
     try {
       const endpoint = isCaregiver ? "/reservations/caregiver" : "/reservations/tutor";
@@ -303,10 +323,7 @@ export default function Navbar() {
             });
           }
 
-          if (
-            prevCaregiverRating(idStr) == null &&
-            curCaregiverRating(idStr) != null
-          ) {
+          if (prevCaregiverRating(idStr) == null && curCaregiverRating(idStr) != null) {
             newEvents.push({
               reservationId: idStr,
               type: "rating",
@@ -329,6 +346,8 @@ export default function Navbar() {
       } else {
         setReservationUnreadCount(0);
       }
+    } finally {
+      resFetchGuardRef.current.inFlight = false;
     }
   }, [user, token, isAdminLike, isTutor, isCaregiver, effectiveMode]);
 
@@ -349,11 +368,17 @@ export default function Navbar() {
       }
     };
 
+    const handleAuthChanged = (e) => {
+      const status = e?.detail?.status;
+      if (status === "logged_out") {
+        setChatUnreadIds([]);
+        setReservationUnreadCount(0);
+      }
+    };
+
     window.addEventListener("chat-unread-changed", handleChatUnreadChanged);
-    window.addEventListener(
-      "reservation-notifications-changed",
-      handleReservationNotifChanged
-    );
+    window.addEventListener("reservation-notifications-changed", handleReservationNotifChanged);
+    window.addEventListener("auth-changed", handleAuthChanged);
 
     return () => {
       window.removeEventListener("chat-unread-changed", handleChatUnreadChanged);
@@ -361,6 +386,7 @@ export default function Navbar() {
         "reservation-notifications-changed",
         handleReservationNotifChanged
       );
+      window.removeEventListener("auth-changed", handleAuthChanged);
     };
   }, [user?.id]);
 
@@ -383,23 +409,45 @@ export default function Navbar() {
     loadReservationEventsFromServer,
   ]);
 
-  /* ================= POLLING APENAS RESERVAS ================= */
+  /* ============================================================
+     ✅ FIX #1: Navbar atualiza unread SEM precisar entrar no painel
+     - Polling leve (chat + reservas)
+     - Atualiza ao focar a aba e ao voltar visibilidade (tab ativa)
+     ============================================================ */
 
   useEffect(() => {
     if (!user || !token || isAdminLike) return;
     if (!isTutor && !isCaregiver) return;
 
-    const intervalId = setInterval(() => {
+    const tick = () => {
+      loadUnreadChatFromServer();
       loadReservationEventsFromServer();
-    }, 15000);
+    };
 
-    return () => clearInterval(intervalId);
+    // 1) polling
+    const intervalId = setInterval(tick, 15000);
+
+    // 2) foco/visibilidade
+    const onFocus = () => tick();
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") tick();
+    };
+
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      clearInterval(intervalId);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [
     user?.id,
     token,
     isAdminLike,
     isTutor,
     isCaregiver,
+    loadUnreadChatFromServer,
     loadReservationEventsFromServer,
   ]);
 
