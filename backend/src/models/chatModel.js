@@ -19,17 +19,114 @@ function toIntId(v) {
 
 function computeStatus(row) {
   if (!row) return undefined;
-  // prioridade: lida > entregue > enviada
   if (row.read_at) return "read";
   if (row.delivered_at) return "delivered";
   if (row.is_read === true) return "read"; // compat legado
   return undefined;
 }
 
+/* ===========================================================
+   EMAIL THROTTLE (anti-spam)
+   =========================================================== */
+
+// fallback in-memory (não é perfeito em múltiplas instâncias, mas não quebra prod)
+const memThrottle = new Map(); // key -> lastSentMs
+
+function throttleKey(reservationId, toUserId) {
+  return `${String(reservationId)}:${String(toUserId)}`;
+}
+
+function getCooldownMs() {
+  const raw = Number(process.env.CHAT_EMAIL_COOLDOWN_MINUTES || 15);
+  const mins = Number.isFinite(raw) && raw > 0 ? raw : 15;
+  return mins * 60 * 1000;
+}
+
+function isMissingRelationError(err) {
+  const msg = String(err?.message || "");
+  // postgres: "relation \"...\" does not exist"
+  return msg.toLowerCase().includes("does not exist") || msg.toLowerCase().includes("relation");
+}
+
+/**
+ * Decide se pode enviar e-mail (cooldown).
+ * Preferência: tabela chat_email_throttle.
+ * Se a tabela não existir, usa fallback in-memory.
+ */
+async function shouldSendChatEmailThrottle({ reservationId, toUserId }) {
+  const rid = toIntId(reservationId);
+  const uid = toIntId(toUserId);
+  if (rid == null || uid == null) return false;
+
+  const cooldownMs = getCooldownMs();
+  const now = Date.now();
+  const key = throttleKey(rid, uid);
+
+  // 1) tenta via DB
+  try {
+    const { rows } = await pool.query(
+      `
+      SELECT last_sent_at
+      FROM public.chat_email_throttle
+      WHERE reservation_id = $1 AND user_id = $2
+      LIMIT 1
+      `,
+      [rid, uid]
+    );
+
+    const row = rows?.[0] || null;
+    if (!row?.last_sent_at) return true;
+
+    const last = new Date(row.last_sent_at).getTime();
+    if (!Number.isFinite(last)) return true;
+
+    return now - last >= cooldownMs;
+  } catch (err) {
+    // 2) fallback in-memory se a tabela não existe (ou em dev)
+    if (!isMissingRelationError(err)) {
+      console.error("[chat_email_throttle] erro ao consultar throttle:", err);
+    }
+    const last = memThrottle.get(key);
+    if (!last) return true;
+    return now - last >= cooldownMs;
+  }
+}
+
+/**
+ * Atualiza o throttle após enviar e-mail.
+ */
+async function touchChatEmailThrottle({ reservationId, toUserId }) {
+  const rid = toIntId(reservationId);
+  const uid = toIntId(toUserId);
+  if (rid == null || uid == null) return;
+
+  const now = Date.now();
+  const key = throttleKey(rid, uid);
+
+  // 1) tenta persistir no DB (recomendado)
+  try {
+    await pool.query(
+      `
+      INSERT INTO public.chat_email_throttle (reservation_id, user_id, last_sent_at)
+      VALUES ($1, $2, NOW())
+      ON CONFLICT (reservation_id, user_id)
+      DO UPDATE SET last_sent_at = EXCLUDED.last_sent_at
+      `,
+      [rid, uid]
+    );
+    // também atualiza memória (ok)
+    memThrottle.set(key, now);
+  } catch (err) {
+    if (!isMissingRelationError(err)) {
+      console.error("[chat_email_throttle] erro ao gravar throttle:", err);
+    }
+    // 2) fallback in-memory
+    memThrottle.set(key, now);
+  }
+}
+
 /**
  * Cria uma nova mensagem no chat.
- * Schema atual + novos campos:
- * chat_messages_table(reservation_id, sender_id, receiver_id, message, created_at, is_read, delivered_at, read_at)
  */
 async function createChatMessage({ reservationId, fromUserId, toUserId, message }) {
   const rid = toIntId(reservationId);
@@ -77,8 +174,7 @@ async function createChatMessage({ reservationId, fromUserId, toUserId, message 
 }
 
 /**
- * Lista todas as mensagens associadas a uma reserva.
- * (SELECT via VIEW "messages" que espelha a tabela real e expõe delivered_at/read_at)
+ * Lista mensagens via VIEW "messages"
  */
 async function listChatMessagesByReservation(reservationId) {
   const rid = toIntId(reservationId);
@@ -106,14 +202,7 @@ async function listChatMessagesByReservation(reservationId) {
 }
 
 /**
- * Marca como LIDAS todas as mensagens dessa reserva
- * cujo destinatário é o usuário logado.
- *
- * Compat:
- * - seta is_read = TRUE
- * - seta read_at = NOW() (se ainda não setado)
- *
- * UPDATE na TABELA REAL
+ * Marca como lidas (UPDATE na tabela real)
  */
 async function markMessagesAsRead({ reservationId, userId }) {
   const rid = toIntId(reservationId);
@@ -142,12 +231,7 @@ async function markMessagesAsRead({ reservationId, userId }) {
 }
 
 /**
- * Marca uma mensagem como "ENTREGUE" (ACK do destinatário).
- * Regras:
- * - só o destinatário pode marcar entregue
- * - só marca uma vez (delivered_at IS NULL)
- *
- * UPDATE na TABELA REAL
+ * Marca como entregue
  */
 async function markMessageAsDelivered({ reservationId, messageId, userId }) {
   const rid = toIntId(reservationId);
@@ -174,12 +258,7 @@ async function markMessageAsDelivered({ reservationId, messageId, userId }) {
 }
 
 /**
- * Lista IDs de reservas que têm mensagem NÃO lida para esse usuário.
- *
- * Compat:
- * - considera read_at (novo) e is_read (legado)
- *
- * SELECT via VIEW "messages"
+ * Lista reservas com mensagens não lidas via VIEW
  */
 async function listUnreadReservationsByUser(userId) {
   const uid = toIntId(userId);
@@ -206,4 +285,8 @@ module.exports = {
   markMessagesAsRead,
   markMessageAsDelivered,
   listUnreadReservationsByUser,
+
+  // ✅ novos exports
+  shouldSendChatEmailThrottle,
+  touchChatEmailThrottle,
 };
