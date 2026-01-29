@@ -152,28 +152,11 @@ export default function CaregiverDetail() {
 
   const todayKey = useMemo(() => toLocalKey(new Date()), []);
 
-  const { nextDates, pastDates } = useMemo(() => {
-    const t = String(todayKey || "").slice(0, 10);
-    const keys = Array.isArray(availableKeys) ? availableKeys : [];
-
-    const next = [];
-    const past = [];
-
-    keys.forEach((k) => {
-      const kk = String(k || "").slice(0, 10);
-      if (!kk) return;
-      if (kk >= t) next.push(kk);
-      else past.push(kk);
-    });
-
-    next.sort();
-    past.sort().reverse();
-
-    return {
-      nextDates: next.slice(0, 3), // mostra até 3 próximas
-      pastDates: past.slice(0, 3), // mostra até 3 passadas (se quiser)
-    };
-  }, [availableKeys, todayKey]);
+  // ✅ CHAVE NOVA (igual ReservationDetail)
+  const reservationsStorageKey = useMemo(() => {
+    if (!user?.id || !user?.role) return "reservations";
+    return `reservations_${String(user.role)}_${String(user.id)}`;
+  }, [user?.id, user?.role]);
 
   // ---------------- helpers ----------------
   const normalizeKey = (value) => {
@@ -246,14 +229,14 @@ export default function CaregiverDetail() {
       rv.reviewer_role ||
       rv.role ||
       (rv.reviewer_id &&
-        rv.tutor_id &&
-        String(rv.reviewer_id) === String(rv.tutor_id)
+      rv.tutor_id &&
+      String(rv.reviewer_id) === String(rv.tutor_id)
         ? "tutor"
         : rv.reviewer_id &&
           rv.caregiver_id &&
           String(rv.reviewer_id) === String(rv.caregiver_id)
-          ? "caregiver"
-          : null);
+        ? "caregiver"
+        : null);
 
     const authorName =
       rv.author_name ||
@@ -265,10 +248,10 @@ export default function CaregiverDetail() {
     const createdAt = rv.created_at
       ? String(rv.created_at)
       : rv.createdAt
-        ? String(rv.createdAt)
-        : rv.date
-          ? String(rv.date)
-          : null;
+      ? String(rv.createdAt)
+      : rv.date
+      ? String(rv.date)
+      : null;
 
     const rating = Number(rv.rating ?? rv.stars ?? rv.nota ?? 0);
 
@@ -284,9 +267,9 @@ export default function CaregiverDetail() {
     return {
       id: toStr(
         rv.id ||
-        rv.review_id ||
-        rv.reviewId ||
-        `${Date.now()}_${Math.random().toString(16).slice(2)}`
+          rv.review_id ||
+          rv.reviewId ||
+          `${Date.now()}_${Math.random().toString(16).slice(2)}`
       ),
       reservationId: reservationId != null ? String(reservationId) : null,
       authorRole: authorRole ? String(authorRole) : null,
@@ -417,9 +400,7 @@ export default function CaregiverDetail() {
           return flag === true;
         })
         .map((x) =>
-          normalizeKey(
-            x.date_key ?? x.dateKey ?? x.date ?? x.day ?? x.value ?? x.key
-          )
+          normalizeKey(x.date_key ?? x.dateKey ?? x.date ?? x.day ?? x.value ?? x.key)
         )
         .filter(Boolean);
 
@@ -460,6 +441,14 @@ export default function CaregiverDetail() {
   useEffect(() => {
     let cancelled = false;
 
+    const saveReservationsToStorage = (list) => {
+      const payload = JSON.stringify(Array.isArray(list) ? list : []);
+      // ✅ NOVO (fonte pro ReservationDetail)
+      safeSetLocalStorage(reservationsStorageKey, payload);
+      // ✅ LEGADO (mantém compat com telas antigas)
+      safeSetLocalStorage("reservations", payload);
+    };
+
     const loadReservations = async () => {
       try {
         if (token && user?.role) {
@@ -467,8 +456,8 @@ export default function CaregiverDetail() {
             user.role === "tutor"
               ? "/reservations/tutor"
               : user.role === "caregiver"
-                ? "/reservations/caregiver"
-                : null;
+              ? "/reservations/caregiver"
+              : null;
 
           if (endpoint) {
             const data = await authRequest(endpoint, token);
@@ -494,11 +483,14 @@ export default function CaregiverDetail() {
               caregiverReview: r.caregiver_review,
               petsIds: r.pets_ids || [],
               petsNames: r.pets_names || "",
+              // se vier do backend, mantém também:
+              petsSnapshot:
+                r.pets_snapshot || r.petsSnapshot || r.pets_details || r.petsDetails || null,
             }));
 
             if (!cancelled) {
               setReservations(normalized);
-              safeSetLocalStorage("reservations", JSON.stringify(normalized));
+              saveReservationsToStorage(normalized);
             }
             return;
           }
@@ -507,9 +499,17 @@ export default function CaregiverDetail() {
         // fallback local
       }
 
-      const local =
-        safeJsonParse(localStorage.getItem("reservations") || "[]", []) || [];
-      if (!cancelled) setReservations(Array.isArray(local) ? local : []);
+      // ✅ tenta primeiro a chave NOVA (porque é onde o ReservationDetail lê)
+      const localNew =
+        safeJsonParse(localStorage.getItem(reservationsStorageKey) || "[]", []) || [];
+      if (Array.isArray(localNew) && localNew.length) {
+        if (!cancelled) setReservations(localNew);
+        return;
+      }
+
+      // fallback legado
+      const localOld = safeJsonParse(localStorage.getItem("reservations") || "[]", []) || [];
+      if (!cancelled) setReservations(Array.isArray(localOld) ? localOld : []);
     };
 
     const loadCaregiver = async () => {
@@ -559,13 +559,9 @@ export default function CaregiverDetail() {
 
       if (!cg) {
         try {
-          const users =
-            safeJsonParse(localStorage.getItem("users") || "[]", []) || [];
+          const users = safeJsonParse(localStorage.getItem("users") || "[]", []) || [];
           const found = users.find(
-            (u) =>
-              String(u.id) === String(id) &&
-              u.role === "caregiver" &&
-              !u.blocked
+            (u) => String(u.id) === String(id) && u.role === "caregiver" && !u.blocked
           );
           if (found) {
             const norm = normalizeCaregiver(found);
@@ -584,8 +580,7 @@ export default function CaregiverDetail() {
 
       if (cg) {
         try {
-          const users =
-            safeJsonParse(localStorage.getItem("users") || "[]", []) || [];
+          const users = safeJsonParse(localStorage.getItem("users") || "[]", []) || [];
           const idx = users.findIndex((u) => String(u.id) === String(cg.id));
           const merged = { ...(idx >= 0 ? users[idx] : {}), ...cg };
           if (idx >= 0) users[idx] = merged;
@@ -601,8 +596,7 @@ export default function CaregiverDetail() {
     const loadAvailabilityForCaregiver = async () => {
       const fallbackLocal = () => {
         try {
-          const users =
-            safeJsonParse(localStorage.getItem("users") || "[]", []) || [];
+          const users = safeJsonParse(localStorage.getItem("users") || "[]", []) || [];
           const found = users.find((u) => String(u.id) === String(id));
           const raw = found?.availableDates || found?.available_dates || [];
           if (!cancelled) setAvailableKeys(uniqSort(raw));
@@ -623,8 +617,7 @@ export default function CaregiverDetail() {
           if (!cancelled) setAvailableKeys(keys);
 
           try {
-            const users =
-              safeJsonParse(localStorage.getItem("users") || "[]", []) || [];
+            const users = safeJsonParse(localStorage.getItem("users") || "[]", []) || [];
             const idx = users.findIndex((u) => String(u.id) === String(id));
             if (idx >= 0) {
               users[idx] = { ...users[idx], availableDates: keys };
@@ -662,7 +655,7 @@ export default function CaregiverDetail() {
     return () => {
       cancelled = true;
     };
-  }, [id, token, user?.role]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [id, token, user?.role, reservationsStorageKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---------------- LOAD REVIEWS (summary + lista paginada) ----------------
   useEffect(() => {
@@ -695,10 +688,8 @@ export default function CaregiverDetail() {
 
     const pickSummary = (sData) => {
       const summary = sData?.summary ?? sData ?? {};
-      const avgOut =
-        Number(summary?.avgRating ?? summary?.avg ?? summary?.average ?? 0) || 0;
-      const countOut =
-        Number(summary?.count ?? summary?.total ?? summary?.qtd ?? 0) || 0;
+      const avgOut = Number(summary?.avgRating ?? summary?.avg ?? summary?.average ?? 0) || 0;
+      const countOut = Number(summary?.count ?? summary?.total ?? summary?.qtd ?? 0) || 0;
       return { avg: avgOut, count: countOut };
     };
 
@@ -706,10 +697,10 @@ export default function CaregiverDetail() {
       const listRaw = Array.isArray(data?.reviews)
         ? data.reviews
         : Array.isArray(data?.data)
-          ? data.data
-          : Array.isArray(data)
-            ? data
-            : [];
+        ? data.data
+        : Array.isArray(data)
+        ? data
+        : [];
       return listRaw.map(normalizeReviewItem).filter(Boolean);
     };
 
@@ -733,26 +724,20 @@ export default function CaregiverDetail() {
         if (r.ok) {
           const payload = pickSummary(r.data);
           if (!cancelled) setReviewSummary(payload);
-          safeSetLocalStorage(
-            `reviews_summary_${String(id)}`,
-            JSON.stringify(payload)
-          );
+          safeSetLocalStorage(`reviews_summary_${String(id)}`, JSON.stringify(payload));
           return;
         }
       } catch {
         // ignore
       }
 
-      // auth fallback (se um dia você proteger)
+      // auth fallback
       if (token) {
         try {
           const data = await authRequest(`/reviews/summary/${id}`, token);
           const payload = pickSummary(data);
           if (!cancelled) setReviewSummary(payload);
-          safeSetLocalStorage(
-            `reviews_summary_${String(id)}`,
-            JSON.stringify(payload)
-          );
+          safeSetLocalStorage(`reviews_summary_${String(id)}`, JSON.stringify(payload));
         } catch {
           // ignore
         }
@@ -766,10 +751,7 @@ export default function CaregiverDetail() {
       if (!r.ok) {
         if (token) {
           try {
-            const data = await authRequest(
-              `/reviews/user/${id}?limit=${PAGE_SIZE}&page=${page}`,
-              token
-            );
+            const data = await authRequest(`/reviews/user/${id}?limit=${PAGE_SIZE}&page=${page}`, token);
             return { ok: true, data };
           } catch {
             return { ok: false, status: r.status, data: null };
@@ -801,10 +783,7 @@ export default function CaregiverDetail() {
             const hasPrev = (prev?.count || 0) > 0;
             if (hasPrev) return prev;
             if (!merged.length) return prev;
-            const sum = merged.reduce(
-              (acc, rv) => acc + (Number(rv.rating) || 0),
-              0
-            );
+            const sum = merged.reduce((acc, rv) => acc + (Number(rv.rating) || 0), 0);
             const avg = merged.length ? sum / merged.length : 0;
             return { avg, count: merged.length };
           });
@@ -821,14 +800,8 @@ export default function CaregiverDetail() {
         }
       } catch (err) {
         try {
-          const cached = safeJsonParse(
-            localStorage.getItem(`reviews_user_${String(id)}`) || "[]",
-            []
-          );
-          const cachedSummary = safeJsonParse(
-            localStorage.getItem(`reviews_summary_${String(id)}`) || "{}",
-            {}
-          );
+          const cached = safeJsonParse(localStorage.getItem(`reviews_user_${String(id)}`) || "[]", []);
+          const cachedSummary = safeJsonParse(localStorage.getItem(`reviews_summary_${String(id)}`) || "{}", {});
 
           if (!cancelled) {
             if (Array.isArray(cached) && cached.length) {
@@ -843,10 +816,7 @@ export default function CaregiverDetail() {
               }, 40);
             }
 
-            if (
-              cachedSummary &&
-              (cachedSummary.avg != null || cachedSummary.count != null)
-            ) {
+            if (cachedSummary && (cachedSummary.avg != null || cachedSummary.count != null)) {
               setReviewSummary({
                 avg: Number(cachedSummary.avg || 0) || 0,
                 count: Number(cachedSummary.count || 0) || 0,
@@ -897,10 +867,7 @@ export default function CaregiverDetail() {
         data = await resp.json();
       } catch {
         if (token) {
-          data = await authRequest(
-            `/reviews/user/${id}?limit=${PAGE_SIZE}&page=${nextPage}`,
-            token
-          );
+          data = await authRequest(`/reviews/user/${id}?limit=${PAGE_SIZE}&page=${nextPage}`, token);
         } else {
           throw new Error("Não foi possível carregar mais avaliações.");
         }
@@ -909,10 +876,10 @@ export default function CaregiverDetail() {
       const listRaw = Array.isArray(data?.reviews)
         ? data.reviews
         : Array.isArray(data?.data)
-          ? data.data
-          : Array.isArray(data)
-            ? data
-            : [];
+        ? data.data
+        : Array.isArray(data)
+        ? data
+        : [];
 
       const normalized = listRaw.map(normalizeReviewItem).filter(Boolean);
 
@@ -967,15 +934,9 @@ export default function CaregiverDetail() {
       if (token) {
         try {
           const data = await authRequest("/pets", token);
-          const list = Array.isArray(data?.pets)
-            ? data.pets
-            : Array.isArray(data)
-              ? data
-              : [];
+          const list = Array.isArray(data?.pets) ? data.pets : Array.isArray(data) ? data : [];
 
-          const normalized = list
-            .map((p) => ({ ...p, id: p?.id }))
-            .filter((p) => p?.id != null);
+          const normalized = list.map((p) => ({ ...p, id: p?.id })).filter((p) => p?.id != null);
 
           if (!cancelled) {
             setPets(normalized);
@@ -996,8 +957,7 @@ export default function CaregiverDetail() {
 
       try {
         const storageKey = `pets_${user.id}`;
-        const saved =
-          safeJsonParse(localStorage.getItem(storageKey) || "[]", []) || [];
+        const saved = safeJsonParse(localStorage.getItem(storageKey) || "[]", []) || [];
         if (!cancelled) {
           setPets(Array.isArray(saved) ? saved : []);
           setSelectedPetIds([]);
@@ -1074,9 +1034,7 @@ export default function CaregiverDetail() {
 
   const filteredReviews = useMemo(() => {
     if (reviewSvcFilter === "todos") return listReviews;
-    return (listReviews || []).filter(
-      (rv) => String(rv?.service || "") === String(reviewSvcFilter)
-    );
+    return (listReviews || []).filter((rv) => String(rv?.service || "") === String(reviewSvcFilter));
   }, [listReviews, reviewSvcFilter]);
 
   const dayDiff = (a, b) => {
@@ -1171,10 +1129,7 @@ export default function CaregiverDetail() {
         return;
       }
       if (!rangeAvailable(value, endDate)) {
-        showToast(
-          "Nem todas as datas desse intervalo estão disponíveis. Ajuste o período.",
-          "error"
-        );
+        showToast("Nem todas as datas desse intervalo estão disponíveis. Ajuste o período.", "error");
         setEndDate("");
       }
     }
@@ -1199,10 +1154,7 @@ export default function CaregiverDetail() {
       return;
     }
     if (!rangeAvailable(startDate, value)) {
-      showToast(
-        "Há dias sem disponibilidade neste intervalo. Escolha outro período.",
-        "error"
-      );
+      showToast("Há dias sem disponibilidade neste intervalo. Escolha outro período.", "error");
       setEndDate("");
       return;
     }
@@ -1314,29 +1266,55 @@ export default function CaregiverDetail() {
       const created = data?.reservation || data;
       const newId = created?.id ? String(created.id) : String(Date.now());
 
-      const all =
-        safeJsonParse(localStorage.getItem("reservations") || "[]", []) || [];
+      // ✅ monta reserva LOCAL “completa”, inclusive petsSnapshot
       const newRes = {
         id: newId,
+
         tutorId: String(user.id),
-        tutorName: user.name,
+        tutor_id: String(user.id),
+        tutorName: user.name || user.email || "Tutor",
+        tutor_name: user.name || user.email || "Tutor",
+
         caregiverId: String(caregiver.id),
+        caregiver_id: String(caregiver.id),
         caregiverName: caregiver.name,
+        caregiver_name: caregiver.name,
+
         city: caregiver.city || "",
         neighborhood: caregiver.neighborhood || "",
+
         startDate,
         endDate,
+        start_date: startDate,
+        end_date: endDate,
+
         service: svc,
-        pricePerDay: svcPriceMap[svc],
-        total,
+
+        pricePerDay: Number(svcPriceMap[svc] || 0),
+        price_per_day: Number(svcPriceMap[svc] || 0),
+
+        total: Number(total || 0),
         status: "Pendente",
+
         petsIds: petsIdsClean,
+        pets_ids: petsIdsClean,
         petsNames: petsSummary,
+        pets_names: petsSummary,
+
+        petsSnapshot,
+        pets_snapshot: petsSnapshot,
       };
 
-      const next = [newRes, ...all.filter((r) => String(r.id) !== newId)];
-      safeSetLocalStorage("reservations", JSON.stringify(next));
-      setReservations(next);
+      // ✅ salva na chave NOVA + mantém legado
+      const allNew = safeJsonParse(localStorage.getItem(reservationsStorageKey) || "[]", []) || [];
+      const nextNew = [newRes, ...allNew.filter((r) => String(r?.id) !== String(newId))];
+      safeSetLocalStorage(reservationsStorageKey, JSON.stringify(nextNew));
+
+      const allOld = safeJsonParse(localStorage.getItem("reservations") || "[]", []) || [];
+      const nextOld = [newRes, ...allOld.filter((r) => String(r?.id) !== String(newId))];
+      safeSetLocalStorage("reservations", JSON.stringify(nextOld));
+
+      setReservations(nextNew);
 
       showToast("Pré-reserva enviada! 🎉", "success");
       navigate(`/reserva/${newId}`, { replace: true });
@@ -1373,8 +1351,7 @@ export default function CaregiverDetail() {
 
       if (
         typeof msg === "string" &&
-        (msg.toLowerCase().includes("disponibilidade") ||
-          msg.toLowerCase().includes("conflit"))
+        (msg.toLowerCase().includes("disponibilidade") || msg.toLowerCase().includes("conflit"))
       ) {
         setEndDate("");
       }
@@ -1384,9 +1361,7 @@ export default function CaregiverDetail() {
   };
 
   const openMaps = () => {
-    const q = encodeURIComponent(
-      [caregiver?.neighborhood, caregiver?.city].filter(Boolean).join(", ")
-    );
+    const q = encodeURIComponent([caregiver?.neighborhood, caregiver?.city].filter(Boolean).join(", "));
     window.open(`https://www.google.com/maps/search/?api=1&query=${q}`, "_blank");
   };
 
@@ -1457,21 +1432,19 @@ export default function CaregiverDetail() {
             )}
           </div>
 
-          {/* Nota + Preço
-      - Mobile: vira uma barra alinhada (sem quebrar tudo)
-      - Web: segue como era (coluna à direita) */}
+          {/* Nota + Preço */}
           <div
             className="
-      w-full sm:w-auto
-      flex items-center justify-between
-      sm:block sm:text-right
-      gap-4
-      mt-1 sm:mt-0
-      px-3 py-2 sm:px-0 sm:py-0
-      rounded-xl sm:rounded-none
-      bg-[#FFF8F0] sm:bg-transparent
-      border border-[#5A3A22]/10 sm:border-0
-    "
+              w-full sm:w-auto
+              flex items-center justify-between
+              sm:block sm:text-right
+              gap-4
+              mt-1 sm:mt-0
+              px-3 py-2 sm:px-0 sm:py-0
+              rounded-xl sm:rounded-none
+              bg-[#FFF8F0] sm:bg-transparent
+              border border-[#5A3A22]/10 sm:border-0
+            "
           >
             <p className="text-sm text-[#5A3A22] whitespace-nowrap">
               ⭐ <b>{(ratingSummary.avg || 0).toFixed(1)}</b> ({ratingSummary.count})
@@ -1524,8 +1497,7 @@ export default function CaregiverDetail() {
               if (txt.startsWith("[") || txt.startsWith("{")) {
                 const parsed = JSON.parse(txt);
                 if (Array.isArray(parsed)) coursesList = parsed;
-                else if (parsed && typeof parsed === "object")
-                  coursesList = Object.values(parsed);
+                else if (parsed && typeof parsed === "object") coursesList = Object.values(parsed);
               } else {
                 coursesList = txt
                   .split(",")
@@ -1538,8 +1510,7 @@ export default function CaregiverDetail() {
               coursesList = Object.values(rawCourses);
             }
           } catch {
-            if (typeof rawCourses === "string" && rawCourses.trim())
-              coursesList = [rawCourses.trim()];
+            if (typeof rawCourses === "string" && rawCourses.trim()) coursesList = [rawCourses.trim()];
           }
 
           coursesList = coursesList
@@ -1578,43 +1549,65 @@ export default function CaregiverDetail() {
             Datas disponíveis cadastradas: <b>{availableKeys.length}</b>
           </p>
 
-          {nextDates.length > 0 && (
-            <div className="mt-2 text-sm text-[#5A3A22]">
-              <div className="font-semibold">Próximas datas</div>
-              <div>{nextDates.map((d) => formatDateBR(d)).join(", ")}</div>
-            </div>
-          )}
+          {(() => {
+            const t = String(todayKey || "").slice(0, 10);
+            const keys = Array.isArray(availableKeys) ? availableKeys : [];
+            const next = [];
+            const past = [];
 
-          {pastDates.length > 0 && (
-            <div className="mt-2 text-sm text-[#5A3A22] opacity-80">
-              <div className="font-semibold">Datas passadas</div>
-              <div>{pastDates.map((d) => formatDateBR(d)).join(", ")}</div>
-            </div>
-          )}
+            keys.forEach((k) => {
+              const kk = String(k || "").slice(0, 10);
+              if (!kk) return;
+              if (kk >= t) next.push(kk);
+              else past.push(kk);
+            });
+
+            next.sort();
+            past.sort().reverse();
+
+            const nextDates = next.slice(0, 3);
+            const pastDates = past.slice(0, 3);
+
+            return (
+              <>
+                {nextDates.length > 0 && (
+                  <div className="mt-2 text-sm text-[#5A3A22]">
+                    <div className="font-semibold">Próximas datas</div>
+                    <div>{nextDates.map((d) => formatDateBR(d)).join(", ")}</div>
+                  </div>
+                )}
+
+                {pastDates.length > 0 && (
+                  <div className="mt-2 text-sm text-[#5A3A22] opacity-80">
+                    <div className="font-semibold">Datas passadas</div>
+                    <div>{pastDates.map((d) => formatDateBR(d)).join(", ")}</div>
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </div>
 
         {/* Pré-reserva */}
         <section className="pc-card pc-card-accent mb-6">
           <h2 className="font-semibold text-[#5A3A22] mb-3">Fazer pré-reserva</h2>
 
-          {pricedServices.length === 0 ? (
-            <p className="text-[#5A3A22]">
-              Este cuidador ainda não definiu preços para os serviços.
-            </p>
+          {Object.keys(caregiver.services || {}).filter(
+            (k) => caregiver.services[k] && (svcPriceMap[k] ?? 0) > 0
+          ).length === 0 ? (
+            <p className="text-[#5A3A22]">Este cuidador ainda não definiu preços para os serviços.</p>
           ) : (
             <>
               <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-                <select
-                  value={svc}
-                  onChange={(e) => setSvc(e.target.value)}
-                  className="input"
-                >
-                  {pricedServices.map((k) => (
-                    <option key={k} value={k}>
-                      {serviceLabel(k)} — R$ {Number(svcPriceMap[k]).toFixed(2)}/
-                      {k === "passeios" ? "h" : "dia"}
-                    </option>
-                  ))}
+                <select value={svc} onChange={(e) => setSvc(e.target.value)} className="input">
+                  {Object.keys(caregiver.services || {})
+                    .filter((k) => caregiver.services[k] && (svcPriceMap[k] ?? 0) > 0)
+                    .map((k) => (
+                      <option key={k} value={k}>
+                        {serviceLabel(k)} — R$ {Number(svcPriceMap[k]).toFixed(2)}/
+                        {k === "passeios" ? "h" : "dia"}
+                      </option>
+                    ))}
                 </select>
 
                 <input
@@ -1658,9 +1651,7 @@ export default function CaregiverDetail() {
 
               {pets.length > 0 ? (
                 <div className="mt-4 border rounded-xl p-4 bg-[#FFF8F0]">
-                  <h3 className="font-semibold text-[#5A3A22] mb-2">
-                    Qual pet vai nessa reserva?
-                  </h3>
+                  <h3 className="font-semibold text-[#5A3A22] mb-2">Qual pet vai nessa reserva?</h3>
                   <p className="text-xs text-[#5A3A22] opacity-80 mb-2">
                     Você pode escolher um ou mais pets cadastrados no seu perfil.
                   </p>
@@ -1668,10 +1659,11 @@ export default function CaregiverDetail() {
                   <button
                     type="button"
                     onClick={toggleAllPets}
-                    className={`mb-3 px-3 py-1 rounded-full text-xs font-semibold border transition ${allPetsSelected
+                    className={`mb-3 px-3 py-1 rounded-full text-xs font-semibold border transition ${
+                      allPetsSelected
                         ? "bg-[#5A3A22] text-white border-[#5A3A22]"
                         : "bg-white text-[#5A3A22] border-[#D2A679] hover:bg-[#FFF3D0]"
-                      }`}
+                    }`}
                   >
                     {allPetsSelected ? "Desmarcar todos" : "Selecionar todos os pets"}
                   </button>
@@ -1685,10 +1677,11 @@ export default function CaregiverDetail() {
                           key={pet.id}
                           type="button"
                           onClick={() => togglePet(pet.id)}
-                          className={`px-3 py-2 rounded-xl text-xs md:text-sm border flex items-center gap-2 transition ${active
+                          className={`px-3 py-2 rounded-xl text-xs md:text-sm border flex items-center gap-2 transition ${
+                            active
                               ? "bg-[#5A3A22] text-white border-[#5A3A22]"
                               : "bg-white text-[#5A3A22] border-[#D2A679] hover:bg-[#FFF3D0]"
-                            }`}
+                          }`}
                         >
                           <img
                             src={pickPetImage(pet) || "/paw.png"}
@@ -1703,16 +1696,15 @@ export default function CaregiverDetail() {
                 </div>
               ) : (
                 <p className="mt-3 text-xs text-[#5A3A22] opacity-80">
-                  Cadastre seus pets no painel <b>Meus Pets</b> para selecioná-los aqui
-                  na pré-reserva.
+                  Cadastre seus pets no painel <b>Meus Pets</b> para selecioná-los aqui na pré-reserva.
                 </p>
               )}
             </>
           )}
 
           <p className="text-xs text-[#5A3A22] mt-2">
-            * O endereço completo só é exibido após a reserva ser <b>Aceita</b>. Antes disso,
-            apenas <b>bairro</b> e <b>cidade</b> ficam visíveis.
+            * O endereço completo só é exibido após a reserva ser <b>Aceita</b>. Antes disso, apenas{" "}
+            <b>bairro</b> e <b>cidade</b> ficam visíveis.
           </p>
         </section>
 
@@ -1770,9 +1762,7 @@ export default function CaregiverDetail() {
           ) : reviewsError ? (
             <div className="pc-card pc-card-accent">
               <p className="text-sm text-[#95301F] font-semibold">{reviewsError}</p>
-              <p className="text-xs text-[#5A3A22] opacity-80 mt-1">
-                Recarregue a página ou tente novamente.
-              </p>
+              <p className="text-xs text-[#5A3A22] opacity-80 mt-1">Recarregue a página ou tente novamente.</p>
             </div>
           ) : filteredReviews.length === 0 ? (
             <p className="text-[#5A3A22]">
@@ -1795,12 +1785,8 @@ export default function CaregiverDetail() {
                 {filteredReviews
                   .slice()
                   .sort((a, b) => {
-                    const da = a.createdAt
-                      ? parseLocalKey(String(a.createdAt).slice(0, 10))
-                      : new Date(0);
-                    const db = b.createdAt
-                      ? parseLocalKey(String(b.createdAt).slice(0, 10))
-                      : new Date(0);
+                    const da = a.createdAt ? parseLocalKey(String(a.createdAt).slice(0, 10)) : new Date(0);
+                    const db = b.createdAt ? parseLocalKey(String(b.createdAt).slice(0, 10)) : new Date(0);
                     return db - da;
                   })
                   .map((rv) => {
@@ -1808,8 +1794,9 @@ export default function CaregiverDetail() {
                     return (
                       <div
                         key={rv.id}
-                        className={`pc-card pc-card-accent transition-all duration-300 ${revealed ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1"
-                          }`}
+                        className={`pc-card pc-card-accent transition-all duration-300 ${
+                          revealed ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1"
+                        }`}
                       >
                         <p className="text-sm text-[#5A3A22]/80">
                           <b>{rv.authorName || "Usuário"}</b> — {rv.rating} ★ —{" "}
@@ -1825,9 +1812,7 @@ export default function CaregiverDetail() {
               </div>
 
               <div className="mt-4 flex flex-col items-center gap-2">
-                {reviewsLoadingMore && (
-                  <p className="text-xs text-[#5A3A22] opacity-70">Carregando mais…</p>
-                )}
+                {reviewsLoadingMore && <p className="text-xs text-[#5A3A22] opacity-70">Carregando mais…</p>}
 
                 {reviewsHasMore && reviewSvcFilter === "todos" && (
                   <button

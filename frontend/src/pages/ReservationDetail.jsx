@@ -70,7 +70,87 @@ const pickPetImage = (p) =>
   p?.image_url ||
   p?.avatar ||
   p?.avatar_url ||
+  p?.photoUrl ||
+  p?.photo_url ||
   null;
+
+// ✅ NOVO: normaliza campos comuns do pet (pra snapshot “variado” funcionar)
+const normalizePetObject = (p) => {
+  if (!p || typeof p !== "object") return null;
+
+  const id =
+    toStr(p.id) ||
+    toStr(p.pet_id) ||
+    toStr(p.petId) ||
+    toStr(p.petID) ||
+    "";
+
+  const name =
+    p.name ??
+    p.pet_name ??
+    p.petName ??
+    p.pet_nome ??
+    p.nome ??
+    "";
+
+  const specie =
+    p.specie ??
+    p.species ??
+    p.specie_name ??
+    p.species_name ??
+    p.especie ??
+    p.tipo ??
+    "";
+
+  const breed =
+    p.breed ??
+    p.race ??
+    p.raca ??
+    p.breed_name ??
+    p.race_name ??
+    "";
+
+  const porte =
+    p.porte ??
+    p.port ??
+    p.size ??
+    p.portePet ??
+    p.pet_size ??
+    p.tamanho ??
+    "";
+
+  const approxAge =
+    p.approxAge ??
+    p.approx_age ??
+    p.age ??
+    p.idade ??
+    "";
+
+  const adjectivesRaw = p.adjectives ?? p.adjetivos ?? p.tags ?? null;
+  const adjectives = Array.isArray(adjectivesRaw)
+    ? adjectivesRaw.filter(Boolean).map(String)
+    : typeof adjectivesRaw === "string"
+      ? adjectivesRaw
+          .split(/[,•|]/g)
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : [];
+
+  const image = pickPetImage(p);
+
+  return {
+    ...p,
+    id: id || undefined,
+    name: name || p.name, // mantém compat
+    specie: specie || p.specie || p.species,
+    breed: breed || p.breed,
+    porte: porte || p.porte || p.size,
+    approxAge: approxAge || p.approxAge,
+    adjectives: adjectives.length ? adjectives : p.adjectives,
+    image,
+    photo: image,
+  };
+};
 
 const normalizeSnapshotArray = (maybeSnap, fallbackIds = []) => {
   let snap = maybeSnap;
@@ -79,16 +159,7 @@ const normalizeSnapshotArray = (maybeSnap, fallbackIds = []) => {
   if (!Array.isArray(snap)) return null;
 
   const normalized = snap
-    .map((p) => {
-      if (!p || typeof p !== "object") return null;
-      const id = toStr(p.id);
-      return {
-        ...p,
-        id: id || undefined,
-        image: pickPetImage(p),
-        photo: pickPetImage(p),
-      };
-    })
+    .map((p) => normalizePetObject(p))
     .filter(Boolean);
 
   if (fallbackIds?.length) {
@@ -100,19 +171,52 @@ const normalizeSnapshotArray = (maybeSnap, fallbackIds = []) => {
   return normalized;
 };
 
+// ✅ NOVO: extrai petsIds de vários formatos possíveis do backend
+const extractPetsIds = (r) => {
+  let petsIds =
+    r?.pets_ids ??
+    r?.petsIds ??
+    r?.pet_ids ??
+    r?.petIds ??
+    r?.pets_id ??
+    r?.petsId ??
+    r?.pet_id ??
+    r?.petId ??
+    [];
+
+  // se vier string JSON
+  if (typeof petsIds === "string") {
+    const parsed = safeJsonParse(petsIds);
+    petsIds = Array.isArray(parsed) ? parsed : parsed != null ? [parsed] : [];
+  }
+
+  // se vier number/string único
+  if (!Array.isArray(petsIds)) petsIds = [petsIds];
+
+  // se vier pets como array de objetos (ex.: [{id:1},{id:2}])
+  if (Array.isArray(r?.pets) && r.pets.length) {
+    const fromPets = r.pets
+      .map((p) => toStr(p?.id ?? p?.pet_id ?? p?.petId ?? ""))
+      .filter(Boolean);
+    if (fromPets.length) petsIds = fromPets;
+  }
+
+  // normaliza
+  return petsIds.map((x) => toStr(x)).filter(Boolean);
+};
+
 const normalizeReservationFromApi = (r) => {
   if (!r) return null;
 
-  let petsIds = r.pets_ids ?? [];
-  if (typeof petsIds === "string") {
-    const parsed = safeJsonParse(petsIds);
-    petsIds = Array.isArray(parsed) ? parsed : [];
-  }
-  if (!Array.isArray(petsIds)) petsIds = [petsIds];
-  petsIds = petsIds.map((x) => toStr(x)).filter(Boolean);
+  const petsIds = extractPetsIds(r);
 
   const snapshot =
-    r.pets_snapshot || r.petsSnapshot || r.pets_details || r.petsDetails || null;
+    r.pets_snapshot ||
+    r.petsSnapshot ||
+    r.pets_details ||
+    r.petsDetails ||
+    r.pets ||
+    null;
 
   const petsSnapshot = normalizeSnapshotArray(snapshot, petsIds);
 
@@ -399,11 +503,27 @@ export default function ReservationDetail() {
         setCaregiver(currentCaregiver);
         setTutor(currentTutor);
 
+        // ✅ mantém seu comportamento atual (localStorage), mas com fallback de chaves (pra não “sumir”)
         if (finalReservation?.tutorId) {
-          const petsKey = `pets_${finalReservation.tutorId}`;
-          const petsRaw = safeGetLocalStorage(petsKey) || "[]";
-          const pets = safeJsonParse(petsRaw);
-          setTutorPets(Array.isArray(pets) ? pets : []);
+          const tid = String(finalReservation.tutorId);
+          const candidateKeys = [
+            `pets_${tid}`,
+            `pets_${Number(tid)}`,
+            `tutorPets_${tid}`,
+            `petsByTutor_${tid}`,
+          ];
+
+          let found = [];
+          for (const k of candidateKeys) {
+            const raw = safeGetLocalStorage(k);
+            if (!raw) continue;
+            const parsed = safeJsonParse(raw);
+            if (Array.isArray(parsed) && parsed.length) {
+              found = parsed;
+              break;
+            }
+          }
+          setTutorPets(Array.isArray(found) ? found : []);
         } else {
           setTutorPets([]);
         }
@@ -422,7 +542,7 @@ export default function ReservationDetail() {
       const relevant =
         k === reservationsStorageKey ||
         k === "users" ||
-        (tid && k === `pets_${tid}`);
+        (tid && (k === `pets_${tid}` || k === `tutorPets_${tid}` || k === `petsByTutor_${tid}`));
 
       if (!relevant) return;
       loadAll();
@@ -896,7 +1016,10 @@ export default function ReservationDetail() {
     if (!tutorPets?.length) return [];
     if (!selectedPetIds.length) return [];
     const set = new Set(selectedPetIds.map(String));
-    return tutorPets.filter((p) => set.has(String(p.id)));
+    return tutorPets
+      .map((p) => normalizePetObject(p))
+      .filter(Boolean)
+      .filter((p) => set.has(String(p.id)));
   }, [tutorPets, selectedPetIds]);
 
   const selectedPetsFromSnapshot = useMemo(() => {
@@ -1050,29 +1173,32 @@ export default function ReservationDetail() {
 
           {displayPets.length ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {displayPets.map((pet) => {
-                const specie = pet.specie || pet.species || "Espécie não informada";
-                const breed = pet.breed ? `• ${pet.breed}` : "";
-                const porte = pet.porte || pet.port || pet.size || pet.portePet || null;
+              {displayPets.map((rawPet) => {
+                const pet = normalizePetObject(rawPet) || rawPet;
+
+                const petName = pet?.name || "Pet";
+                const specie = pet?.specie || pet?.species || "Espécie não informada";
+                const breed = pet?.breed ? `• ${pet.breed}` : "";
+                const porte = pet?.porte || pet?.port || pet?.size || pet?.portePet || null;
 
                 const petImg = pickPetImage(pet) || DEFAULT_PET_IMG;
 
                 return (
                   <div
-                    key={pet.id || pet.name}
+                    key={pet?.id || petName}
                     className="flex gap-3 items-center border rounded-xl p-3 bg-[#FFF8F0] shadow-sm"
                   >
                     <img
                       src={petImg}
-                      alt={pet.name}
+                      alt={petName}
                       className="w-16 h-16 rounded-full object-cover border-2 border-[#FFD700]"
                     />
                     <div className="text-xs md:text-sm">
-                      <p className="font-semibold text-sm md:text-base">{pet.name}</p>
+                      <p className="font-semibold text-sm md:text-base">{petName}</p>
                       <p className="opacity-80">{specie} {breed}</p>
                       {porte && <p className="opacity-80">Porte: {String(porte)}</p>}
-                      {pet.approxAge && <p className="opacity-80">Idade aproximada: {pet.approxAge}</p>}
-                      {!!pet.adjectives?.length && (
+                      {pet?.approxAge && <p className="opacity-80">Idade aproximada: {pet.approxAge}</p>}
+                      {!!pet?.adjectives?.length && (
                         <p className="mt-1 text-[11px] opacity-90">
                           {pet.adjectives.join(" • ")}
                         </p>
