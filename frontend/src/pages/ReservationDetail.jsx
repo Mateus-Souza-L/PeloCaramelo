@@ -152,9 +152,9 @@ const normalizePetObject = (p) => {
     ? adjectivesRaw.filter(Boolean).map(String)
     : typeof adjectivesRaw === "string"
       ? adjectivesRaw
-        .split(/[,•|]/g)
-        .map((s) => s.trim())
-        .filter(Boolean)
+          .split(/[,•|]/g)
+          .map((s) => s.trim())
+          .filter(Boolean)
       : [];
 
   const image = pickPetImage(p);
@@ -312,7 +312,6 @@ function PcModal({ open, title, children, onClose, disableClose = false, maxWidt
       role="dialog"
       aria-modal="true"
       onMouseDown={(e) => {
-        // click fora fecha (se permitido)
         if (disableClose) return;
         if (e.target === e.currentTarget) onClose?.();
       }}
@@ -945,7 +944,7 @@ export default function ReservationDetail() {
       console.error("Erro ao sincronizar status no servidor:", err);
       showToast(
         err?.message ||
-        "Não foi possível sincronizar o status com o servidor. Ele foi atualizado apenas localmente por enquanto.",
+          "Não foi possível sincronizar o status com o servidor. Ele foi atualizado apenas localmente por enquanto.",
         "error"
       );
       return false;
@@ -1112,7 +1111,6 @@ export default function ReservationDetail() {
 
       const ok = await syncStatusWithBackend("Cancelada", { cancelReason: reason });
 
-      // fecha modal em qualquer caso, porque já persistimos localmente (mesmo comportamento do app hoje)
       setCancelReasonOpen(false);
       setCancelReasonText("");
 
@@ -1191,6 +1189,18 @@ export default function ReservationDetail() {
     }
   }, [loading, isTutor, reservation?.id, selectedPetIds.length, displayPets.length, tutorPets?.length, showToast]);
 
+  // ✅ IMPORTANTÍSSIMO: hooks/variáveis derivadas que usam hooks precisam ficar ANTES dos returns
+  const headerTitle = useMemo(() => {
+    return isTutor ? "Detalhe da sua reserva" : isCaregiver ? "Reserva recebida" : "Detalhe da reserva";
+  }, [isTutor, isCaregiver]);
+
+  const effectiveToken = useMemo(() => token || user?.token || null, [token, user?.token]);
+
+  const canChatNow = useMemo(() => {
+    const s = String(reservation?.status || "");
+    return s === "Aceita" || s === "Concluída" || s === "Concluida";
+  }, [reservation?.status]);
+
   if (loading) {
     return <CenterCard>Carregando reserva...</CenterCard>;
   }
@@ -1203,14 +1213,6 @@ export default function ReservationDetail() {
     return <CenterCard>Você não tem acesso a esta reserva.</CenterCard>;
   }
 
-  const headerTitle = isTutor ? "Detalhe da sua reserva" : isCaregiver ? "Reserva recebida" : "Detalhe da reserva";
-  const effectiveToken = token || user?.token || null;
-
-  const canChatNow = useMemo(() => {
-    const s = String(reservation?.status || "");
-    return s === "Aceita" || s === "Concluída" || s === "Concluida";
-  }, [reservation?.status]);
-
   return (
     <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] py-8 px-6">
       {/* ✅ MODAL 1: confirmar cancelamento */}
@@ -1220,17 +1222,18 @@ export default function ReservationDetail() {
         onClose={closeCancelConfirm}
         disableClose={cancelBusy}
       >
-        <p className="text-sm opacity-90">
-          Você tem certeza que deseja cancelar esta reserva?
-        </p>
+        <p className="text-sm opacity-90">Você tem certeza que deseja cancelar esta reserva?</p>
 
         <div className="mt-4 flex flex-wrap gap-3 justify-end">
           <button
             type="button"
             onClick={closeCancelConfirm}
             disabled={cancelBusy}
-            className={`px-4 py-2 rounded-lg font-semibold ${cancelBusy ? "bg-gray-200 text-gray-500 cursor-not-allowed" : "bg-gray-200 hover:bg-gray-300 text-[#5A3A22]"
-              }`}
+            className={`px-4 py-2 rounded-lg font-semibold ${
+              cancelBusy
+                ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+                : "bg-gray-200 hover:bg-gray-300 text-[#5A3A22]"
+            }`}
           >
             Voltar
           </button>
@@ -1239,8 +1242,9 @@ export default function ReservationDetail() {
             type="button"
             onClick={confirmCancelFlow}
             disabled={cancelBusy}
-            className={`px-4 py-2 rounded-lg font-semibold text-white ${cancelBusy ? "bg-gray-400 cursor-not-allowed" : "bg-[#95301F] hover:bg-[#7d2618]"
-              }`}
+            className={`px-4 py-2 rounded-lg font-semibold text-white ${
+              cancelBusy ? "bg-gray-400 cursor-not-allowed" : "bg-[#95301F] hover:bg-[#7d2618]"
+            }`}
           >
             Sim, cancelar
           </button>
@@ -1255,9 +1259,7 @@ export default function ReservationDetail() {
         disableClose={cancelBusy}
         maxWidth="max-w-[640px]"
       >
-        <p className="text-sm opacity-90">
-          Para cancelar, informe o motivo (obrigatório).
-        </p>
+        <p className="text-sm opacity-90">Para cancelar, informe o motivo (obrigatório).</p>
 
         <div className="mt-3">
           <textarea
@@ -1269,9 +1271,7 @@ export default function ReservationDetail() {
             className="w-full rounded-xl border p-3 text-sm outline-none focus:ring-2 focus:ring-[#FFD700]/60"
             disabled={cancelBusy}
           />
-          <p className="mt-2 text-xs opacity-70">
-            * Campo obrigatório
-          </p>
+          <p className="mt-2 text-xs opacity-70">* Campo obrigatório</p>
         </div>
 
         <div className="mt-4 flex flex-wrap gap-3 justify-end">
@@ -1279,8 +1279,11 @@ export default function ReservationDetail() {
             type="button"
             onClick={closeCancelReason}
             disabled={cancelBusy}
-            className={`px-4 py-2 rounded-lg font-semibold ${cancelBusy ? "bg-gray-200 text-gray-500 cursor-not-allowed" : "bg-gray-200 hover:bg-gray-300 text-[#5A3A22]"
-              }`}
+            className={`px-4 py-2 rounded-lg font-semibold ${
+              cancelBusy
+                ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+                : "bg-gray-200 hover:bg-gray-300 text-[#5A3A22]"
+            }`}
           >
             Voltar
           </button>
@@ -1289,8 +1292,9 @@ export default function ReservationDetail() {
             type="button"
             onClick={submitCancelReason}
             disabled={cancelBusy}
-            className={`px-4 py-2 rounded-lg font-semibold text-[#5A3A22] ${cancelBusy ? "bg-[#FFD700]/50 cursor-not-allowed" : "bg-[#FFD700] hover:bg-[#f5c400]"
-              }`}
+            className={`px-4 py-2 rounded-lg font-semibold text-[#5A3A22] ${
+              cancelBusy ? "bg-[#FFD700]/50 cursor-not-allowed" : "bg-[#FFD700] hover:bg-[#f5c400]"
+            }`}
           >
             {cancelBusy ? "Cancelando..." : "Confirmar cancelamento"}
           </button>
@@ -1370,7 +1374,9 @@ export default function ReservationDetail() {
             <button
               type="button"
               onClick={() => {
-                const q = encodeURIComponent([reservation.neighborhood, reservation.city].filter(Boolean).join(", "));
+                const q = encodeURIComponent(
+                  [reservation.neighborhood, reservation.city].filter(Boolean).join(", ")
+                );
                 if (!q) return;
                 window.open(`https://www.google.com/maps/search/?api=1&query=${q}`, "_blank");
               }}
@@ -1490,7 +1496,9 @@ export default function ReservationDetail() {
               })}
             </div>
           ) : (
-            <p className="text-sm md:text-base opacity-80 bg-[#FFF8F0] rounded-xl p-3">Pets desta reserva não informados.</p>
+            <p className="text-sm md:text-base opacity-80 bg-[#FFF8F0] rounded-xl p-3">
+              Pets desta reserva não informados.
+            </p>
           )}
         </div>
 
@@ -1517,10 +1525,11 @@ export default function ReservationDetail() {
                   type="button"
                   onClick={openRatingModal}
                   disabled={ratingBusy}
-                  className={`mt-3 px-4 py-2 rounded-lg font-semibold shadow-md text-sm ${ratingBusy
-                    ? "bg-[#FFD700]/60 cursor-not-allowed text-[#5A3A22]"
-                    : "bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22]"
-                    }`}
+                  className={`mt-3 px-4 py-2 rounded-lg font-semibold shadow-md text-sm ${
+                    ratingBusy
+                      ? "bg-[#FFD700]/60 cursor-not-allowed text-[#5A3A22]"
+                      : "bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22]"
+                  }`}
                 >
                   {ratingBusy ? "Enviando..." : isTutor ? "Avaliar cuidador" : "Avaliar tutor"}
                 </button>
@@ -1547,6 +1556,20 @@ export default function ReservationDetail() {
             {/* TEMP: desabilita chat pra testar se é ele que está quebrando a página */}
             <div className="pc-card pc-card-accent text-[#5A3A22]">
               Chat temporariamente desativado para diagnóstico.
+              {/* Se quiser reativar depois:
+                  {canChatNow && effectiveToken ? (
+                    <ChatErrorBoundary>
+                      <ChatBox
+                        reservationId={reservation.id}
+                        token={effectiveToken}
+                        currentUserId={myUserId}
+                        otherUserName={isTutor ? caregiver?.name : tutor?.name}
+                        canChat={canChatNow}
+                        onNewMessage={() => {}}
+                      />
+                    </ChatErrorBoundary>
+                  ) : null}
+              */}
             </div>
           </div>
         )}
