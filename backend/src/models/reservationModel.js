@@ -89,6 +89,7 @@ function mapReservationRow(row) {
     reject_reason: row.reject_reason,
   };
 
+  // compat camel
   obj.tutorId = row.tutor_id != null ? String(row.tutor_id) : null;
   obj.caregiverId = row.caregiver_id != null ? String(row.caregiver_id) : null;
   obj.startDate = row.start_date;
@@ -167,6 +168,11 @@ async function getPetsSnapshotByIds(tutorId, petsIds) {
   }));
 }
 
+/**
+ * DEFAULT_DAILY_CAPACITY:
+ * - se você setar 1 no .env, vai virar “1 reserva por dia”
+ * - recomendo deixar 15 (ou algo razoável) e usar users.daily_capacity para cada cuidador ajustar
+ */
 function getDefaultCap() {
   const raw = Number(process.env.DEFAULT_DAILY_CAPACITY ?? 15);
   const cap = Number.isFinite(raw) ? Math.trunc(raw) : 15;
@@ -189,6 +195,8 @@ async function getCaregiverCapacity(caregiverId) {
 
   const cap = Number(rows?.[0]?.daily_capacity ?? DEFAULT_CAP);
   const finalCap = Number.isFinite(cap) ? Math.trunc(cap) : DEFAULT_CAP;
+
+  // clamp
   if (finalCap < 1) return 1;
   if (finalCap > 100) return 100;
   return finalCap;

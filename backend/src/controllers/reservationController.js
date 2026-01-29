@@ -331,6 +331,45 @@ function getEffectiveRoleForReservation(user, reservation) {
 }
 
 /* ===========================================================
+   RESPONSE NORMALIZATION (snake + camel)
+   - resolve “price 0” no frontend quando ele lê pricePerDay
+   =========================================================== */
+
+function normalizeReservationResponse(reservation) {
+  if (!reservation) return reservation;
+
+  const ppd =
+    reservation?.price_per_day != null
+      ? Number(reservation.price_per_day)
+      : reservation?.pricePerDay != null
+      ? Number(reservation.pricePerDay)
+      : null;
+
+  const total =
+    reservation?.total != null
+      ? Number(reservation.total)
+      : null;
+
+  const startDate = toDateKey(reservation?.start_date ?? reservation?.startDate) || null;
+  const endDate = toDateKey(reservation?.end_date ?? reservation?.endDate) || null;
+
+  return {
+    ...reservation,
+
+    // snake
+    price_per_day: ppd,
+    start_date: startDate,
+    end_date: endDate,
+    total,
+
+    // camel
+    pricePerDay: ppd,
+    startDate,
+    endDate,
+  };
+}
+
+/* ===========================================================
    NOTIFICATIONS
    =========================================================== */
 
@@ -499,11 +538,16 @@ async function assertCapacityOrThrow(caregiverId, startKey, endKey, excludeReser
   }
 
   if (check.maxOverlapping >= check.capacity) {
+    // ✅ alinhado com seu frontend: ele lê err.capacity e err.overlapping
     return {
       ok: false,
       code: "CAPACITY_FULL",
       message: "Agenda cheia nesse período. Tente outras datas.",
-      details: { capacity: check.capacity, maxOverlapping: check.maxOverlapping },
+      details: {
+        capacity: check.capacity,
+        overlapping: check.maxOverlapping,
+        maxOverlapping: check.maxOverlapping,
+      },
     };
   }
 
@@ -791,11 +835,7 @@ async function createReservationController(req, res) {
     }
 
     return res.status(201).json({
-      reservation: {
-        ...reservation,
-        price_per_day: reservation?.price_per_day != null ? Number(reservation.price_per_day) : null,
-        total: reservation?.total != null ? Number(reservation.total) : null,
-      },
+      reservation: normalizeReservationResponse(reservation),
     });
   } catch (err) {
     console.error("Erro em POST /reservations:", err);
@@ -923,14 +963,7 @@ async function getReservationDetailController(req, res) {
     const enrichedArr = await attachMyReviewFields([reservation], user.id);
     reservation = enrichedArr?.[0] || reservation;
 
-    reservation = {
-      ...reservation,
-      service: reservation?.service ?? null,
-      price_per_day: reservation?.price_per_day != null ? Number(reservation.price_per_day) : null,
-      total: reservation?.total != null ? Number(reservation.total) : null,
-    };
-
-    return res.json({ reservation });
+    return res.json({ reservation: normalizeReservationResponse(reservation) });
   } catch (err) {
     console.error("Erro em GET /reservations/:id:", err);
     return res
@@ -1079,13 +1112,7 @@ async function updateReservationStatusController(req, res) {
         console.error("[tutorCancel] Falha ao enviar e-mails de cancelamento:", e?.message || e);
       }
 
-      return res.json({
-        reservation: {
-          ...updated,
-          price_per_day: updated?.price_per_day != null ? Number(updated.price_per_day) : null,
-          total: updated?.total != null ? Number(updated.total) : null,
-        },
-      });
+      return res.json({ reservation: normalizeReservationResponse(updated) });
     }
 
     // CAREGIVER (da reserva): Aceita/Recusada (se Pendente), Concluída (se Aceita)
@@ -1269,9 +1296,7 @@ async function updateReservationStatusController(req, res) {
       if (nextStatus === "Concluída") {
         try {
           const alreadySent = await wasReviewEmailSent(updated?.id);
-          if (alreadySent) {
-            // evita spam: não reenviar e-mail de avaliação para a mesma reserva
-          } else {
+          if (!alreadySent) {
             const base = computeFrontendBase(req);
             if (!base) {
               console.warn(
@@ -1332,13 +1357,7 @@ async function updateReservationStatusController(req, res) {
         }
       }
 
-      return res.json({
-        reservation: {
-          ...updated,
-          price_per_day: updated?.price_per_day != null ? Number(updated.price_per_day) : null,
-          total: updated?.total != null ? Number(updated.total) : null,
-        },
-      });
+      return res.json({ reservation: normalizeReservationResponse(updated) });
     }
 
     // ADMIN: pode alterar (com validações quando Aceita / Concluída)
@@ -1389,13 +1408,7 @@ async function updateReservationStatusController(req, res) {
         payload: { reservationId: updated?.id, prevStatus: currentStatus, nextStatus },
       });
 
-      return res.json({
-        reservation: {
-          ...updated,
-          price_per_day: updated?.price_per_day != null ? Number(updated.price_per_day) : null,
-          total: updated?.total != null ? Number(updated.total) : null,
-        },
-      });
+      return res.json({ reservation: normalizeReservationResponse(updated) });
     }
 
     return res.status(403).json({ error: "Sem permissão para alterar o status.", code: "FORBIDDEN" });
