@@ -49,12 +49,12 @@ const toNumSafe = (v) => {
   return Number.isFinite(n) ? n : null;
 };
 
-// ✅ NOVO: normaliza string pra comparar nomes de serviço
+// ✅ normaliza string pra comparar nomes de serviço
 const normalizeKey = (s) =>
   String(s || "")
     .trim()
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "") // ✅ fix
+    .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase();
 
 const formatMoneyBR = (v) => {
@@ -95,13 +95,24 @@ const pickPetImage = (p) =>
   p?.photo_url ||
   null;
 
-// ✅ NOVO: normaliza campos comuns do pet (pra snapshot “variado” funcionar)
+// ✅ normaliza campos comuns do pet (pra snapshot “variado” funcionar)
 const normalizePetObject = (p) => {
   if (!p || typeof p !== "object") return null;
 
-  const id = toStr(p.id) || toStr(p.pet_id) || toStr(p.petId) || toStr(p.petID) || "";
+  const id =
+    toStr(p.id) ||
+    toStr(p.pet_id) ||
+    toStr(p.petId) ||
+    toStr(p.petID) ||
+    "";
 
-  const name = p.name ?? p.pet_name ?? p.petName ?? p.pet_nome ?? p.nome ?? "";
+  const name =
+    p.name ??
+    p.pet_name ??
+    p.petName ??
+    p.pet_nome ??
+    p.nome ??
+    "";
 
   const specie =
     p.specie ??
@@ -112,11 +123,29 @@ const normalizePetObject = (p) => {
     p.tipo ??
     "";
 
-  const breed = p.breed ?? p.race ?? p.raca ?? p.breed_name ?? p.race_name ?? "";
+  const breed =
+    p.breed ??
+    p.race ??
+    p.raca ??
+    p.breed_name ??
+    p.race_name ??
+    "";
 
-  const porte = p.porte ?? p.port ?? p.size ?? p.portePet ?? p.pet_size ?? p.tamanho ?? "";
+  const porte =
+    p.porte ??
+    p.port ??
+    p.size ??
+    p.portePet ??
+    p.pet_size ??
+    p.tamanho ??
+    "";
 
-  const approxAge = p.approxAge ?? p.approx_age ?? p.age ?? p.idade ?? "";
+  const approxAge =
+    p.approxAge ??
+    p.approx_age ??
+    p.age ??
+    p.idade ??
+    "";
 
   const adjectivesRaw = p.adjectives ?? p.adjetivos ?? p.tags ?? null;
   const adjectives = Array.isArray(adjectivesRaw)
@@ -133,7 +162,7 @@ const normalizePetObject = (p) => {
   return {
     ...p,
     id: id || undefined,
-    name: name || p.name, // mantém compat
+    name: name || p.name,
     specie: specie || p.specie || p.species,
     breed: breed || p.breed,
     porte: porte || p.porte || p.size,
@@ -161,7 +190,7 @@ const normalizeSnapshotArray = (maybeSnap, fallbackIds = []) => {
   return normalized;
 };
 
-// ✅ NOVO: extrai petsIds de vários formatos possíveis do backend
+// ✅ extrai petsIds de vários formatos possíveis do backend
 const extractPetsIds = (r) => {
   let petsIds =
     r?.pets_ids ??
@@ -174,16 +203,13 @@ const extractPetsIds = (r) => {
     r?.petId ??
     [];
 
-  // se vier string JSON
   if (typeof petsIds === "string") {
     const parsed = safeJsonParse(petsIds);
     petsIds = Array.isArray(parsed) ? parsed : parsed != null ? [parsed] : [];
   }
 
-  // se vier number/string único
   if (!Array.isArray(petsIds)) petsIds = [petsIds];
 
-  // se vier pets como array de objetos (ex.: [{id:1},{id:2}])
   if (Array.isArray(r?.pets) && r.pets.length) {
     const fromPets = r.pets
       .map((p) => toStr(p?.id ?? p?.pet_id ?? p?.petId ?? ""))
@@ -191,7 +217,6 @@ const extractPetsIds = (r) => {
     if (fromPets.length) petsIds = fromPets;
   }
 
-  // normaliza
   return petsIds.map((x) => toStr(x)).filter(Boolean);
 };
 
@@ -220,7 +245,6 @@ const normalizeReservationFromApi = (r) => {
     neighborhood: r.neighborhood || "",
     service: r.service,
 
-    // ✅ ALTERADO: não “vira 0” quando vem vazio/NaN
     pricePerDay: toNumSafe(r.price_per_day ?? r.pricePerDay ?? r.price),
     total: toNumSafe(r.total),
 
@@ -244,10 +268,9 @@ const normalizeReservationFromApi = (r) => {
     petsIds,
     petsNames: r.pets_names ?? r.petsNames ?? "",
     petsSnapshot: Array.isArray(petsSnapshot) ? petsSnapshot : null,
-
     rejectReason: r.reject_reason ?? r.rejectReason ?? null,
 
-    // ✅ NOVO: motivo do cancelamento (tutor)
+    // ✅ motivo do cancelamento
     cancelReason: r.cancel_reason ?? r.cancelReason ?? null,
   };
 };
@@ -267,6 +290,58 @@ const CenterCard = ({ children }) => (
     <div className="pc-card pc-card-accent text-center">{children}</div>
   </div>
 );
+
+// ✅ Modal simples (padrão visual do site)
+function PcModal({ open, title, children, onClose, disableClose = false, maxWidth = "max-w-[520px]" }) {
+  useEffect(() => {
+    if (!open) return;
+
+    const onKey = (e) => {
+      if (e.key === "Escape" && !disableClose) onClose?.();
+    };
+
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose, disableClose]);
+
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center px-4"
+      role="dialog"
+      aria-modal="true"
+      onMouseDown={(e) => {
+        // click fora fecha (se permitido)
+        if (disableClose) return;
+        if (e.target === e.currentTarget) onClose?.();
+      }}
+    >
+      <div className="absolute inset-0 bg-black/40" />
+
+      <div className={`relative w-full ${maxWidth}`}>
+        <div className="bg-white rounded-2xl shadow-xl border-l-4 border-[#FFD700]/80 p-5">
+          <div className="flex items-start justify-between gap-3">
+            <h3 className="text-lg font-bold text-[#5A3A22]">{title}</h3>
+
+            {!disableClose && (
+              <button
+                type="button"
+                onClick={onClose}
+                className="text-[#5A3A22] hover:text-[#95301F] font-bold px-2"
+                aria-label="Fechar"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+
+          <div className="mt-3 text-[#5A3A22]">{children}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function ReservationDetail() {
   const { id } = useParams();
@@ -288,6 +363,13 @@ export default function ReservationDetail() {
   const [ratingTitle, setRatingTitle] = useState("");
   const [ratingBusy, setRatingBusy] = useState(false);
 
+  // ✅ NOVO: fluxo padrão do cancelamento (sem prompt do browser)
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
+  const [cancelReasonOpen, setCancelReasonOpen] = useState(false);
+  const [cancelReasonText, setCancelReasonText] = useState("");
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const cancelReasonRef = useRef(null);
+
   const chatSectionRef = useRef(null);
   const didAutoScrollChatRef = useRef(false);
   const didClearChatUnreadRef = useRef(false);
@@ -296,7 +378,6 @@ export default function ReservationDetail() {
   const reservationIdRef = useRef(null);
   const tutorIdRef = useRef(null);
 
-  // ✅ NOVO: evita toast repetido
   const didWarnNoPetsRef = useRef(false);
 
   useEffect(() => {
@@ -388,7 +469,6 @@ export default function ReservationDetail() {
         merged.caregiverReview = fallbackLocal?.caregiverReview ?? merged.caregiverReview;
       }
 
-      // ✅ preserva motivos se servidor não devolver
       if (merged.rejectReason == null && fallbackLocal?.rejectReason != null) {
         merged.rejectReason = fallbackLocal.rejectReason;
       }
@@ -396,7 +476,6 @@ export default function ReservationDetail() {
         merged.cancelReason = fallbackLocal.cancelReason;
       }
 
-      // ✅ NOVO: se servidor vier sem preço, preserva o local (evita virar null/0)
       if ((merged.pricePerDay == null || merged.pricePerDay <= 0) && fallbackLocal?.pricePerDay > 0) {
         merged.pricePerDay = fallbackLocal.pricePerDay;
       }
@@ -495,7 +574,6 @@ export default function ReservationDetail() {
         setCaregiver(currentCaregiver);
         setTutor(currentTutor);
 
-        // ✅ mantém seu comportamento atual (localStorage), mas com fallback de chaves (pra não “sumir”)
         if (finalReservation?.tutorId) {
           const tid = String(finalReservation.tutorId);
           const candidateKeys = [`pets_${tid}`, `pets_${Number(tid)}`, `tutorPets_${tid}`, `petsByTutor_${tid}`];
@@ -574,18 +652,13 @@ export default function ReservationDetail() {
   const isOwner = useMemo(() => {
     if (!reservation || !user?.id) return false;
     const uid = String(user.id);
-    return (
-      uid === String(reservation.tutorId) ||
-      uid === String(reservation.caregiverId) ||
-      user?.role === "admin"
-    );
+    return uid === String(reservation.tutorId) || uid === String(reservation.caregiverId) || user?.role === "admin";
   }, [reservation, user?.id, user?.role]);
 
   const myUserId = String(
     user?.id ?? (isTutor ? reservation?.tutorId : isCaregiver ? reservation?.caregiverId : "") ?? ""
   );
 
-  // ✅ NOVO: dias da reserva (inclusive)
   const reservationDays = useMemo(() => {
     if (!reservation?.startDate || !reservation?.endDate) return null;
     const s = parseLocalKey(reservation.startDate);
@@ -599,7 +672,6 @@ export default function ReservationDetail() {
     return diff >= 0 ? diff + 1 : null;
   }, [reservation?.startDate, reservation?.endDate]);
 
-  // ✅ NOVO: resolve preços do cuidador (caregiver.prices) quando a reserva vier sem preço
   const caregiverPricesObj = useMemo(() => {
     const raw = caregiver?.prices ?? null;
     if (!raw) return null;
@@ -621,12 +693,10 @@ export default function ReservationDetail() {
     const prices = caregiverPricesObj;
     if (!prices || typeof prices !== "object") return null;
 
-    // tenta match direto
     const directKey = prices[svc];
     const dv = toNumSafe(directKey);
     if (dv != null && dv > 0) return dv;
 
-    // tenta match por chave normalizada (resolve diferenças de acento/case)
     const target = normalizeKey(svc);
     for (const [k, v] of Object.entries(prices)) {
       if (normalizeKey(k) === target) {
@@ -693,9 +763,7 @@ export default function ReservationDetail() {
       chatSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
 
       setTimeout(() => {
-        window.dispatchEvent(
-          new CustomEvent("chat-scroll-bottom", { detail: { reservationId: reservation.id } })
-        );
+        window.dispatchEvent(new CustomEvent("chat-scroll-bottom", { detail: { reservationId: reservation.id } }));
       }, 240);
     }, 120);
   }, [user?.id, reservation?.id, location?.state]);
@@ -734,14 +802,10 @@ export default function ReservationDetail() {
       if (!isChatVisible) {
         el.scrollIntoView({ behavior: "smooth", block: "start" });
         setTimeout(() => {
-          window.dispatchEvent(
-            new CustomEvent("chat-scroll-bottom", { detail: { reservationId: reservation.id } })
-          );
+          window.dispatchEvent(new CustomEvent("chat-scroll-bottom", { detail: { reservationId: reservation.id } }));
         }, 260);
       } else {
-        window.dispatchEvent(
-          new CustomEvent("chat-scroll-bottom", { detail: { reservationId: reservation.id } })
-        );
+        window.dispatchEvent(new CustomEvent("chat-scroll-bottom", { detail: { reservationId: reservation.id } }));
       }
 
       clearChatUnreadForThisReservation();
@@ -763,9 +827,7 @@ export default function ReservationDetail() {
       el.scrollIntoView({ behavior: "smooth", block: "start" });
 
       setTimeout(() => {
-        window.dispatchEvent(
-          new CustomEvent("chat-scroll-bottom", { detail: { reservationId: reservation.id } })
-        );
+        window.dispatchEvent(new CustomEvent("chat-scroll-bottom", { detail: { reservationId: reservation.id } }));
       }, 260);
     };
 
@@ -818,11 +880,7 @@ export default function ReservationDetail() {
     if (!reservation) return null;
 
     if (isTutor) {
-      return {
-        roleLabel: "Cuidador",
-        rating: reservation.caregiverRating,
-        review: reservation.caregiverReview,
-      };
+      return { roleLabel: "Cuidador", rating: reservation.caregiverRating, review: reservation.caregiverReview };
     }
     if (isCaregiver) {
       return { roleLabel: "Tutor", rating: reservation.tutorRating, review: reservation.tutorReview };
@@ -976,7 +1034,7 @@ export default function ReservationDetail() {
     if (ok) showToast("Reserva recusada.", "error");
   };
 
-  // ✅ ALTERADO: motivo do cancelamento (tutor)
+  // ✅ NOVO: clique no botão Cancelar abre modal de confirmação (padrão)
   const tutorCancel = async () => {
     if (!isTutor || !reservation) return;
 
@@ -985,16 +1043,62 @@ export default function ReservationDetail() {
       return;
     }
 
-    const reasonRaw = window.prompt("Motivo do cancelamento (opcional):");
-    const cancelReason = reasonRaw != null ? String(reasonRaw).trim() : "";
+    setCancelConfirmOpen(true);
+  };
 
-    const next = { ...reservation, status: "Cancelada", cancelReason: cancelReason || null };
-    persistLocalReservation(next);
+  // ✅ confirma no modal 1 -> abre modal 2 (motivo obrigatório)
+  const confirmCancelFlow = () => {
+    setCancelConfirmOpen(false);
+    setCancelReasonText("");
+    setCancelReasonOpen(true);
 
-    const ok = await syncStatusWithBackend("Cancelada", cancelReason ? { cancelReason } : null);
-    if (ok) {
-      showToast("Reserva cancelada.", "success");
-      navigate("/dashboard", { replace: true });
+    setTimeout(() => {
+      cancelReasonRef.current?.focus?.();
+    }, 50);
+  };
+
+  const closeCancelConfirm = () => {
+    if (cancelBusy) return;
+    setCancelConfirmOpen(false);
+  };
+
+  const closeCancelReason = () => {
+    if (cancelBusy) return;
+    setCancelReasonOpen(false);
+    setCancelReasonText("");
+  };
+
+  // ✅ submit do motivo (obrigatório)
+  const submitCancelReason = async () => {
+    if (!isTutor || !reservation) return;
+    if (cancelBusy) return;
+
+    const reason = String(cancelReasonText || "").trim();
+
+    if (!reason) {
+      showToast("Informe o motivo do cancelamento.", "notify");
+      cancelReasonRef.current?.focus?.();
+      return;
+    }
+
+    setCancelBusy(true);
+
+    try {
+      const next = { ...reservation, status: "Cancelada", cancelReason: reason };
+      persistLocalReservation(next);
+
+      const ok = await syncStatusWithBackend("Cancelada", { cancelReason: reason });
+
+      // fecha modal em qualquer caso, porque já persistimos localmente (mesmo comportamento do app hoje)
+      setCancelReasonOpen(false);
+      setCancelReasonText("");
+
+      if (ok) {
+        showToast("Reserva cancelada.", "success");
+        navigate("/dashboard", { replace: true });
+      }
+    } finally {
+      setCancelBusy(false);
     }
   };
 
@@ -1049,13 +1153,11 @@ export default function ReservationDetail() {
     return [];
   }, [selectedPetsFromLocal, selectedPetsFromSnapshot]);
 
-  // ✅ NOVO: toast avisando necessidade de adicionar pet (mostra 1x por visita)
   useEffect(() => {
     if (loading) return;
     if (!isTutor) return;
     if (!reservation) return;
 
-    // cenário: tutor sem pets vinculados na reserva (ou sem pets cadastrados)
     const hasAnySelected = selectedPetIds.length > 0;
     const hasAnyDisplay = displayPets.length > 0;
     const tutorHasAnyPet = Array.isArray(tutorPets) && tutorPets.length > 0;
@@ -1066,7 +1168,6 @@ export default function ReservationDetail() {
     }
   }, [loading, isTutor, reservation?.id, selectedPetIds.length, displayPets.length, tutorPets?.length, showToast]);
 
-  // ✅ estados de tela (sem flicker de "não encontrada")
   if (loading) {
     return <CenterCard>Carregando reserva...</CenterCard>;
   }
@@ -1080,11 +1181,98 @@ export default function ReservationDetail() {
   }
 
   const headerTitle = isTutor ? "Detalhe da sua reserva" : isCaregiver ? "Reserva recebida" : "Detalhe da reserva";
-
   const effectiveToken = token || user?.token || null;
 
   return (
     <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] py-8 px-6">
+      {/* ✅ MODAL 1: confirmar cancelamento */}
+      <PcModal
+        open={cancelConfirmOpen}
+        title="Cancelar reserva?"
+        onClose={closeCancelConfirm}
+        disableClose={cancelBusy}
+      >
+        <p className="text-sm opacity-90">
+          Você tem certeza que deseja cancelar esta reserva?
+        </p>
+
+        <div className="mt-4 flex flex-wrap gap-3 justify-end">
+          <button
+            type="button"
+            onClick={closeCancelConfirm}
+            disabled={cancelBusy}
+            className={`px-4 py-2 rounded-lg font-semibold ${
+              cancelBusy ? "bg-gray-200 text-gray-500 cursor-not-allowed" : "bg-gray-200 hover:bg-gray-300 text-[#5A3A22]"
+            }`}
+          >
+            Voltar
+          </button>
+
+          <button
+            type="button"
+            onClick={confirmCancelFlow}
+            disabled={cancelBusy}
+            className={`px-4 py-2 rounded-lg font-semibold text-white ${
+              cancelBusy ? "bg-gray-400 cursor-not-allowed" : "bg-[#95301F] hover:bg-[#7d2618]"
+            }`}
+          >
+            Sim, cancelar
+          </button>
+        </div>
+      </PcModal>
+
+      {/* ✅ MODAL 2: motivo obrigatório */}
+      <PcModal
+        open={cancelReasonOpen}
+        title="Motivo do cancelamento"
+        onClose={closeCancelReason}
+        disableClose={cancelBusy}
+        maxWidth="max-w-[640px]"
+      >
+        <p className="text-sm opacity-90">
+          Para cancelar, informe o motivo (obrigatório).
+        </p>
+
+        <div className="mt-3">
+          <textarea
+            ref={cancelReasonRef}
+            value={cancelReasonText}
+            onChange={(e) => setCancelReasonText(e.target.value)}
+            rows={4}
+            placeholder="Ex.: Imprevisto, mudança de planos, etc."
+            className="w-full rounded-xl border p-3 text-sm outline-none focus:ring-2 focus:ring-[#FFD700]/60"
+            disabled={cancelBusy}
+          />
+          <p className="mt-2 text-xs opacity-70">
+            * Campo obrigatório
+          </p>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-3 justify-end">
+          <button
+            type="button"
+            onClick={closeCancelReason}
+            disabled={cancelBusy}
+            className={`px-4 py-2 rounded-lg font-semibold ${
+              cancelBusy ? "bg-gray-200 text-gray-500 cursor-not-allowed" : "bg-gray-200 hover:bg-gray-300 text-[#5A3A22]"
+            }`}
+          >
+            Voltar
+          </button>
+
+          <button
+            type="button"
+            onClick={submitCancelReason}
+            disabled={cancelBusy}
+            className={`px-4 py-2 rounded-lg font-semibold text-[#5A3A22] ${
+              cancelBusy ? "bg-[#FFD700]/50 cursor-not-allowed" : "bg-[#FFD700] hover:bg-[#f5c400]"
+            }`}
+          >
+            {cancelBusy ? "Cancelando..." : "Confirmar cancelamento"}
+          </button>
+        </div>
+      </PcModal>
+
       <div className="max-w-[1400px] mx-auto bg-white rounded-2xl shadow p-6 border-l-4 border-[#FFD700]/80">
         <h1 className="text-2xl md:text-3xl font-bold text-[#5A3A22] mb-4">{headerTitle}</h1>
 
@@ -1101,12 +1289,10 @@ export default function ReservationDetail() {
               <b>Serviço:</b> {reservation.service}
             </p>
 
-            {/* ✅ ALTERADO: usa o preço resolvido (reserva ou fallback do cuidador) */}
             <p>
               <b>Preço/dia:</b> {formatMoneyBR(resolvedPricePerDay)}
             </p>
 
-            {/* ✅ ALTERADO: usa total resolvido (reserva ou cálculo) */}
             <p>
               <b>Total:</b> {formatMoneyBR(resolvedTotal)}
             </p>
@@ -1119,7 +1305,6 @@ export default function ReservationDetail() {
               </div>
             )}
 
-            {/* ✅ NOVO: motivo do cancelamento */}
             {reservation.status === "Cancelada" && reservation.cancelReason && (
               <div className="mt-3 p-3 rounded-xl border bg-[#FFF8F0]">
                 <p className="text-sm">
@@ -1281,9 +1466,7 @@ export default function ReservationDetail() {
               })}
             </div>
           ) : (
-            <p className="text-sm md:text-base opacity-80 bg-[#FFF8F0] rounded-xl p-3">
-              Pets desta reserva não informados.
-            </p>
+            <p className="text-sm md:text-base opacity-80 bg-[#FFF8F0] rounded-xl p-3">Pets desta reserva não informados.</p>
           )}
         </div>
 
@@ -1339,7 +1522,7 @@ export default function ReservationDetail() {
         {(isTutor || isCaregiver) && (
           <div className="mt-8" ref={chatSectionRef} id="chat">
             <ChatBox
-              key={`${reservation.id}-${reservation.status}`} // ✅ evita erro #300/#310 ao mudar status
+              key={`${reservation.id}-${reservation.status}`}
               reservationId={reservation.id}
               token={effectiveToken}
               currentUserId={myUserId}

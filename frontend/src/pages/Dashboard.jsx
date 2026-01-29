@@ -62,6 +62,7 @@ const normalizeReservationFromApi = (r) => {
     petsIds,
     petsNames: r.pets_names || "",
     rejectReason: r.reject_reason || null,
+    cancelReason: r.cancel_reason || r.cancelReason || null,
   };
 };
 
@@ -131,9 +132,10 @@ function normalizeReservationFromLocal(r) {
     caregiverReview,
 
     __hasTutorReview: r.__hasTutorReview ?? r.has_tutor_review ?? false,
-    __hasCaregiverReview: r.__hasCaregiverReview ?? r.has_caregiver_review ?? false,
+        __hasCaregiverReview: r.__hasCaregiverReview ?? r.has_caregiver_review ?? false,
 
     petsIds,
+    cancelReason: r.cancelReason ?? r.cancel_reason ?? null,
   };
 }
 
@@ -484,6 +486,12 @@ export default function Dashboard() {
   const [ratingTitle, setRatingTitle] = useState("");
 
   const [cancelConfirmId, setCancelConfirmId] = useState(null);
+
+  const [cancelModal, setCancelModal] = useState({
+    open: false,
+    reservationId: null,
+    text: "",
+  });
 
   const [rejectModal, setRejectModal] = useState({
     open: false,
@@ -1294,7 +1302,7 @@ export default function Dashboard() {
     [reservationsStorageKey]
   );
 
-  const setStatus = async (id, status, rejectReason = null) => {
+  const setStatus = async (id, status, rejectReason = null, cancelReason = null) => {
     const current = (reservations || []).find((r) => String(r.id) === String(id));
     if (!current) return;
 
@@ -1302,6 +1310,7 @@ export default function Dashboard() {
       ...current,
       status,
       rejectReason: status === "Recusada" ? rejectReason || null : null,
+      cancelReason: status === "Cancelada" ? cancelReason || null : null,
     };
 
     const toastMsg = getStatusToastMessage(status, activeRole);
@@ -1312,7 +1321,9 @@ export default function Dashboard() {
         const body =
           status === "Recusada"
             ? { status, rejectReason: rejectReason || null }
-            : { status };
+            : status === "Cancelada"
+              ? { status, cancelReason: cancelReason || null }
+              : { status };
 
         const data = await authRequest(`/reservations/${id}/status`, token, {
           method: "PATCH",
@@ -1411,16 +1422,41 @@ export default function Dashboard() {
     setCancelConfirmId(String(reservationId));
   };
 
+  // ✅ confirmar no "toast/card" → abre modal de motivo obrigatório
   const confirmCancelReservation = () => {
     if (!cancelConfirmId) return;
-    const id = cancelConfirmId;
+
+    setCancelModal({
+      open: true,
+      reservationId: String(cancelConfirmId),
+      text: "",
+    });
+
+    // fecha o confirm toast/card (mantém comportamento, mas não cancela nada aqui)
     setCancelConfirmId(null);
-    setStatus(id, "Cancelada");
   };
 
+  // cancelar na etapa do confirm toast/card → não cancela nada
   const dismissCancelReservation = () => {
     setCancelConfirmId(null);
     showToast("Cancelamento abortado.", "notify");
+  };
+
+  const closeCancelModal = () => {
+    setCancelModal({ open: false, reservationId: null, text: "" });
+  };
+
+  const confirmCancelWithReason = () => {
+    if (!cancelModal?.reservationId) return;
+
+    const reason = (cancelModal.text || "").trim();
+    if (!reason) {
+      showToast("Informe um motivo para cancelar a reserva.", "notify");
+      return;
+    }
+
+    setStatus(cancelModal.reservationId, "Cancelada", null, reason);
+    closeCancelModal();
   };
 
   function hasAlreadyReviewedFallback(r, role) {
@@ -1860,6 +1896,47 @@ export default function Dashboard() {
                   <button
                     type="button"
                     onClick={confirmCancelReservation}
+                    className="px-3 py-2 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 text-white"
+                  >
+                    Cancelar reserva
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* MODAL: MOTIVO DO CANCELAMENTO (obrigatório) */}
+          {cancelModal.open && (
+            <div className="fixed inset-0 z-[9999] flex items-end md:items-center justify-center bg-black/40 p-4">
+              <div className="w-full max-w-[520px] bg-white rounded-2xl shadow-xl border-l-4 border-red-600 p-4">
+                <p className="text-sm font-semibold text-[#5A3A22]">
+                  Cancelar reserva
+                </p>
+                <p className="text-xs text-[#5A3A22] opacity-80 mt-1">
+                  Escreva um motivo para o cuidador entender o cancelamento. <b>(Obrigatório)</b>
+                </p>
+
+                <textarea
+                  value={cancelModal.text}
+                  onChange={(e) =>
+                    setCancelModal((s) => ({ ...s, text: e.target.value }))
+                  }
+                  rows={4}
+                  placeholder="Ex.: Mudança de planos / Imprevisto / Encontrei outro cuidador..."
+                  className="mt-3 w-full border rounded-xl p-3 text-sm text-[#5A3A22] outline-none focus:ring-2 focus:ring-[#FFD700]/70"
+                />
+
+                <div className="flex justify-end gap-2 mt-4">
+                  <button
+                    type="button"
+                    onClick={closeCancelModal}
+                    className="px-3 py-2 rounded-lg text-xs font-semibold bg-gray-200 hover:bg-gray-300 text-[#5A3A22]"
+                  >
+                    Voltar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={confirmCancelWithReason}
                     className="px-3 py-2 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 text-white"
                   >
                     Cancelar reserva
