@@ -152,9 +152,9 @@ const normalizePetObject = (p) => {
     ? adjectivesRaw.filter(Boolean).map(String)
     : typeof adjectivesRaw === "string"
       ? adjectivesRaw
-          .split(/[,•|]/g)
-          .map((s) => s.trim())
-          .filter(Boolean)
+        .split(/[,•|]/g)
+        .map((s) => s.trim())
+        .filter(Boolean)
       : [];
 
   const image = pickPetImage(p);
@@ -681,6 +681,12 @@ export default function ReservationDetail() {
     user?.id ?? (isTutor ? reservation?.tutorId : isCaregiver ? reservation?.caregiverId : "") ?? ""
   );
 
+  // ✅ AQUI ERA O BUG: useMemo não pode ficar depois dos returns.
+  const canChatNow = useMemo(() => {
+    const s = String(reservation?.status || "");
+    return s === "Aceita" || s === "Concluída" || s === "Concluida";
+  }, [reservation?.status]);
+
   const reservationDays = useMemo(() => {
     if (!reservation?.startDate || !reservation?.endDate) return null;
     const s = parseLocalKey(reservation.startDate);
@@ -944,7 +950,7 @@ export default function ReservationDetail() {
       console.error("Erro ao sincronizar status no servidor:", err);
       showToast(
         err?.message ||
-          "Não foi possível sincronizar o status com o servidor. Ele foi atualizado apenas localmente por enquanto.",
+        "Não foi possível sincronizar o status com o servidor. Ele foi atualizado apenas localmente por enquanto.",
         "error"
       );
       return false;
@@ -1056,6 +1062,7 @@ export default function ReservationDetail() {
     if (ok) showToast("Reserva recusada.", "error");
   };
 
+  // ✅ NOVO: clique no botão Cancelar abre modal de confirmação (padrão)
   const tutorCancel = async () => {
     if (!isTutor || !reservation) return;
 
@@ -1067,6 +1074,7 @@ export default function ReservationDetail() {
     setCancelConfirmOpen(true);
   };
 
+  // ✅ confirma no modal 1 -> abre modal 2 (motivo obrigatório)
   const confirmCancelFlow = () => {
     setCancelConfirmOpen(false);
     setCancelReasonText("");
@@ -1088,6 +1096,7 @@ export default function ReservationDetail() {
     setCancelReasonText("");
   };
 
+  // ✅ submit do motivo (obrigatório)
   const submitCancelReason = async () => {
     if (!isTutor || !reservation) return;
     if (cancelBusy) return;
@@ -1186,12 +1195,7 @@ export default function ReservationDetail() {
     }
   }, [loading, isTutor, reservation?.id, selectedPetIds.length, displayPets.length, tutorPets?.length, showToast]);
 
-  // ✅ FIX DO ERRO #310: NÃO use hook aqui (antes tinha useMemo depois de returns)
-  const canChatNow = (() => {
-    const s = String(reservation?.status || "");
-    return s === "Aceita" || s === "Concluída" || s === "Concluida";
-  })();
-
+  // ✅ RETURNS CONDICIONAIS (agora sem hooks abaixo deles)
   if (loading) {
     return <CenterCard>Carregando reserva...</CenterCard>;
   }
@@ -1207,11 +1211,20 @@ export default function ReservationDetail() {
   const headerTitle = isTutor ? "Detalhe da sua reserva" : isCaregiver ? "Reserva recebida" : "Detalhe da reserva";
   const effectiveToken = token || user?.token || null;
 
+  const otherUserName = isTutor ? caregiver?.name : isCaregiver ? tutor?.name : "";
+
   return (
     <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] py-8 px-6">
       {/* ✅ MODAL 1: confirmar cancelamento */}
-      <PcModal open={cancelConfirmOpen} title="Cancelar reserva?" onClose={closeCancelConfirm} disableClose={cancelBusy}>
-        <p className="text-sm opacity-90">Você tem certeza que deseja cancelar esta reserva?</p>
+      <PcModal
+        open={cancelConfirmOpen}
+        title="Cancelar reserva?"
+        onClose={closeCancelConfirm}
+        disableClose={cancelBusy}
+      >
+        <p className="text-sm opacity-90">
+          Você tem certeza que deseja cancelar esta reserva?
+        </p>
 
         <div className="mt-4 flex flex-wrap gap-3 justify-end">
           <button
@@ -1219,7 +1232,9 @@ export default function ReservationDetail() {
             onClick={closeCancelConfirm}
             disabled={cancelBusy}
             className={`px-4 py-2 rounded-lg font-semibold ${
-              cancelBusy ? "bg-gray-200 text-gray-500 cursor-not-allowed" : "bg-gray-200 hover:bg-gray-300 text-[#5A3A22]"
+              cancelBusy
+                ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+                : "bg-gray-200 hover:bg-gray-300 text-[#5A3A22]"
             }`}
           >
             Voltar
@@ -1246,7 +1261,9 @@ export default function ReservationDetail() {
         disableClose={cancelBusy}
         maxWidth="max-w-[640px]"
       >
-        <p className="text-sm opacity-90">Para cancelar, informe o motivo (obrigatório).</p>
+        <p className="text-sm opacity-90">
+          Para cancelar, informe o motivo (obrigatório).
+        </p>
 
         <div className="mt-3">
           <textarea
@@ -1258,7 +1275,9 @@ export default function ReservationDetail() {
             className="w-full rounded-xl border p-3 text-sm outline-none focus:ring-2 focus:ring-[#FFD700]/60"
             disabled={cancelBusy}
           />
-          <p className="mt-2 text-xs opacity-70">* Campo obrigatório</p>
+          <p className="mt-2 text-xs opacity-70">
+            * Campo obrigatório
+          </p>
         </div>
 
         <div className="mt-4 flex flex-wrap gap-3 justify-end">
@@ -1267,7 +1286,9 @@ export default function ReservationDetail() {
             onClick={closeCancelReason}
             disabled={cancelBusy}
             className={`px-4 py-2 rounded-lg font-semibold ${
-              cancelBusy ? "bg-gray-200 text-gray-500 cursor-not-allowed" : "bg-gray-200 hover:bg-gray-300 text-[#5A3A22]"
+              cancelBusy
+                ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+                : "bg-gray-200 hover:bg-gray-300 text-[#5A3A22]"
             }`}
           >
             Voltar
@@ -1330,7 +1351,8 @@ export default function ReservationDetail() {
           <div className="pc-card pc-card-accent">
             <h2 className="font-semibold mb-2">Localização</h2>
             <p>
-              <b>Bairro/Cidade:</b> {[reservation.neighborhood, reservation.city].filter(Boolean).join(" — ") || "—"}
+              <b>Bairro/Cidade:</b>{" "}
+              {[reservation.neighborhood, reservation.city].filter(Boolean).join(" — ") || "—"}
             </p>
 
             {isTutor ? (
@@ -1533,24 +1555,20 @@ export default function ReservationDetail() {
 
         {(isTutor || isCaregiver) && (
           <div className="mt-8" ref={chatSectionRef} id="chat">
-            {!canChatNow ? (
-              <div className="pc-card pc-card-accent text-[#5A3A22]">
-                O chat só é liberado após a reserva ser aceita.
-              </div>
-            ) : (
+            {canChatNow ? (
               <ChatErrorBoundary>
                 <ChatBox
-                  key={`chat-${reservation.id}`}
                   reservationId={reservation.id}
                   token={effectiveToken}
                   currentUserId={myUserId}
-                  otherUserName={isTutor ? caregiver?.name : tutor?.name}
+                  otherUserName={otherUserName}
                   canChat={true}
-                  onNewMessage={() => {
-                    // deixa o ChatBox disparar eventos globais; aqui não precisa fazer nada
-                  }}
                 />
               </ChatErrorBoundary>
+            ) : (
+              <div className="pc-card pc-card-accent text-[#5A3A22]">
+                O chat só é liberado após a reserva ser aceita.
+              </div>
             )}
           </div>
         )}
