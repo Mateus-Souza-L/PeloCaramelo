@@ -1213,8 +1213,19 @@ export default function CaregiverDetail() {
       return;
     }
 
-    if (pets.length > 0 && selectedPetIds.length === 0) {
-      showToast("Escolha pelo menos um pet para essa pré-reserva. 🐾", "error");
+    // ✅ se não tem pet cadastrado, avisa e leva pro painel de pets
+    if (!Array.isArray(pets) || pets.length === 0) {
+      showToast(
+        "Para fazer a pré-reserva, você precisa cadastrar pelo menos 1 pet em “Meus Pets”. 🐾",
+        "notify"
+      );
+      navigate("/dashboard", { state: { initialTab: "pets" } });
+      return;
+    }
+
+    // ✅ se tem pets cadastrados, precisa selecionar pelo menos 1
+    if (!Array.isArray(selectedPetIds) || selectedPetIds.length === 0) {
+      showToast("Selecione pelo menos 1 pet para enviar a pré-reserva. 🐾", "error");
       return;
     }
 
