@@ -6,13 +6,8 @@ const AVAIL_COL_CAREGIVER = process.env.AVAIL_COL_CAREGIVER || "caregiver_id";
 const AVAIL_COL_DATEKEY = process.env.AVAIL_COL_DATEKEY || "date_key";
 const AVAIL_COL_AVAILABLE = process.env.AVAIL_COL_AVAILABLE || "is_available";
 
-const BLOCKING_STATUSES = [
-  "Aceita",
-  "Finalizada",
-  "Concluida",
-  "Concluída",
-  "Em andamento",
-];
+// Status que bloqueiam capacidade (alinhado ao controller)
+const BLOCKING_STATUSES = ["Aceita", "Concluída", "Concluida"];
 
 function assertSafeIdentifier(name, label = "identifier") {
   if (typeof name !== "string" || !name.trim()) {
@@ -170,14 +165,16 @@ async function getPetsSnapshotByIds(tutorId, petsIds) {
 
 /**
  * DEFAULT_DAILY_CAPACITY:
- * - se você setar 1 no .env, vai virar “1 reserva por dia”
- * - recomendo deixar 15 (ou algo razoável) e usar users.daily_capacity para cada cuidador ajustar
+ * - default do sistema (quando users.daily_capacity é NULL)
+ * - você pediu para deixar em 50
+ * - cuidadores poderão escolher no front 1..50
  */
 function getDefaultCap() {
-  const raw = Number(process.env.DEFAULT_DAILY_CAPACITY ?? 15);
-  const cap = Number.isFinite(raw) ? Math.trunc(raw) : 15;
+  const raw = Number(process.env.DEFAULT_DAILY_CAPACITY ?? 50);
+  const cap = Number.isFinite(raw) ? Math.trunc(raw) : 50;
+
   if (cap < 1) return 1;
-  if (cap > 100) return 100;
+  if (cap > 50) return 50; // ✅ máximo fixo 50
   return cap;
 }
 

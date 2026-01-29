@@ -403,6 +403,72 @@ export default function Dashboard() {
   const [tab, setTab] = useState("disponibilidade");
   const [reservations, setReservations] = useState([]);
 
+  // ===========================================================
+  // 🧮 Capacidade diária do cuidador (1..50 no backend)
+  // ===========================================================
+  const [dailyCapacity, setDailyCapacity] = useState(50);
+  const [capacityMin, setCapacityMin] = useState(1);
+  const [capacityMax, setCapacityMax] = useState(50);
+  const [capacityLoading, setCapacityLoading] = useState(false);
+  const [capacitySaving, setCapacitySaving] = useState(false);
+
+  const loadMyCapacityIfCaregiver = useCallback(async () => {
+    if (!isCaregiver || !token) return;
+
+    setCapacityLoading(true);
+    try {
+      const data = await authRequest("/users/me/capacity", token);
+
+      const cap = Number(data?.daily_capacity);
+      const min = Number(data?.min);
+      const max = Number(data?.max);
+
+      if (Number.isFinite(min)) setCapacityMin(min);
+      if (Number.isFinite(max)) setCapacityMax(max);
+
+      if (Number.isFinite(cap)) {
+        setDailyCapacity(cap);
+      } else {
+        // fallback seguro
+        setDailyCapacity(50);
+      }
+    } catch (err) {
+      console.error("Erro ao carregar capacidade (/users/me/capacity):", err);
+    } finally {
+      setCapacityLoading(false);
+    }
+  }, [isCaregiver, token]);
+
+  const saveMyCapacityIfCaregiver = useCallback(
+    async (nextValue) => {
+      if (!isCaregiver || !token) return;
+
+      const parsed = Number(nextValue);
+      if (!Number.isFinite(parsed)) return;
+
+      // clamp no front só pra UX, o backend também garante
+      const clamped = Math.max(capacityMin, Math.min(capacityMax, Math.trunc(parsed)));
+
+      setDailyCapacity(clamped);
+      setCapacitySaving(true);
+
+      try {
+        await authRequest("/users/me/capacity", token, {
+          method: "PUT",
+          body: { daily_capacity: clamped },
+        });
+
+        showToast("Capacidade diária atualizada ✅", "success");
+      } catch (err) {
+        console.error("Erro ao salvar capacidade (/users/me/capacity):", err);
+        showToast("Não foi possível salvar a capacidade. Tente novamente.", "error");
+      } finally {
+        setCapacitySaving(false);
+      }
+    },
+    [isCaregiver, token, capacityMin, capacityMax, showToast]
+  );
+
   const [reservationsLoading, setReservationsLoading] = useState(false);
   const [reservationsLoaded, setReservationsLoaded] = useState(false);
 
@@ -1078,6 +1144,7 @@ export default function Dashboard() {
         stateTab === "reservas" || tabQuery === "reservas" ? "reservas" : "disponibilidade";
       setTab(target);
       loadAvailabilityIfCaregiver();
+      loadMyCapacityIfCaregiver();
     } else if (isTutor) {
       let target = "reservasTutor";
       if (stateTab === "pets" || tabQuery === "pets") target = "pets";
@@ -1881,6 +1948,44 @@ export default function Dashboard() {
                   <span className="w-3 h-3 rounded-full bg-red-400 inline-block" /> Remover
                 </span>
               </div>
+
+              {/* ✅ Capacidade diária */}
+              <div className="bg-[#F9F5F2] p-4 rounded-lg shadow-md mb-4">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div>
+                    <h3 className="text-base font-semibold text-[#5A3A22]">
+                      Capacidade diária
+                    </h3>
+                    <p className="text-xs text-[#5A3A22] opacity-80 mt-1">
+                      Quantas reservas simultâneas você aceita por dia (máx. {capacityMax}).
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <select
+                      value={dailyCapacity}
+                      disabled={capacityLoading || capacitySaving}
+                      onChange={(e) => saveMyCapacityIfCaregiver(e.target.value)}
+                      className="border rounded-xl px-3 py-2 text-sm text-[#5A3A22] bg-white shadow-sm outline-none focus:ring-2 focus:ring-[#FFD700]/70"
+                    >
+                      {Array.from({ length: capacityMax - capacityMin + 1 }, (_, i) => capacityMin + i).map(
+                        (n) => (
+                          <option key={n} value={n}>
+                            {n} / dia
+                          </option>
+                        )
+                      )}
+                    </select>
+
+                    {(capacityLoading || capacitySaving) && (
+                      <span className="text-xs text-[#5A3A22] opacity-70">
+                        {capacityLoading ? "Carregando..." : "Salvando..."}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
 
               <div className="flex justify-center">
                 <Calendar

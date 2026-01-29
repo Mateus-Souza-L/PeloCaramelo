@@ -222,7 +222,10 @@ async function updateMyAvailabilityController(req, res) {
 // Capacidade diária do cuidador
 // -----------------------------------------------------------------------------
 // ✅ Aceita payload tanto em daily_capacity quanto em dailyCapacity
-// ✅ Faz clamp 1..100 (sem quebrar o fluxo)
+// ✅ Agora clamp 1..50 (como você pediu)
+const CAPACITY_MIN = 1;
+const CAPACITY_MAX = 50;
+
 function ensureCaregiver(req, res) {
   if (req.user?.role !== "caregiver") {
     res.status(403).json({ error: "Apenas cuidadores." });
@@ -239,7 +242,9 @@ async function getMyDailyCapacityController(req, res) {
     if (!ensureCaregiver(req, res)) return;
 
     const daily_capacity = await getDailyCapacityByUserId(userId);
-    return res.json({ daily_capacity });
+
+    // ✅ ajuda o front a montar slider/select sem “hardcode”
+    return res.json({ daily_capacity, min: CAPACITY_MIN, max: CAPACITY_MAX });
   } catch (err) {
     console.error("Erro em GET /users/me/capacity:", err);
     return res.status(500).json({ error: "Erro ao buscar capacidade." });
@@ -262,17 +267,21 @@ async function updateMyDailyCapacityController(req, res) {
     const parsed = toInt(raw);
     if (parsed == null) {
       return res.status(400).json({
-        error: "daily_capacity inválido (envie um número inteiro 1–100).",
+        error: `daily_capacity inválido (envie um número inteiro ${CAPACITY_MIN}–${CAPACITY_MAX}).`,
       });
     }
 
-    const cap = clampInt(parsed, 1, 100);
+    const cap = clampInt(parsed, CAPACITY_MIN, CAPACITY_MAX);
 
+    // se veio fora do range, clampInt já ajustou, mas aqui você pode preferir “bloquear”.
+    // Como seu fluxo atual já aceitava clamp, mantive o comportamento (sem quebrar UX).
     const updated = await updateDailyCapacityByUserId(userId, cap);
 
     return res.json({
       ok: true,
       daily_capacity: Number(updated?.daily_capacity ?? cap),
+      min: CAPACITY_MIN,
+      max: CAPACITY_MAX,
     });
   } catch (err) {
     console.error("Erro em PUT/PATCH /users/me/capacity:", err);
