@@ -176,10 +176,14 @@ export default function ChatBox({
         if (s && joinedRef.current) {
           try {
             s.emit("chat:read", { reservationId });
-          } catch {}
+          } catch { }
         }
-      } catch {
-        // silencioso
+      } catch (err) {
+        // ✅ 401/403 podem acontecer no "timing" da aceitação — não é erro real pro usuário
+        const status = err?.status ?? err?.response?.status ?? err?.statusCode ?? null;
+        if (status === 401 || status === 403) return;
+
+        // demais erros ficam silenciosos também (como já estava)
       } finally {
         markReadInFlightRef.current = false;
       }
@@ -261,8 +265,8 @@ export default function ChatBox({
     const list = Array.isArray(data)
       ? data
       : Array.isArray(data?.messages)
-      ? data.messages
-      : [];
+        ? data.messages
+        : [];
 
     list.sort(
       (a, b) =>
@@ -330,7 +334,7 @@ export default function ChatBox({
           socketCooldownUntilRef.current = Date.now() + SOCKET_COOLDOWN_MS;
           try {
             socketRef.current?.disconnect();
-          } catch {}
+          } catch { }
         }
       });
     }
@@ -384,7 +388,7 @@ export default function ChatBox({
       if (fromOther && joinedRef.current && msgId != null) {
         try {
           s.emit("chat:delivered", { reservationId, messageId: msgId });
-        } catch {}
+        } catch { }
       }
 
       if (!fromOther) return;
@@ -394,7 +398,7 @@ export default function ChatBox({
 
       try {
         onNewMessage?.({ reservationId });
-      } catch {}
+      } catch { }
 
       window.dispatchEvent(
         new CustomEvent("chat-new-message", { detail: { reservationId } })
@@ -464,7 +468,7 @@ export default function ChatBox({
     return () => {
       try {
         s.emit("leave:reservation", { reservationId });
-      } catch {}
+      } catch { }
 
       joinedRef.current = false;
       setPollingEnabled(true);
@@ -502,6 +506,7 @@ export default function ChatBox({
     lastNewEventIdRef.current = null;
 
     // ✅ 1 chamada inicial (controlada)
+    // Se o backend ainda não liberou, 401/403 serão ignorados pelo markReadServer.
     markReadServer({ force: true });
 
     async function loadMessages({ isPolling = false } = {}) {
@@ -545,9 +550,17 @@ export default function ChatBox({
           return;
         }
       } catch (err) {
+        const status = err?.status ?? err?.response?.status ?? err?.statusCode ?? null;
+
+        // ✅ Durante a transição de "Aceitar reserva", o backend pode responder 401/403 por instantes.
+        // Não mostra toast (evita o "erro de chat" visual), só espera próxima tentativa.
+        if (status === 401 || status === 403) {
+          return;
+        }
+
         console.error("Erro ao carregar mensagens:", err);
         if (!cancelled && !isPolling) {
-          showToast(err.message || "Erro ao carregar mensagens.", "error");
+          showToast(err?.message || "Erro ao carregar mensagens.", "error");
         }
       } finally {
         if (!cancelled && !isPolling) setLoading(false);
@@ -721,20 +734,19 @@ export default function ChatBox({
               className={`flex ${isMine ? "justify-end" : "justify-start"}`}
             >
               <div
-                className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm ${
-                  isMine
-                    ? "bg-[#5A3A22] text-white rounded-br-sm"
-                    : "bg-[#FFE7B8] text-[#5A3A22] rounded-bl-sm"
-                } ${isGrouped ? "mt-1" : "mt-2"}`}
+                className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm ${isMine
+                  ? "bg-[#5A3A22] text-white rounded-br-sm"
+                  : "bg-[#FFE7B8] text-[#5A3A22] rounded-bl-sm"
+                  } ${isGrouped ? "mt-1" : "mt-2"}`}
               >
                 <p className="whitespace-pre-wrap break-words">{msg.message}</p>
                 <div className="mt-1 flex items-center justify-end gap-2">
                   <span className="text-[10px] opacity-80">
                     {msg.created_at || msg.createdAt
                       ? new Date(msg.created_at || msg.createdAt).toLocaleString("pt-BR", {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })
                       : ""}
                   </span>
                   {renderStatus(msg)}

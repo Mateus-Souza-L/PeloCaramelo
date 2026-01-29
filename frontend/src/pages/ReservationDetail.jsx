@@ -152,9 +152,9 @@ const normalizePetObject = (p) => {
     ? adjectivesRaw.filter(Boolean).map(String)
     : typeof adjectivesRaw === "string"
       ? adjectivesRaw
-          .split(/[,•|]/g)
-          .map((s) => s.trim())
-          .filter(Boolean)
+        .split(/[,•|]/g)
+        .map((s) => s.trim())
+        .filter(Boolean)
       : [];
 
   const image = pickPetImage(p);
@@ -922,7 +922,7 @@ export default function ReservationDetail() {
       console.error("Erro ao sincronizar status no servidor:", err);
       showToast(
         err?.message ||
-          "Não foi possível sincronizar o status com o servidor. Ele foi atualizado apenas localmente por enquanto.",
+        "Não foi possível sincronizar o status com o servidor. Ele foi atualizado apenas localmente por enquanto.",
         "error"
       );
       return false;
@@ -1183,6 +1183,11 @@ export default function ReservationDetail() {
   const headerTitle = isTutor ? "Detalhe da sua reserva" : isCaregiver ? "Reserva recebida" : "Detalhe da reserva";
   const effectiveToken = token || user?.token || null;
 
+  const canChatNow = useMemo(() => {
+    const s = String(reservation?.status || "");
+    return s === "Aceita" || s === "Concluída" || s === "Concluida";
+  }, [reservation?.status]);
+
   return (
     <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] py-8 px-6">
       {/* ✅ MODAL 1: confirmar cancelamento */}
@@ -1201,9 +1206,8 @@ export default function ReservationDetail() {
             type="button"
             onClick={closeCancelConfirm}
             disabled={cancelBusy}
-            className={`px-4 py-2 rounded-lg font-semibold ${
-              cancelBusy ? "bg-gray-200 text-gray-500 cursor-not-allowed" : "bg-gray-200 hover:bg-gray-300 text-[#5A3A22]"
-            }`}
+            className={`px-4 py-2 rounded-lg font-semibold ${cancelBusy ? "bg-gray-200 text-gray-500 cursor-not-allowed" : "bg-gray-200 hover:bg-gray-300 text-[#5A3A22]"
+              }`}
           >
             Voltar
           </button>
@@ -1212,9 +1216,8 @@ export default function ReservationDetail() {
             type="button"
             onClick={confirmCancelFlow}
             disabled={cancelBusy}
-            className={`px-4 py-2 rounded-lg font-semibold text-white ${
-              cancelBusy ? "bg-gray-400 cursor-not-allowed" : "bg-[#95301F] hover:bg-[#7d2618]"
-            }`}
+            className={`px-4 py-2 rounded-lg font-semibold text-white ${cancelBusy ? "bg-gray-400 cursor-not-allowed" : "bg-[#95301F] hover:bg-[#7d2618]"
+              }`}
           >
             Sim, cancelar
           </button>
@@ -1253,9 +1256,8 @@ export default function ReservationDetail() {
             type="button"
             onClick={closeCancelReason}
             disabled={cancelBusy}
-            className={`px-4 py-2 rounded-lg font-semibold ${
-              cancelBusy ? "bg-gray-200 text-gray-500 cursor-not-allowed" : "bg-gray-200 hover:bg-gray-300 text-[#5A3A22]"
-            }`}
+            className={`px-4 py-2 rounded-lg font-semibold ${cancelBusy ? "bg-gray-200 text-gray-500 cursor-not-allowed" : "bg-gray-200 hover:bg-gray-300 text-[#5A3A22]"
+              }`}
           >
             Voltar
           </button>
@@ -1264,9 +1266,8 @@ export default function ReservationDetail() {
             type="button"
             onClick={submitCancelReason}
             disabled={cancelBusy}
-            className={`px-4 py-2 rounded-lg font-semibold text-[#5A3A22] ${
-              cancelBusy ? "bg-[#FFD700]/50 cursor-not-allowed" : "bg-[#FFD700] hover:bg-[#f5c400]"
-            }`}
+            className={`px-4 py-2 rounded-lg font-semibold text-[#5A3A22] ${cancelBusy ? "bg-[#FFD700]/50 cursor-not-allowed" : "bg-[#FFD700] hover:bg-[#f5c400]"
+              }`}
           >
             {cancelBusy ? "Cancelando..." : "Confirmar cancelamento"}
           </button>
@@ -1493,11 +1494,10 @@ export default function ReservationDetail() {
                   type="button"
                   onClick={openRatingModal}
                   disabled={ratingBusy}
-                  className={`mt-3 px-4 py-2 rounded-lg font-semibold shadow-md text-sm ${
-                    ratingBusy
-                      ? "bg-[#FFD700]/60 cursor-not-allowed text-[#5A3A22]"
-                      : "bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22]"
-                  }`}
+                  className={`mt-3 px-4 py-2 rounded-lg font-semibold shadow-md text-sm ${ratingBusy
+                    ? "bg-[#FFD700]/60 cursor-not-allowed text-[#5A3A22]"
+                    : "bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22]"
+                    }`}
                 >
                   {ratingBusy ? "Enviando..." : isTutor ? "Avaliar cuidador" : "Avaliar tutor"}
                 </button>
@@ -1522,12 +1522,11 @@ export default function ReservationDetail() {
         {(isTutor || isCaregiver) && (
           <div className="mt-8" ref={chatSectionRef} id="chat">
             <ChatBox
-              key={`${reservation.id}-${reservation.status}`}
               reservationId={reservation.id}
               token={effectiveToken}
               currentUserId={myUserId}
               otherUserName={isTutor ? caregiver?.name ?? "Cuidador" : tutor?.name ?? "Tutor"}
-              canChat={reservation.status === "Aceita"}
+              canChat={canChatNow}
             />
           </div>
         )}
