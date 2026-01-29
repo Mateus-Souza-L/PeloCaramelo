@@ -132,7 +132,7 @@ function normalizeReservationFromLocal(r) {
     caregiverReview,
 
     __hasTutorReview: r.__hasTutorReview ?? r.has_tutor_review ?? false,
-        __hasCaregiverReview: r.__hasCaregiverReview ?? r.has_caregiver_review ?? false,
+    __hasCaregiverReview: r.__hasCaregiverReview ?? r.has_caregiver_review ?? false,
 
     petsIds,
     cancelReason: r.cancelReason ?? r.cancel_reason ?? null,
@@ -711,6 +711,8 @@ export default function Dashboard() {
 
                 caregiverRating: srv.caregiverRating ?? local.caregiverRating ?? null,
                 caregiverReview: srv.caregiverReview ?? local.caregiverReview ?? null,
+
+                cancelReason: srv.cancelReason ?? local.cancelReason ?? null,
 
                 __hasTutorReview:
                   srv.__hasTutorReview ||
@@ -2249,6 +2251,11 @@ export default function Dashboard() {
 
                         {statusHelper && (
                           <p className="mt-1 text-xs text-[#5A3A22]">{statusHelper}</p>
+                        )}
+                        {r.status === "Cancelada" && r.cancelReason && (
+                          <p className="mt-2 text-xs text-[#5A3A22] bg-[#FFF8F0] border rounded-lg p-2">
+                            <b>Motivo do cancelamento:</b> {r.cancelReason}
+                          </p>
                         )}
                       </button>
 
