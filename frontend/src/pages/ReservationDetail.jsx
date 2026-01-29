@@ -1,5 +1,5 @@
 // src/pages/ReservationDetail.jsx
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback, Component } from "react";
 import { useParams, useNavigate, Link, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../components/ToastProvider";
@@ -341,6 +341,29 @@ function PcModal({ open, title, children, onClose, disableClose = false, maxWidt
       </div>
     </div>
   );
+}
+
+class ChatErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  componentDidCatch(err) {
+    console.error("[ChatErrorBoundary] erro no ChatBox:", err);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="pc-card pc-card-accent text-[#5A3A22]">
+          O chat falhou ao carregar nesta reserva. Recarregue a página ou tente novamente mais tarde.
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 export default function ReservationDetail() {
@@ -1521,13 +1544,16 @@ export default function ReservationDetail() {
 
         {(isTutor || isCaregiver) && (
           <div className="mt-8" ref={chatSectionRef} id="chat">
-            <ChatBox
-              reservationId={reservation.id}
-              token={effectiveToken}
-              currentUserId={myUserId}
-              otherUserName={isTutor ? caregiver?.name ?? "Cuidador" : tutor?.name ?? "Tutor"}
-              canChat={canChatNow}
-            />
+            <ChatErrorBoundary>
+              <ChatBox
+                key={`${reservation.id}-${reservation.status}`}
+                reservationId={reservation.id}
+                token={effectiveToken}
+                currentUserId={myUserId}
+                otherUserName={isTutor ? caregiver?.name ?? "Cuidador" : tutor?.name ?? "Tutor"}
+                canChat={reservation.status === "Aceita"}
+              />
+            </ChatErrorBoundary>
           </div>
         )}
 
