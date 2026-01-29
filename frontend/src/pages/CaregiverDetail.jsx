@@ -17,7 +17,11 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:4000";
    - depois movemos para ../utils/normalize
    =========================== */
 const DEFAULT_IMG = "/paw.png";
-const toNum = (v) => (v === "" || v == null ? null : Number(v));
+const toNum = (v) => {
+  if (v === "" || v == null) return null;
+  const n = Number(String(v).replace(",", "."));
+  return Number.isFinite(n) ? n : null;
+};
 const cap = (s = "") => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
 const serviceLabel = (k) =>
@@ -84,6 +88,13 @@ function normalizeCaregiver(raw) {
     ...raw,
     image: raw?.image || DEFAULT_IMG,
     prices: {
+      // ✅ por serviço (fallback)
+      hospedagem: priceMap.hospedagem,
+      creche: priceMap.creche,
+      petSitter: priceMap.petSitter,
+      passeios: priceMap.passeios,
+
+      // ✅ mantém seu formato atual (UI)
       hospedagemDia: priceMap.hospedagem,
       crecheDiaria: priceMap.creche,
       petSitterDiaria: priceMap.petSitter,
@@ -214,6 +225,12 @@ export default function CaregiverDetail() {
     return Number.isFinite(n) ? n : null;
   };
 
+  const toNumSafe = (v) => {
+    if (v == null || v === "") return null;
+    const n = Number(String(v).replace(",", "."));
+    return Number.isFinite(n) ? n : null;
+  };
+
   // ✅ pega image OU photo (compat)
   const pickPetImage = (p) => p?.image || p?.photo || p?.img || null;
 
@@ -229,14 +246,14 @@ export default function CaregiverDetail() {
       rv.reviewer_role ||
       rv.role ||
       (rv.reviewer_id &&
-      rv.tutor_id &&
-      String(rv.reviewer_id) === String(rv.tutor_id)
+        rv.tutor_id &&
+        String(rv.reviewer_id) === String(rv.tutor_id)
         ? "tutor"
         : rv.reviewer_id &&
           rv.caregiver_id &&
           String(rv.reviewer_id) === String(rv.caregiver_id)
-        ? "caregiver"
-        : null);
+          ? "caregiver"
+          : null);
 
     const authorName =
       rv.author_name ||
@@ -248,10 +265,10 @@ export default function CaregiverDetail() {
     const createdAt = rv.created_at
       ? String(rv.created_at)
       : rv.createdAt
-      ? String(rv.createdAt)
-      : rv.date
-      ? String(rv.date)
-      : null;
+        ? String(rv.createdAt)
+        : rv.date
+          ? String(rv.date)
+          : null;
 
     const rating = Number(rv.rating ?? rv.stars ?? rv.nota ?? 0);
 
@@ -267,9 +284,9 @@ export default function CaregiverDetail() {
     return {
       id: toStr(
         rv.id ||
-          rv.review_id ||
-          rv.reviewId ||
-          `${Date.now()}_${Math.random().toString(16).slice(2)}`
+        rv.review_id ||
+        rv.reviewId ||
+        `${Date.now()}_${Math.random().toString(16).slice(2)}`
       ),
       reservationId: reservationId != null ? String(reservationId) : null,
       authorRole: authorRole ? String(authorRole) : null,
@@ -456,8 +473,8 @@ export default function CaregiverDetail() {
             user.role === "tutor"
               ? "/reservations/tutor"
               : user.role === "caregiver"
-              ? "/reservations/caregiver"
-              : null;
+                ? "/reservations/caregiver"
+                : null;
 
           if (endpoint) {
             const data = await authRequest(endpoint, token);
@@ -472,10 +489,10 @@ export default function CaregiverDetail() {
               city: r.city || "",
               neighborhood: r.neighborhood || "",
               service: r.service,
-              pricePerDay: Number(r.price_per_day || 0),
+              pricePerDay: toNumSafe(r.price_per_day ?? r.pricePerDay ?? r.price),
               startDate: r.start_date ? String(r.start_date).slice(0, 10) : "",
               endDate: r.end_date ? String(r.end_date).slice(0, 10) : "",
-              total: Number(r.total || 0),
+              total: toNumSafe(r.total),
               status: r.status || "Pendente",
               tutorRating: r.tutor_rating,
               tutorReview: r.tutor_review,
@@ -697,10 +714,10 @@ export default function CaregiverDetail() {
       const listRaw = Array.isArray(data?.reviews)
         ? data.reviews
         : Array.isArray(data?.data)
-        ? data.data
-        : Array.isArray(data)
-        ? data
-        : [];
+          ? data.data
+          : Array.isArray(data)
+            ? data
+            : [];
       return listRaw.map(normalizeReviewItem).filter(Boolean);
     };
 
@@ -876,10 +893,10 @@ export default function CaregiverDetail() {
       const listRaw = Array.isArray(data?.reviews)
         ? data.reviews
         : Array.isArray(data?.data)
-        ? data.data
-        : Array.isArray(data)
-        ? data
-        : [];
+          ? data.data
+          : Array.isArray(data)
+            ? data
+            : [];
 
       const normalized = listRaw.map(normalizeReviewItem).filter(Boolean);
 
@@ -1659,11 +1676,10 @@ export default function CaregiverDetail() {
                   <button
                     type="button"
                     onClick={toggleAllPets}
-                    className={`mb-3 px-3 py-1 rounded-full text-xs font-semibold border transition ${
-                      allPetsSelected
-                        ? "bg-[#5A3A22] text-white border-[#5A3A22]"
-                        : "bg-white text-[#5A3A22] border-[#D2A679] hover:bg-[#FFF3D0]"
-                    }`}
+                    className={`mb-3 px-3 py-1 rounded-full text-xs font-semibold border transition ${allPetsSelected
+                      ? "bg-[#5A3A22] text-white border-[#5A3A22]"
+                      : "bg-white text-[#5A3A22] border-[#D2A679] hover:bg-[#FFF3D0]"
+                      }`}
                   >
                     {allPetsSelected ? "Desmarcar todos" : "Selecionar todos os pets"}
                   </button>
@@ -1677,11 +1693,10 @@ export default function CaregiverDetail() {
                           key={pet.id}
                           type="button"
                           onClick={() => togglePet(pet.id)}
-                          className={`px-3 py-2 rounded-xl text-xs md:text-sm border flex items-center gap-2 transition ${
-                            active
-                              ? "bg-[#5A3A22] text-white border-[#5A3A22]"
-                              : "bg-white text-[#5A3A22] border-[#D2A679] hover:bg-[#FFF3D0]"
-                          }`}
+                          className={`px-3 py-2 rounded-xl text-xs md:text-sm border flex items-center gap-2 transition ${active
+                            ? "bg-[#5A3A22] text-white border-[#5A3A22]"
+                            : "bg-white text-[#5A3A22] border-[#D2A679] hover:bg-[#FFF3D0]"
+                            }`}
                         >
                           <img
                             src={pickPetImage(pet) || "/paw.png"}
@@ -1794,9 +1809,8 @@ export default function CaregiverDetail() {
                     return (
                       <div
                         key={rv.id}
-                        className={`pc-card pc-card-accent transition-all duration-300 ${
-                          revealed ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1"
-                        }`}
+                        className={`pc-card pc-card-accent transition-all duration-300 ${revealed ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1"
+                          }`}
                       >
                         <p className="text-sm text-[#5A3A22]/80">
                           <b>{rv.authorName || "Usuário"}</b> — {rv.rating} ★ —{" "}

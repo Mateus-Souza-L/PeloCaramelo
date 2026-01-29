@@ -42,6 +42,27 @@ const safeGetLocalStorage = (key) => {
 const isNonEmptyArray = (v) => Array.isArray(v) && v.length > 0;
 const onlyDigits = (v) => String(v ?? "").replace(/\D+/g, "");
 
+// ✅ NOVO: num safe (mantém null se inválido)
+const toNumSafe = (v) => {
+  if (v == null || v === "") return null;
+  const n = typeof v === "number" ? v : Number(String(v).replace(",", "."));
+  return Number.isFinite(n) ? n : null;
+};
+
+// ✅ NOVO: normaliza string pra comparar nomes de serviço
+const normalizeKey = (s) =>
+  String(s || "")
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+
+const formatMoneyBR = (v) => {
+  const n = toNumSafe(v);
+  if (n == null) return "—";
+  return `R$ ${n.toFixed(2)}`;
+};
+
 const maskPhone = (phone) => {
   const d = onlyDigits(phone);
   if (!d) return "—";
@@ -229,7 +250,11 @@ const normalizeReservationFromApi = (r) => {
     city: r.city || "",
     neighborhood: r.neighborhood || "",
     service: r.service,
-    pricePerDay: Number(r.price_per_day ?? r.pricePerDay ?? 0),
+
+    // ✅ ALTERADO: não “vira 0” quando vem vazio/NaN
+    pricePerDay: toNumSafe(r.price_per_day ?? r.pricePerDay ?? r.price),
+    total: toNumSafe(r.total),
+
     startDate: r.start_date
       ? String(r.start_date).slice(0, 10)
       : r.startDate
@@ -240,7 +265,6 @@ const normalizeReservationFromApi = (r) => {
       : r.endDate
         ? String(r.endDate).slice(0, 10)
         : "",
-    total: Number(r.total || 0),
     status: r.status || "Pendente",
 
     tutorRating: r.tutor_rating ?? r.tutorRating,
@@ -406,6 +430,14 @@ export default function ReservationDetail() {
         merged.caregiverRating = fallbackLocal.caregiverRating;
         merged.caregiverReview =
           fallbackLocal?.caregiverReview ?? merged.caregiverReview;
+      }
+
+      // ✅ NOVO: se servidor vier sem preço, preserva o local (evita virar null/0)
+      if ((merged.pricePerDay == null || merged.pricePerDay <= 0) && fallbackLocal?.pricePerDay > 0) {
+        merged.pricePerDay = fallbackLocal.pricePerDay;
+      }
+      if ((merged.total == null || merged.total <= 0) && fallbackLocal?.total > 0) {
+        merged.total = fallbackLocal.total;
       }
 
       persistLocalReservation(merged);
@@ -611,6 +643,71 @@ export default function ReservationDetail() {
     (isTutor ? reservation?.tutorId : isCaregiver ? reservation?.caregiverId : "") ??
     ""
   );
+
+  // ✅ NOVO: dias da reserva (inclusive)
+  const reservationDays = useMemo(() => {
+    if (!reservation?.startDate || !reservation?.endDate) return null;
+    const s = parseLocalKey(reservation.startDate);
+    const e = parseLocalKey(reservation.endDate);
+    if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return null;
+
+    s.setHours(0, 0, 0, 0);
+    e.setHours(0, 0, 0, 0);
+
+    const diff = Math.floor((e.getTime() - s.getTime()) / 86400000);
+    return diff >= 0 ? diff + 1 : null;
+  }, [reservation?.startDate, reservation?.endDate]);
+
+  // ✅ NOVO: resolve preços do cuidador (caregiver.prices) quando a reserva vier sem preço
+  const caregiverPricesObj = useMemo(() => {
+    const raw = caregiver?.prices ?? null;
+    if (!raw) return null;
+    if (typeof raw === "object") return raw;
+    if (typeof raw === "string") {
+      const parsed = safeJsonParse(raw);
+      return parsed && typeof parsed === "object" ? parsed : null;
+    }
+    return null;
+  }, [caregiver?.prices]);
+
+  const resolvedPricePerDay = useMemo(() => {
+    const direct = toNumSafe(reservation?.pricePerDay);
+    if (direct != null && direct > 0) return direct;
+
+    const svc = reservation?.service ? String(reservation.service).trim() : "";
+    if (!svc) return null;
+
+    const prices = caregiverPricesObj;
+    if (!prices || typeof prices !== "object") return null;
+
+    // tenta match direto
+    const directKey = prices[svc];
+    const dv = toNumSafe(directKey);
+    if (dv != null && dv > 0) return dv;
+
+    // tenta match por chave normalizada (resolve diferenças de acento/case)
+    const target = normalizeKey(svc);
+    for (const [k, v] of Object.entries(prices)) {
+      if (normalizeKey(k) === target) {
+        const n = toNumSafe(v);
+        if (n != null && n > 0) return n;
+      }
+    }
+
+    return null;
+  }, [reservation?.pricePerDay, reservation?.service, caregiverPricesObj]);
+
+  const resolvedTotal = useMemo(() => {
+    const direct = toNumSafe(reservation?.total);
+    if (direct != null && direct > 0) return direct;
+
+    if (resolvedPricePerDay != null && resolvedPricePerDay > 0 && reservationDays != null) {
+      const total = resolvedPricePerDay * reservationDays;
+      return Math.round(total * 100) / 100;
+    }
+
+    return null;
+  }, [reservation?.total, resolvedPricePerDay, reservationDays]);
 
   const clearChatUnreadForThisReservation = useCallback(async () => {
     if (!reservation?.id) return;
@@ -1069,8 +1166,12 @@ export default function ReservationDetail() {
               {formatDateBR(reservation.endDate)}
             </p>
             <p><b>Serviço:</b> {reservation.service}</p>
-            <p><b>Preço/dia:</b> R$ {Number(reservation.pricePerDay || 0).toFixed(2)}</p>
-            <p><b>Total:</b> R$ {Number(reservation.total || 0).toFixed(2)}</p>
+
+            {/* ✅ ALTERADO: usa o preço resolvido (reserva ou fallback do cuidador) */}
+            <p><b>Preço/dia:</b> {formatMoneyBR(resolvedPricePerDay)}</p>
+
+            {/* ✅ ALTERADO: usa total resolvido (reserva ou cálculo) */}
+            <p><b>Total:</b> {formatMoneyBR(resolvedTotal)}</p>
 
             {reservation.status === "Recusada" && reservation.rejectReason && (
               <div className="mt-3 p-3 rounded-xl border bg-[#FFF8F0]">

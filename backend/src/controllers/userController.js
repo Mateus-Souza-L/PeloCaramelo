@@ -42,6 +42,20 @@ function toNum(v) {
   return Number.isFinite(n) ? n : null;
 }
 
+function toInt(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  return Math.trunc(n);
+}
+
+function clampInt(n, min, max) {
+  if (!Number.isFinite(n)) return null;
+  const x = Math.trunc(n);
+  if (x < min) return min;
+  if (x > max) return max;
+  return x;
+}
+
 // -----------------------------------------------------------------------------
 // GET /users/me
 // -----------------------------------------------------------------------------
@@ -93,15 +107,7 @@ async function updateMeController(req, res) {
     const updates = {};
 
     // campos básicos
-    const basicFields = [
-      "city",
-      "neighborhood",
-      "phone",
-      "address",
-      "bio",
-      "image",
-      "cep",
-    ];
+    const basicFields = ["city", "neighborhood", "phone", "address", "bio", "image", "cep"];
 
     basicFields.forEach((field) => {
       if (!Object.prototype.hasOwnProperty.call(body, field)) return;
@@ -132,9 +138,7 @@ async function updateMeController(req, res) {
 
       if (Object.prototype.hasOwnProperty.call(body, "courses")) {
         updates.courses = Array.isArray(body.courses)
-          ? body.courses.filter(
-            (c) => typeof c === "string" && c.trim() !== ""
-          )
+          ? body.courses.filter((c) => typeof c === "string" && c.trim() !== "")
           : [];
       }
     }
@@ -217,6 +221,8 @@ async function updateMyAvailabilityController(req, res) {
 // -----------------------------------------------------------------------------
 // Capacidade diária do cuidador
 // -----------------------------------------------------------------------------
+// ✅ Aceita payload tanto em daily_capacity quanto em dailyCapacity
+// ✅ Faz clamp 1..100 (sem quebrar o fluxo)
 function ensureCaregiver(req, res) {
   if (req.user?.role !== "caregiver") {
     res.status(403).json({ error: "Apenas cuidadores." });
@@ -225,6 +231,7 @@ function ensureCaregiver(req, res) {
   return true;
 }
 
+// GET /users/me/capacity
 async function getMyDailyCapacityController(req, res) {
   try {
     const userId = getAuthenticatedUserId(req, res);
@@ -239,24 +246,36 @@ async function getMyDailyCapacityController(req, res) {
   }
 }
 
+// PUT/PATCH /users/me/capacity
 async function updateMyDailyCapacityController(req, res) {
   try {
     const userId = getAuthenticatedUserId(req, res);
     if (!userId) return;
     if (!ensureCaregiver(req, res)) return;
 
-    const cap = toNum(req.body?.daily_capacity);
+    const raw =
+      req.body?.daily_capacity ??
+      req.body?.dailyCapacity ??
+      req.body?.capacity ??
+      null;
 
-    if (cap == null || !Number.isInteger(cap) || cap < 1 || cap > 100) {
+    const parsed = toInt(raw);
+    if (parsed == null) {
       return res.status(400).json({
-        error: "daily_capacity inválido (1–100).",
+        error: "daily_capacity inválido (envie um número inteiro 1–100).",
       });
     }
 
+    const cap = clampInt(parsed, 1, 100);
+
     const updated = await updateDailyCapacityByUserId(userId, cap);
-    return res.json({ ok: true, daily_capacity: updated.daily_capacity });
+
+    return res.json({
+      ok: true,
+      daily_capacity: Number(updated?.daily_capacity ?? cap),
+    });
   } catch (err) {
-    console.error("Erro em PUT /users/me/capacity:", err);
+    console.error("Erro em PUT/PATCH /users/me/capacity:", err);
     return res.status(500).json({ error: "Erro ao salvar capacidade." });
   }
 }

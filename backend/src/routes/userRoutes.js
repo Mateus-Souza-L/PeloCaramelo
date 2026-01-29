@@ -1,31 +1,57 @@
 // backend/src/routes/userRoutes.js
 const express = require("express");
 const authMiddleware = require("../middleware/authMiddleware");
+
 const {
+  // perfil
   getMeController,
   updateMeController,
-  adminListUsersController,
-  adminBlockUserController,
+
+  // disponibilidade
+  getMyAvailabilityController,
+  updateMyAvailabilityController,
 
   // ✅ capacidade do cuidador
   getMyDailyCapacityController,
   updateMyDailyCapacityController,
+
+  // admin
+  adminListUsersController,
+  adminBlockUserController,
 } = require("../controllers/userController");
 
 const router = express.Router();
 
-// Todas as rotas abaixo exigem autenticação
+// ===========================================================
+// 🔐 Todas as rotas abaixo exigem autenticação
+// ===========================================================
 router.use(authMiddleware);
 
-// Perfil do usuário logado
+// ===========================================================
+// 👤 Perfil do usuário logado
+// ===========================================================
 router.get("/me", getMeController);
 router.patch("/me", updateMeController);
 
-// ✅ Capacidade diária do cuidador
+// ===========================================================
+// 📅 Disponibilidade do cuidador
+// ===========================================================
+router.get("/me/availability", getMyAvailabilityController);
+router.patch("/me/availability", updateMyAvailabilityController);
+
+// ===========================================================
+// 🧮 Capacidade diária do cuidador
+// ===========================================================
+// GET  -> retorna capacidade atual
+// PUT  -> define capacidade (1–100)
+// PATCH-> alias do PUT (frontend pode usar qualquer um)
 router.get("/me/capacity", getMyDailyCapacityController);
 router.put("/me/capacity", updateMyDailyCapacityController);
+router.patch("/me/capacity", updateMyDailyCapacityController);
 
-// Rotas de Admin
+// ===========================================================
+// 🛠️ Admin
+// ===========================================================
 router.get("/admin/users", adminListUsersController);
 router.patch("/admin/users/:id/block", adminBlockUserController);
 
