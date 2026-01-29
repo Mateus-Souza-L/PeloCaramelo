@@ -1544,16 +1544,10 @@ export default function ReservationDetail() {
 
         {(isTutor || isCaregiver) && (
           <div className="mt-8" ref={chatSectionRef} id="chat">
-            <ChatErrorBoundary>
-              <ChatBox
-                key={`${reservation.id}-${reservation.status}`}
-                reservationId={reservation.id}
-                token={effectiveToken}
-                currentUserId={myUserId}
-                otherUserName={isTutor ? caregiver?.name ?? "Cuidador" : tutor?.name ?? "Tutor"}
-                canChat={reservation.status === "Aceita"}
-              />
-            </ChatErrorBoundary>
+            {/* TEMP: desabilita chat pra testar se é ele que está quebrando a página */}
+            <div className="pc-card pc-card-accent text-[#5A3A22]">
+              Chat temporariamente desativado para diagnóstico.
+            </div>
           </div>
         )}
 
