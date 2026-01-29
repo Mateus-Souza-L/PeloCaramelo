@@ -201,7 +201,7 @@ async function wasReviewEmailSent(reservationId) {
     return !!v;
   } catch (e) {
     console.error("[reviewEmail] wasReviewEmailSent error:", e?.message || e);
-    // fail-safe: se não conseguir checar, não bloqueia (mas evita quebrar fluxo)
+    // fail-safe
     return false;
   }
 }
@@ -332,7 +332,6 @@ function getEffectiveRoleForReservation(user, reservation) {
 
 /* ===========================================================
    RESPONSE NORMALIZATION (snake + camel)
-   - resolve “price 0” no frontend quando ele lê pricePerDay
    =========================================================== */
 
 function normalizeReservationResponse(reservation) {
@@ -345,10 +344,7 @@ function normalizeReservationResponse(reservation) {
       ? Number(reservation.pricePerDay)
       : null;
 
-  const total =
-    reservation?.total != null
-      ? Number(reservation.total)
-      : null;
+  const total = reservation?.total != null ? Number(reservation.total) : null;
 
   const startDate = toDateKey(reservation?.start_date ?? reservation?.startDate) || null;
   const endDate = toDateKey(reservation?.end_date ?? reservation?.endDate) || null;
@@ -538,7 +534,6 @@ async function assertCapacityOrThrow(caregiverId, startKey, endKey, excludeReser
   }
 
   if (check.maxOverlapping >= check.capacity) {
-    // ✅ alinhado com seu frontend: ele lê err.capacity e err.overlapping
     return {
       ok: false,
       code: "CAPACITY_FULL",
@@ -623,23 +618,27 @@ async function getUserDisplayNameById(id) {
    DB FALLBACKS (se model não tiver)
    =========================================================== */
 
-async function updateReservationStatusDb(id, status, rejectReason = null) {
+async function updateReservationStatusDb(id, status, reason = null) {
   if (typeof reservationModel.updateReservationStatus === "function") {
-    return reservationModel.updateReservationStatus(id, status, rejectReason);
+    return reservationModel.updateReservationStatus(id, status, reason);
   }
 
   const rid = toPosInt(id);
   if (!rid) return null;
 
+  const cleanedReason = typeof reason === "string" && reason.trim() ? reason.trim() : null;
+
+  // fallback: mantém compat (se o model não existir)
   const sql = `
     UPDATE reservations
       SET status = $2,
-          reject_reason = $3,
+          reject_reason = CASE WHEN $2 = 'Recusada' THEN $3 ELSE NULL END,
+          cancel_reason = CASE WHEN $2 = 'Cancelada' THEN $3 ELSE NULL END,
           updated_at = NOW()
     WHERE id = $1
     RETURNING *
   `;
-  const { rows } = await pool.query(sql, [rid, status, rejectReason]);
+  const { rows } = await pool.query(sql, [rid, status, cleanedReason]);
   return rows?.[0] || null;
 }
 
@@ -655,7 +654,6 @@ async function createReservationController(req, res) {
       return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
     }
 
-    // mantém regra original (tutor cria reserva)
     if (String(user.role || "").toLowerCase() !== "tutor" && !isAdminLikeRole(user.role)) {
       return res.status(403).json({
         error: "Apenas tutor pode criar reserva.",
@@ -807,9 +805,7 @@ async function createReservationController(req, res) {
         const caregiverEmail = cleanNonEmptyString(caregiverUser?.email);
 
         if (!caregiverEmail) {
-          console.warn(
-            "[createReservation] caregiver email ausente. Não foi possível enviar e-mail."
-          );
+          console.warn("[createReservation] caregiver email ausente. Não foi possível enviar e-mail.");
         } else {
           const startBR = formatDateBRFromKey(range.startDate);
           const endBR = formatDateBRFromKey(range.endDate);
@@ -987,8 +983,13 @@ async function updateReservationStatusController(req, res) {
 
     const body = parseBodySafe(req.body);
     const nextStatus = normalizeStatusInput(body.status);
+
     const rejectReasonRaw = body.rejectReason ?? body.reject_reason ?? null;
     const rejectReason = cleanNonEmptyString(rejectReasonRaw);
+
+    // ✅ NOVO: motivo do cancelamento
+    const cancelReasonRaw = body.cancelReason ?? body.cancel_reason ?? null;
+    const cancelReason = cleanNonEmptyString(cancelReasonRaw);
 
     if (!nextStatus) {
       return res.status(400).json({ error: "Status é obrigatório.", code: "MISSING_STATUS" });
@@ -1051,13 +1052,19 @@ async function updateReservationStatusController(req, res) {
         });
       }
 
-      const updated = await updateReservationStatusDb(id, "Cancelada", null);
+      // ✅ salva motivo do cancelamento (se vier)
+      const updated = await updateReservationStatusDb(id, "Cancelada", cancelReason);
 
       await notifyReservationEventSafe({
         reservation: updated,
         actorUser: user,
         type: "status",
-        payload: { reservationId: updated?.id, prevStatus: currentStatus, nextStatus: "Cancelada" },
+        payload: {
+          reservationId: updated?.id,
+          prevStatus: currentStatus,
+          nextStatus: "Cancelada",
+          cancelReason: cancelReason || null,
+        },
       });
 
       try {
@@ -1092,6 +1099,7 @@ async function updateReservationStatusController(req, res) {
               startDate: startBR,
               endDate: endBR,
               reservationUrl: dashboardUrl,
+              cancelReason: cancelReason || null, // ok se template ignorar
             });
             await sendEmail({ to: tutorEmail, ...payloadTutor });
           }
@@ -1104,6 +1112,7 @@ async function updateReservationStatusController(req, res) {
               startDate: startBR,
               endDate: endBR,
               reservationUrl: dashboardUrl,
+              cancelReason: cancelReason || null, // ok se template ignorar
             });
             await sendEmail({ to: caregiverEmail, ...payloadCaregiver });
           }
@@ -1292,25 +1301,20 @@ async function updateReservationStatusController(req, res) {
         }
       }
 
-      // 📧 E-mails: solicitar avaliação pós-reserva (tutor + cuidador) — best-effort + anti-spam
+      // 📧 E-mails: solicitar avaliação pós-reserva — best-effort + anti-spam
       if (nextStatus === "Concluída") {
         try {
           const alreadySent = await wasReviewEmailSent(updated?.id);
           if (!alreadySent) {
             const base = computeFrontendBase(req);
             if (!base) {
-              console.warn(
-                "[reviewRequest] FRONTEND_URL/origin ausente. Não envia e-mails (avaliação)."
-              );
+              console.warn("[reviewRequest] FRONTEND_URL/origin ausente. Não envia e-mails (avaliação).");
             } else {
               const startBR = formatDateBRFromKey(startKey);
               const endBR = formatDateBRFromKey(endKey);
 
-              // ✅ leva direto para a reserva específica; fallback: dashboard
               const rid = updated?.id != null ? String(updated.id) : "";
-              const reviewUrl = rid
-                ? `${base}/reserva/${encodeURIComponent(rid)}`
-                : `${base}/dashboard`;
+              const reviewUrl = rid ? `${base}/reserva/${encodeURIComponent(rid)}` : `${base}/dashboard`;
 
               const tutorUser = await getUserBasicById(tutorId);
               const caregiverUser = await getUserBasicById(caregiverId);
@@ -1324,7 +1328,6 @@ async function updateReservationStatusController(req, res) {
               const caregiverName =
                 caregiverUser?.name || updated?.caregiver_name || updated?.caregiverName || "Cuidador";
 
-              // Tutor avalia cuidador
               if (tutorEmail) {
                 const payloadTutor = reviewRequestTutorEmail({
                   tutorName,
@@ -1336,7 +1339,6 @@ async function updateReservationStatusController(req, res) {
                 await sendEmail({ to: tutorEmail, ...payloadTutor });
               }
 
-              // Cuidador avalia tutor
               if (caregiverEmail) {
                 const payloadCaregiver = reviewRequestCaregiverEmail({
                   caregiverName,
@@ -1348,7 +1350,6 @@ async function updateReservationStatusController(req, res) {
                 await sendEmail({ to: caregiverEmail, ...payloadCaregiver });
               }
 
-              // ✅ marca como enviado apenas depois de tentar enviar (best-effort)
               await markReviewEmailSent(updated?.id);
             }
           }
@@ -1468,7 +1469,6 @@ async function updateReservationRatingController(req, res) {
       });
     }
 
-    // ✅ papel efetivo pela reserva (não pelo user.role)
     const effectiveRole = getEffectiveRoleForReservation(user, reservation);
     if (effectiveRole !== "tutor" && effectiveRole !== "caregiver") {
       return res.status(403).json({
@@ -1479,7 +1479,7 @@ async function updateReservationRatingController(req, res) {
 
     const updated = await reservationModel.updateReservationRating(
       id,
-      effectiveRole, // "tutor" | "caregiver"
+      effectiveRole,
       r,
       typeof comment === "string" ? comment.trim() : null
     );

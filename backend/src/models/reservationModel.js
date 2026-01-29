@@ -81,7 +81,10 @@ function mapReservationRow(row) {
 
     created_at: row.created_at,
     updated_at: row.updated_at,
+
+    // ✅ motivos
     reject_reason: row.reject_reason,
+    cancel_reason: row.cancel_reason,
   };
 
   // compat camel
@@ -89,6 +92,9 @@ function mapReservationRow(row) {
   obj.caregiverId = row.caregiver_id != null ? String(row.caregiver_id) : null;
   obj.startDate = row.start_date;
   obj.endDate = row.end_date;
+
+  // ✅ compat camel p/ motivo de cancelamento
+  obj.cancelReason = row.cancel_reason ?? row.cancelReason ?? null;
 
   return obj;
 }
@@ -364,7 +370,10 @@ function selectReservationWithReviewJoins(whereSql) {
 
       r.created_at,
       r.updated_at,
-      r.reject_reason
+
+      -- ✅ motivos
+      r.reject_reason,
+      r.cancel_reason
 
     FROM reservations r
 
@@ -424,9 +433,13 @@ async function getReservationById(id) {
   return mapReservationRow(result.rows[0]);
 }
 
-async function updateReservationStatus(id, status, rejectReason = null) {
-  const cleanedReason =
-    typeof rejectReason === "string" && rejectReason.trim() ? rejectReason.trim() : null;
+/**
+ * ✅ Atualiza status + motivo conforme status:
+ * - Recusada  -> reject_reason
+ * - Cancelada -> cancel_reason
+ */
+async function updateReservationStatus(id, status, reason = null) {
+  const cleanedReason = typeof reason === "string" && reason.trim() ? reason.trim() : null;
 
   const sql = `
     UPDATE reservations
@@ -434,6 +447,10 @@ async function updateReservationStatus(id, status, rejectReason = null) {
       status = $2::varchar,
       reject_reason = CASE
         WHEN $2::varchar = 'Recusada' THEN $3
+        ELSE NULL
+      END,
+      cancel_reason = CASE
+        WHEN $2::varchar = 'Cancelada' THEN $3
         ELSE NULL
       END,
       updated_at = NOW()
@@ -446,8 +463,7 @@ async function updateReservationStatus(id, status, rejectReason = null) {
 }
 
 async function updateReservationRating(id, role, rating, comment) {
-  const cleanedComment =
-    typeof comment === "string" && comment.trim() ? comment.trim() : null;
+  const cleanedComment = typeof comment === "string" && comment.trim() ? comment.trim() : null;
 
   if (role === "tutor") {
     const sql = `
