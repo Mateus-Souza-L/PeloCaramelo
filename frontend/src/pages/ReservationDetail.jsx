@@ -42,7 +42,7 @@ const safeGetLocalStorage = (key) => {
 const isNonEmptyArray = (v) => Array.isArray(v) && v.length > 0;
 const onlyDigits = (v) => String(v ?? "").replace(/\D+/g, "");
 
-// ✅ num safe (mantém null se inválido)
+// ✅ NOVO: num safe (mantém null se inválido)
 const toNumSafe = (v) => {
   if (v == null || v === "") return null;
   const n = typeof v === "number" ? v : Number(String(v).replace(",", "."));
@@ -60,7 +60,7 @@ const normalizeKey = (s) =>
 const formatMoneyBR = (v) => {
   const n = toNumSafe(v);
   if (n == null) return "—";
-  return `R$ ${n.toFixed(2)}`;
+  return "R$ " + n.toFixed(2);
 };
 
 const maskPhone = (phone) => {
@@ -70,17 +70,17 @@ const maskPhone = (phone) => {
   const ddd = d.length >= 10 ? d.slice(0, 2) : "";
   const rest = ddd ? d.slice(2) : d;
 
-  if (rest.length < 4) return ddd ? `(${ddd}) ${rest}` : rest;
+  if (rest.length < 4) return ddd ? "(" + ddd + ") " + rest : rest;
 
   const first = rest[0];
   const last2 = rest.slice(-2);
   const maskedMid = "*".repeat(Math.max(0, rest.length - 3));
-  const masked = `${first}${maskedMid}${last2}`;
+  const masked = "" + first + maskedMid + last2;
 
   const left = masked.slice(0, Math.min(5, masked.length));
   const right = masked.slice(Math.min(5, masked.length));
 
-  return ddd ? `(${ddd}) ${left}${right ? `-${right}` : ""}` : masked;
+  return ddd ? "(" + ddd + ") " + left + (right ? "-" + right : "") : masked;
 };
 
 const pickPetImage = (p) =>
@@ -95,7 +95,7 @@ const pickPetImage = (p) =>
   p?.photo_url ||
   null;
 
-// ✅ normaliza campos comuns do pet (pra snapshot “variado” funcionar)
+// ✅ normaliza campos comuns do pet
 const normalizePetObject = (p) => {
   if (!p || typeof p !== "object") return null;
 
@@ -103,8 +103,7 @@ const normalizePetObject = (p) => {
 
   const name = p.name ?? p.pet_name ?? p.petName ?? p.pet_nome ?? p.nome ?? "";
 
-  const specie =
-    p.specie ?? p.species ?? p.specie_name ?? p.species_name ?? p.especie ?? p.tipo ?? "";
+  const specie = p.specie ?? p.species ?? p.specie_name ?? p.species_name ?? p.especie ?? p.tipo ?? "";
 
   const breed = p.breed ?? p.race ?? p.raca ?? p.breed_name ?? p.race_name ?? "";
 
@@ -176,9 +175,7 @@ const extractPetsIds = (r) => {
   if (!Array.isArray(petsIds)) petsIds = [petsIds];
 
   if (Array.isArray(r?.pets) && r.pets.length) {
-    const fromPets = r.pets
-      .map((p) => toStr(p?.id ?? p?.pet_id ?? p?.petId ?? ""))
-      .filter(Boolean);
+    const fromPets = r.pets.map((p) => toStr(p?.id ?? p?.pet_id ?? p?.petId ?? "")).filter(Boolean);
     if (fromPets.length) petsIds = fromPets;
   }
 
@@ -190,13 +187,7 @@ const normalizeReservationFromApi = (r) => {
 
   const petsIds = extractPetsIds(r);
 
-  const snapshot =
-    r.pets_snapshot ||
-    r.petsSnapshot ||
-    r.pets_details ||
-    r.petsDetails ||
-    r.pets ||
-    null;
+  const snapshot = r.pets_snapshot || r.petsSnapshot || r.pets_details || r.petsDetails || r.pets || null;
 
   const petsSnapshot = normalizeSnapshotArray(snapshot, petsIds);
 
@@ -213,16 +204,8 @@ const normalizeReservationFromApi = (r) => {
     pricePerDay: toNumSafe(r.price_per_day ?? r.pricePerDay ?? r.price),
     total: toNumSafe(r.total),
 
-    startDate: r.start_date
-      ? String(r.start_date).slice(0, 10)
-      : r.startDate
-        ? String(r.startDate).slice(0, 10)
-        : "",
-    endDate: r.end_date
-      ? String(r.end_date).slice(0, 10)
-      : r.endDate
-        ? String(r.endDate).slice(0, 10)
-        : "",
+    startDate: r.start_date ? String(r.start_date).slice(0, 10) : r.startDate ? String(r.startDate).slice(0, 10) : "",
+    endDate: r.end_date ? String(r.end_date).slice(0, 10) : r.endDate ? String(r.endDate).slice(0, 10) : "",
     status: r.status || "Pendente",
 
     tutorRating: r.tutor_rating ?? r.tutorRating,
@@ -283,7 +266,7 @@ function PcModal({ open, title, children, onClose, disableClose = false, maxWidt
     >
       <div className="absolute inset-0 bg-black/40" />
 
-      <div className={`relative w-full ${maxWidth}`}>
+      <div className={"relative w-full " + maxWidth}>
         <div className="bg-white rounded-2xl shadow-xl border-l-4 border-[#FFD700]/80 p-5">
           <div className="flex items-start justify-between gap-3">
             <h3 className="text-lg font-bold text-[#5A3A22]">{title}</h3>
@@ -350,14 +333,14 @@ export default function ReservationDetail() {
   const [ratingTitle, setRatingTitle] = useState("");
   const [ratingBusy, setRatingBusy] = useState(false);
 
-  // ✅ fluxo padrão do cancelamento (sem prompt do browser)
+  // ✅ NOVO: fluxo padrão do cancelamento
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   const [cancelReasonOpen, setCancelReasonOpen] = useState(false);
   const [cancelReasonText, setCancelReasonText] = useState("");
   const [cancelBusy, setCancelBusy] = useState(false);
   const cancelReasonRef = useRef(null);
 
-  // ✅ trava para evitar abrir o modal 2 indevidamente (clique duplo/Enter)
+  // ✅ trava anti-duplo clique / enter
   const cancelFlowLockRef = useRef(false);
 
   const chatSectionRef = useRef(null);
@@ -388,7 +371,7 @@ export default function ReservationDetail() {
 
   const reservationsStorageKey = useMemo(() => {
     if (!user?.id || !user?.role) return "reservations";
-    return `reservations_${String(user.role)}_${String(user.id)}`;
+    return "reservations_" + String(user.role) + "_" + String(user.id);
   }, [user?.id, user?.role]);
 
   const emitReservationUpdated = useCallback(
@@ -506,13 +489,13 @@ export default function ReservationDetail() {
           token && user && Number.isFinite(numericId) && numericId > 0 && numericId <= 2147483647;
 
         if (shouldFetchFromServer) {
-          const fetchKey = `${String(id)}:${String(token)}:${String(reloadKey)}`;
+          const fetchKey = String(id) + ":" + String(token) + ":" + String(reloadKey);
 
           if (!fetchRef.current.inFlight && fetchRef.current.key !== fetchKey) {
             fetchRef.current.inFlight = true;
 
             try {
-              const data = await authRequest(`/reservations/${id}`, token);
+              const data = await authRequest("/reservations/" + id, token);
               const dbRes = data?.reservation;
 
               if (dbRes) {
@@ -566,7 +549,7 @@ export default function ReservationDetail() {
 
         if (finalReservation?.tutorId) {
           const tid = String(finalReservation.tutorId);
-          const candidateKeys = [`pets_${tid}`, `pets_${Number(tid)}`, `tutorPets_${tid}`, `petsByTutor_${tid}`];
+          const candidateKeys = ["pets_" + tid, "pets_" + Number(tid), "tutorPets_" + tid, "petsByTutor_" + tid];
 
           let found = [];
           for (const k of candidateKeys) {
@@ -597,7 +580,7 @@ export default function ReservationDetail() {
       const relevant =
         k === reservationsStorageKey ||
         k === "users" ||
-        (tid && (k === `pets_${tid}` || k === `tutorPets_${tid}` || k === `petsByTutor_${tid}`));
+        (tid && (k === "pets_" + tid || k === "tutorPets_" + tid || k === "petsByTutor_" + tid));
 
       if (!relevant) return;
       loadAll();
@@ -616,7 +599,7 @@ export default function ReservationDetail() {
     if (!reservation?.id) return false;
 
     try {
-      await authRequest(`/notifications/${reservation.id}/read`, token, { method: "POST" });
+      await authRequest("/notifications/" + reservation.id + "/read", token, { method: "POST" });
 
       window.dispatchEvent(new Event("notifications-changed"));
       window.dispatchEvent(new Event("reservation-notifications-changed"));
@@ -645,11 +628,8 @@ export default function ReservationDetail() {
     return uid === String(reservation.tutorId) || uid === String(reservation.caregiverId) || user?.role === "admin";
   }, [reservation, user?.id, user?.role]);
 
-  const myUserId = String(
-    user?.id ?? (isTutor ? reservation?.tutorId : isCaregiver ? reservation?.caregiverId : "") ?? ""
-  );
+  const myUserId = String(user?.id ?? (isTutor ? reservation?.tutorId : isCaregiver ? reservation?.caregiverId : "") ?? "");
 
-  // ✅ ok ficar como função simples (não use hook depois de returns)
   const canChatNow = (() => {
     const s = String(reservation?.status || "");
     return s === "Aceita" || s === "Concluída" || s === "Concluida" || s === "Finalizada";
@@ -722,7 +702,7 @@ export default function ReservationDetail() {
     if (String(reservation.status) !== "Aceita") return;
 
     try {
-      await authRequest(`/chat/${reservation.id}/read`, token, { method: "POST" });
+      await authRequest("/chat/" + reservation.id + "/read", token, { method: "POST" });
 
       const data = await authRequest("/chat/unread", token);
       const ids = Array.isArray(data?.reservationIds) ? data.reservationIds.map(String) : [];
@@ -902,7 +882,7 @@ export default function ReservationDetail() {
     try {
       const body = extraBody ? { status: newStatus, ...extraBody } : { status: newStatus };
 
-      const data = await authRequest(`/reservations/${reservation.id}/status`, token, {
+      const data = await authRequest("/reservations/" + reservation.id + "/status", token, {
         method: "PATCH",
         body,
       });
@@ -941,7 +921,7 @@ export default function ReservationDetail() {
         comment: (comment || "").trim() || null,
       };
 
-      const data = await authRequest(`/reviews`, token, { method: "POST", body });
+      const data = await authRequest("/reviews", token, { method: "POST", body });
 
       return { ok: !!data?.review, code: null, reservation: data?.reservation || null };
     } catch (err) {
@@ -1030,7 +1010,6 @@ export default function ReservationDetail() {
     if (ok) showToast("Reserva recusada.", "error");
   };
 
-  // ✅ clique no botão Cancelar abre modal de confirmação (padrão)
   const tutorCancel = async () => {
     if (!isTutor || !reservation) return;
 
@@ -1043,7 +1022,6 @@ export default function ReservationDetail() {
     setCancelConfirmOpen(true);
   };
 
-  // ✅ confirma no modal 1 -> abre modal 2 (motivo obrigatório) + trava anti-duplo-clique
   const confirmCancelFlow = () => {
     if (cancelBusy) return;
     if (cancelFlowLockRef.current) return;
@@ -1071,7 +1049,6 @@ export default function ReservationDetail() {
     cancelFlowLockRef.current = false;
   };
 
-  // ✅ submit do motivo (obrigatório) + reverte se backend falhar
   const submitCancelReason = async () => {
     if (!isTutor || !reservation) return;
     if (cancelBusy) return;
@@ -1173,25 +1150,13 @@ export default function ReservationDetail() {
 
     if (!hasAnySelected && !hasAnyDisplay && !tutorHasAnyPet && !didWarnNoPetsRef.current) {
       didWarnNoPetsRef.current = true;
-      showToast(
-        "Para fazer uma reserva, você precisa cadastrar pelo menos 1 pet. Vá em Painel → Meus Pets. 🐾",
-        "notify"
-      );
+      showToast("Para fazer uma reserva, você precisa cadastrar pelo menos 1 pet. Vá em Painel → Meus Pets. 🐾", "notify");
     }
   }, [loading, isTutor, reservation?.id, selectedPetIds.length, displayPets.length, tutorPets?.length, showToast]);
 
-  // ✅ RETURNS CONDICIONAIS (agora sem hooks abaixo deles)
-  if (loading) {
-    return <CenterCard>Carregando reserva...</CenterCard>;
-  }
-
-  if (notFound || !reservation) {
-    return <CenterCard>Reserva não encontrada.</CenterCard>;
-  }
-
-  if (!isOwner) {
-    return <CenterCard>Você não tem acesso a esta reserva.</CenterCard>;
-  }
+  if (loading) return <CenterCard>Carregando reserva...</CenterCard>;
+  if (notFound || !reservation) return <CenterCard>Reserva não encontrada.</CenterCard>;
+  if (!isOwner) return <CenterCard>Você não tem acesso a esta reserva.</CenterCard>;
 
   const headerTitle = isTutor ? "Detalhe da sua reserva" : isCaregiver ? "Reserva recebida" : "Detalhe da reserva";
   const effectiveToken = token || user?.token || null;
@@ -1200,7 +1165,6 @@ export default function ReservationDetail() {
 
   return (
     <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] py-8 px-6">
-      {/* ✅ MODAL 1: confirmar cancelamento */}
       <PcModal open={cancelConfirmOpen} title="Cancelar reserva?" onClose={closeCancelConfirm} disableClose={cancelBusy}>
         <p className="text-sm opacity-90">Você tem certeza que deseja cancelar esta reserva?</p>
 
@@ -1209,11 +1173,12 @@ export default function ReservationDetail() {
             type="button"
             onClick={closeCancelConfirm}
             disabled={cancelBusy}
-            className={`px-4 py-2 rounded-lg font-semibold ${
-              cancelBusy
+            className={
+              "px-4 py-2 rounded-lg font-semibold " +
+              (cancelBusy
                 ? "bg-gray-200 text-gray-500 cursor-not-allowed"
-                : "bg-gray-200 hover:bg-gray-300 text-[#5A3A22]"
-            }`}
+                : "bg-gray-200 hover:bg-gray-300 text-[#5A3A22]")
+            }
           >
             Voltar
           </button>
@@ -1222,16 +1187,16 @@ export default function ReservationDetail() {
             type="button"
             onClick={confirmCancelFlow}
             disabled={cancelBusy}
-            className={`px-4 py-2 rounded-lg font-semibold text-white ${
-              cancelBusy ? "bg-gray-400 cursor-not-allowed" : "bg-[#95301F] hover:bg-[#7d2618]"
-            }`}
+            className={
+              "px-4 py-2 rounded-lg font-semibold text-white " +
+              (cancelBusy ? "bg-gray-400 cursor-not-allowed" : "bg-[#95301F] hover:bg-[#7d2618]")
+            }
           >
             Sim, cancelar
           </button>
         </div>
       </PcModal>
 
-      {/* ✅ MODAL 2: motivo obrigatório */}
       <PcModal
         open={cancelReasonOpen}
         title="Motivo do cancelamento"
@@ -1259,11 +1224,12 @@ export default function ReservationDetail() {
             type="button"
             onClick={closeCancelReason}
             disabled={cancelBusy}
-            className={`px-4 py-2 rounded-lg font-semibold ${
-              cancelBusy
+            className={
+              "px-4 py-2 rounded-lg font-semibold " +
+              (cancelBusy
                 ? "bg-gray-200 text-gray-500 cursor-not-allowed"
-                : "bg-gray-200 hover:bg-gray-300 text-[#5A3A22]"
-            }`}
+                : "bg-gray-200 hover:bg-gray-300 text-[#5A3A22]")
+            }
           >
             Voltar
           </button>
@@ -1272,9 +1238,10 @@ export default function ReservationDetail() {
             type="button"
             onClick={submitCancelReason}
             disabled={cancelBusy}
-            className={`px-4 py-2 rounded-lg font-semibold text-[#5A3A22] ${
-              cancelBusy ? "bg-[#FFD700]/50 cursor-not-allowed" : "bg-[#FFD700] hover:bg-[#f5c400]"
-            }`}
+            className={
+              "px-4 py-2 rounded-lg font-semibold text-[#5A3A22] " +
+              (cancelBusy ? "bg-[#FFD700]/50 cursor-not-allowed" : "bg-[#FFD700] hover:bg-[#f5c400]")
+            }
           >
             {cancelBusy ? "Cancelando..." : "Confirmar cancelamento"}
           </button>
@@ -1325,8 +1292,7 @@ export default function ReservationDetail() {
           <div className="pc-card pc-card-accent">
             <h2 className="font-semibold mb-2">Localização</h2>
             <p>
-              <b>Bairro/Cidade:</b>{" "}
-              {[reservation.neighborhood, reservation.city].filter(Boolean).join(" — ") || "—"}
+              <b>Bairro/Cidade:</b> {[reservation.neighborhood, reservation.city].filter(Boolean).join(" — ") || "—"}
             </p>
 
             {isTutor ? (
@@ -1356,7 +1322,7 @@ export default function ReservationDetail() {
               onClick={() => {
                 const q = encodeURIComponent([reservation.neighborhood, reservation.city].filter(Boolean).join(", "));
                 if (!q) return;
-                window.open(`https://www.google.com/maps/search/?api=1&query=${q}`, "_blank");
+                window.open("https://www.google.com/maps/search/?api=1&query=" + q, "_blank");
               }}
               className="mt-3 bg-gray-200 hover:bg-gray-300 text-[#5A3A22] px-4 py-2 rounded-lg font-semibold shadow-md transition"
             >
@@ -1443,7 +1409,7 @@ export default function ReservationDetail() {
 
                 const petName = pet?.name || "Pet";
                 const specie = pet?.specie || pet?.species || "Espécie não informada";
-                const breed = pet?.breed ? `• ${pet.breed}` : "";
+                const breed = pet?.breed ? "• " + pet.breed : "";
                 const porte = pet?.porte || pet?.port || pet?.size || pet?.portePet || null;
 
                 const petImg = pickPetImage(pet) || DEFAULT_PET_IMG;
@@ -1474,9 +1440,7 @@ export default function ReservationDetail() {
               })}
             </div>
           ) : (
-            <p className="text-sm md:text-base opacity-80 bg-[#FFF8F0] rounded-xl p-3">
-              Pets desta reserva não informados.
-            </p>
+            <p className="text-sm md:text-base opacity-80 bg-[#FFF8F0] rounded-xl p-3">Pets desta reserva não informados.</p>
           )}
         </div>
 
@@ -1487,10 +1451,9 @@ export default function ReservationDetail() {
 
               {alreadyRatedByUser ? (
                 <p className="text-sm opacity-80">
-                  Você avaliou esta reserva com{" "}
-                  <b>⭐ {isTutor ? reservation.tutorRating : reservation.caregiverRating}/5</b>
-                  {isTutor && reservation.tutorReview ? ` — "${reservation.tutorReview}"` : ""}
-                  {isCaregiver && reservation.caregiverReview ? ` — "${reservation.caregiverReview}"` : ""}
+                  Você avaliou esta reserva com <b>⭐ {isTutor ? reservation.tutorRating : reservation.caregiverRating}/5</b>
+                  {isTutor && reservation.tutorReview ? ' — "' + reservation.tutorReview + '"' : ""}
+                  {isCaregiver && reservation.caregiverReview ? ' — "' + reservation.caregiverReview + '"' : ""}
                 </p>
               ) : (
                 <p className="text-sm opacity-70 mb-2">
@@ -1503,11 +1466,12 @@ export default function ReservationDetail() {
                   type="button"
                   onClick={openRatingModal}
                   disabled={ratingBusy}
-                  className={`mt-3 px-4 py-2 rounded-lg font-semibold shadow-md text-sm ${
-                    ratingBusy
+                  className={
+                    "mt-3 px-4 py-2 rounded-lg font-semibold shadow-md text-sm " +
+                    (ratingBusy
                       ? "bg-[#FFD700]/60 cursor-not-allowed text-[#5A3A22]"
-                      : "bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22]"
-                  }`}
+                      : "bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22]")
+                  }
                 >
                   {ratingBusy ? "Enviando..." : isTutor ? "Avaliar cuidador" : "Avaliar tutor"}
                 </button>
@@ -1520,7 +1484,7 @@ export default function ReservationDetail() {
               {counterpartRating && counterpartRating.rating != null ? (
                 <p className="text-sm opacity-80">
                   {counterpartRating.roleLabel} avaliou esta reserva com <b>⭐ {counterpartRating.rating}/5</b>
-                  {counterpartRating.review ? ` — "${counterpartRating.review}"` : ""}
+                  {counterpartRating.review ? ' — "' + counterpartRating.review + '"' : ""}
                 </p>
               ) : (
                 <p className="text-sm opacity-70">Ainda não há avaliação registrada pela outra parte.</p>
