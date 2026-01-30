@@ -24,7 +24,17 @@ import {
 const normalizeReservationFromApi = (r) => {
   if (!r) return null;
 
-  let petsIds = r.pets_ids ?? [];
+  // aceita payloads onde a reserva vem "aninhada"
+  const obj = r.reservation ?? r.item ?? r;
+
+  // petsIds pode vir como pets_ids (string JSON), petsIds (array), etc.
+  let petsIds =
+    obj.pets_ids ??
+    obj.petsIds ??
+    obj.petIds ??
+    obj.pets ??
+    [];
+
   if (typeof petsIds === "string") {
     try {
       const parsed = JSON.parse(petsIds);
@@ -36,33 +46,66 @@ const normalizeReservationFromApi = (r) => {
   if (!Array.isArray(petsIds)) petsIds = [petsIds];
   petsIds = petsIds.map((x) => String(x)).filter(Boolean);
 
+  const startRaw = obj.start_date ?? obj.startDate ?? obj.start ?? "";
+  const endRaw = obj.end_date ?? obj.endDate ?? obj.end ?? "";
+
   return {
-    id: String(r.id),
-    tutorId: r.tutor_id != null ? String(r.tutor_id) : "",
-    tutorName: r.tutor_name,
-    caregiverId: r.caregiver_id != null ? String(r.caregiver_id) : "",
-    caregiverName: r.caregiver_name,
-    city: r.city || "",
-    neighborhood: r.neighborhood || "",
-    service: r.service,
-    pricePerDay: Number(r.price_per_day || 0),
-    startDate: r.start_date ? String(r.start_date).slice(0, 10) : "",
-    endDate: r.end_date ? String(r.end_date).slice(0, 10) : "",
-    total: Number(r.total || 0),
-    status: r.status || "Pendente",
+    id: String(obj.id ?? obj.reservation_id ?? obj.reservationId ?? ""),
 
-    tutorRating: r.tutor_rating ?? null,
-    tutorReview: r.tutor_review ?? null,
-    caregiverRating: r.caregiver_rating ?? null,
-    caregiverReview: r.caregiver_review ?? null,
+    tutorId:
+      obj.tutor_id != null
+        ? String(obj.tutor_id)
+        : obj.tutorId != null
+          ? String(obj.tutorId)
+          : "",
 
-    __hasTutorReview: r.__hasTutorReview ?? r.has_tutor_review ?? false,
-    __hasCaregiverReview: r.__hasCaregiverReview ?? r.has_caregiver_review ?? false,
+    tutorName: obj.tutor_name ?? obj.tutorName ?? "",
+
+    caregiverId:
+      obj.caregiver_id != null
+        ? String(obj.caregiver_id)
+        : obj.caregiverId != null
+          ? String(obj.caregiverId)
+          : "",
+
+    caregiverName: obj.caregiver_name ?? obj.caregiverName ?? "",
+
+    city: obj.city ?? "",
+    neighborhood: obj.neighborhood ?? "",
+
+    service: obj.service ?? "",
+
+    pricePerDay: Number(obj.price_per_day ?? obj.pricePerDay ?? 0),
+
+    startDate: startRaw ? String(startRaw).slice(0, 10) : "",
+    endDate: endRaw ? String(endRaw).slice(0, 10) : "",
+
+    total: Number(obj.total ?? 0),
+    status: obj.status || "Pendente",
+
+    tutorRating: obj.tutor_rating ?? obj.tutorRating ?? null,
+    tutorReview: obj.tutor_review ?? obj.tutorReview ?? null,
+
+    caregiverRating: obj.caregiver_rating ?? obj.caregiverRating ?? null,
+    caregiverReview: obj.caregiver_review ?? obj.caregiverReview ?? null,
+
+    __hasTutorReview:
+      obj.__hasTutorReview ??
+      obj.has_tutor_review ??
+      obj.hasTutorReview ??
+      false,
+
+    __hasCaregiverReview:
+      obj.__hasCaregiverReview ??
+      obj.has_caregiver_review ??
+      obj.hasCaregiverReview ??
+      false,
 
     petsIds,
-    petsNames: r.pets_names || "",
-    rejectReason: r.reject_reason || null,
-    cancelReason: r.cancel_reason || r.cancelReason || null,
+    petsNames: obj.pets_names ?? obj.petsNames ?? "",
+
+    rejectReason: obj.reject_reason ?? obj.rejectReason ?? null,
+    cancelReason: obj.cancel_reason ?? obj.cancelReason ?? null,
   };
 };
 
@@ -767,6 +810,8 @@ export default function Dashboard() {
           }
 
           applyReservations(merged);
+          console.log("[RES] sample:", merged?.[0]);
+          console.log("[RES] tutorId/user:", merged?.[0]?.tutorId, String(user?.id));
           return merged;
         } catch (err) {
           console.error("Erro ao carregar reservas do servidor:", err);
@@ -1897,7 +1942,7 @@ export default function Dashboard() {
                         {/* ações */}
                         <div className="mt-4 flex flex-wrap gap-2 justify-end">
                           <Link
-                            to={`/reservas/${r.id}`}
+                            to={`/reserva/${r.id}`}
                             className="px-3 py-2 rounded-lg text-xs font-semibold bg-[#5A3A22] hover:bg-[#95301F] text-white"
                           >
                             Ver detalhes
@@ -1905,128 +1950,132 @@ export default function Dashboard() {
 
                           {String(r.status) === "Aceita" && (
                             <Link
-                              to={`/reservas/${r.id}#chat`}
-                              state={{ scrollToChat: true }}
-                              className="px-3 py-2 rounded-lg text-xs font-semibold bg-[#FFD700] hover:bg-[#f5c400] text-[#5A3A22]"
+                              to={/reserva/${r.id} #chat}
+                          state={{ scrollToChat: true }}
+                          className="px-3 py-2 rounded-lg text-xs font-semibold bg-[#FFD700] hover:bg-[#f5c400] text-[#5A3A22]"
                             >
-                              Abrir chat
-                            </Link>
+                          Abrir chat
+                        </Link>
                           )}
 
-                          {canRate && !alreadyRated && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setRatingReservation(r);
-                                setRatingTitle("Avaliar cuidador");
-                              }}
-                              className="px-3 py-2 rounded-lg text-xs font-semibold bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22]"
-                            >
-                              Avaliar
-                            </button>
-                          )}
+                        {canRate && !alreadyRated && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRatingReservation(r);
+                              setRatingTitle("Avaliar cuidador");
+                            }}
+                            className="px-3 py-2 rounded-lg text-xs font-semibold bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22]"
+                          >
+                            Avaliar
+                          </button>
+                        )}
 
-                          {["Pendente", "Aceita"].includes(String(r.status)) && (
-                            <button
-                              type="button"
-                              onClick={() => setCancelConfirmId(String(r.id))}
-                              className="px-3 py-2 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 text-white"
-                            >
-                              Cancelar
-                            </button>
-                          )}
-                        </div>
+                        {["Pendente", "Aceita"].includes(String(r.status)) && (
+                          <button
+                            type="button"
+                            onClick={() => setCancelConfirmId(String(r.id))}
+                            className="px-3 py-2 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 text-white"
+                          >
+                            Cancelar
+                          </button>
+                        )}
                       </div>
-                    );
+                      </div>
+              );
                   })}
-                </>
-              ) : reservationsLoading ? (
-                <p className="text-center text-[#5A3A22]">Carregando suas reservas...</p>
-              ) : (
-                <p className="text-center text-[#5A3A22]">Você ainda não fez reservas.</p>
-              )}
             </>
+          ) : reservationsLoading ? (
+          <p className="text-center text-[#5A3A22]">Carregando suas reservas...</p>
+          ) : (
+          <p className="text-center text-[#5A3A22]">Você ainda não fez reservas.</p>
+              )}
+        </>
           )}
 
-          {/* ✅ TAB: PETS (fora do reservasTutor, como deve ser) */}
-          {tab === "pets" && <TutorPets />}
-        </div>
-
-        {/* ✅ CONFIRMAR CANCELAMENTO */}
-        {cancelConfirmId && (
-          <div className="fixed bottom-6 right-6 z-[9999] w-[360px] max-w-[92vw]">
-            <div className="bg-white shadow-xl rounded-2xl border-l-4 border-red-600 p-4">
-              <p className="text-sm text-[#5A3A22] font-semibold">
-                Tem certeza que deseja cancelar esta reserva?
-              </p>
-              <p className="text-xs text-[#5A3A22] opacity-80 mt-1">
-                Essa ação não pode ser desfeita.
-              </p>
-
-              <div className="flex justify-end gap-2 mt-4">
-                <button
-                  type="button"
-                  onClick={dismissCancelReservation}
-                  className="px-3 py-2 rounded-lg text-xs font-semibold bg-gray-200 hover:bg-gray-300 text-[#5A3A22]"
-                >
-                  Manter reserva
-                </button>
-                <button
-                  type="button"
-                  onClick={confirmCancelReservation}
-                  className="px-3 py-2 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 text-white"
-                >
-                  Cancelar reserva
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ✅ MODAL: MOTIVO DO CANCELAMENTO (obrigatório) */}
-        {cancelModal.open && (
-          <div className="fixed inset-0 z-[9999] flex items-end md:items-center justify-center bg-black/40 p-4">
-            <div className="w-full max-w-[520px] bg-white rounded-2xl shadow-xl border-l-4 border-red-600 p-4">
-              <p className="text-sm font-semibold text-[#5A3A22]">Cancelar reserva</p>
-              <p className="text-xs text-[#5A3A22] opacity-80 mt-1">
-                Escreva um motivo para o cuidador entender o cancelamento. <b>(Obrigatório)</b>
-              </p>
-
-              <textarea
-                value={cancelModal.text}
-                onChange={(e) => setCancelModal((s) => ({ ...s, text: e.target.value }))}
-                rows={4}
-                placeholder="Ex.: Mudança de planos / Imprevisto / Encontrei outro cuidador..."
-                className="mt-3 w-full border rounded-xl p-3 text-sm text-[#5A3A22] outline-none focus:ring-2 focus:ring-[#FFD700]/70"
-              />
-
-              <div className="flex justify-end gap-2 mt-4">
-                <button
-                  type="button"
-                  onClick={closeCancelModal}
-                  className="px-3 py-2 rounded-lg text-xs font-semibold bg-gray-200 hover:bg-gray-300 text-[#5A3A22]"
-                >
-                  Voltar
-                </button>
-                <button
-                  type="button"
-                  onClick={confirmCancelWithReason}
-                  className="px-3 py-2 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 text-white"
-                >
-                  Cancelar reserva
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <RatingModal
-          isOpen={!!ratingReservation}
-          title={ratingTitle || "Avaliar"}
-          onClose={closeRatingModal}
-          onSubmit={handleSubmitRating}
-        />
+        {/* ✅ TAB: PETS (fora do reservasTutor, como deve ser) */}
+        {tab === "pets" && <TutorPets />}
       </div>
+
+        {/* ✅ CONFIRMAR CANCELAMENTO */ }
+    {
+      cancelConfirmId && (
+        <div className="fixed bottom-6 right-6 z-[9999] w-[360px] max-w-[92vw]">
+          <div className="bg-white shadow-xl rounded-2xl border-l-4 border-red-600 p-4">
+            <p className="text-sm text-[#5A3A22] font-semibold">
+              Tem certeza que deseja cancelar esta reserva?
+            </p>
+            <p className="text-xs text-[#5A3A22] opacity-80 mt-1">
+              Essa ação não pode ser desfeita.
+            </p>
+
+            <div className="flex justify-end gap-2 mt-4">
+              <button
+                type="button"
+                onClick={dismissCancelReservation}
+                className="px-3 py-2 rounded-lg text-xs font-semibold bg-gray-200 hover:bg-gray-300 text-[#5A3A22]"
+              >
+                Manter reserva
+              </button>
+              <button
+                type="button"
+                onClick={confirmCancelReservation}
+                className="px-3 py-2 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 text-white"
+              >
+                Cancelar reserva
+              </button>
+            </div>
+          </div>
+        </div>
+      )
+    }
+
+    {/* ✅ MODAL: MOTIVO DO CANCELAMENTO (obrigatório) */ }
+    {
+      cancelModal.open && (
+        <div className="fixed inset-0 z-[9999] flex items-end md:items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-[520px] bg-white rounded-2xl shadow-xl border-l-4 border-red-600 p-4">
+            <p className="text-sm font-semibold text-[#5A3A22]">Cancelar reserva</p>
+            <p className="text-xs text-[#5A3A22] opacity-80 mt-1">
+              Escreva um motivo para o cuidador entender o cancelamento. <b>(Obrigatório)</b>
+            </p>
+
+            <textarea
+              value={cancelModal.text}
+              onChange={(e) => setCancelModal((s) => ({ ...s, text: e.target.value }))}
+              rows={4}
+              placeholder="Ex.: Mudança de planos / Imprevisto / Encontrei outro cuidador..."
+              className="mt-3 w-full border rounded-xl p-3 text-sm text-[#5A3A22] outline-none focus:ring-2 focus:ring-[#FFD700]/70"
+            />
+
+            <div className="flex justify-end gap-2 mt-4">
+              <button
+                type="button"
+                onClick={closeCancelModal}
+                className="px-3 py-2 rounded-lg text-xs font-semibold bg-gray-200 hover:bg-gray-300 text-[#5A3A22]"
+              >
+                Voltar
+              </button>
+              <button
+                type="button"
+                onClick={confirmCancelWithReason}
+                className="px-3 py-2 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 text-white"
+              >
+                Cancelar reserva
+              </button>
+            </div>
+          </div>
+        </div>
+      )
+    }
+
+    <RatingModal
+      isOpen={!!ratingReservation}
+      title={ratingTitle || "Avaliar"}
+      onClose={closeRatingModal}
+      onSubmit={handleSubmitRating}
+    />
+      </div >
     );
   }
 
