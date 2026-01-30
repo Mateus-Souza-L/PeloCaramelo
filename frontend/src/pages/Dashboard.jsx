@@ -455,6 +455,10 @@ export default function Dashboard() {
   const [resPage, setResPage] = useState(1);
   const [resTotal, setResTotal] = useState(0);
   const [resTotalPages, setResTotalPages] = useState(1);
+  const computedTotalPages = useMemo(() => {
+    if (!resTotal || resTotal <= 0) return 1;
+    return Math.max(1, Math.ceil(resTotal / RESERVATIONS_PAGE_SIZE));
+  }, [resTotal]);
 
   // ===========================================================
   // 🧮 Capacidade diária do cuidador (1..50 no backend)
@@ -1738,15 +1742,16 @@ export default function Dashboard() {
   };
 
   function ReservationsPager() {
-    if (!resTotalPages || resTotalPages <= 1) return null;
+    const totalPages = computedTotalPages;
 
-    const canPrev = resPage > 1;
-    const canNext = resPage < resTotalPages;
+    if (totalPages <= 1) return null;
+
+    onClick={() => setResPage((p) => Math.min(totalPages, p + 1))}
 
     return (
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
         <p className="text-xs text-[#5A3A22] opacity-80">
-          Página <b>{resPage}</b> de <b>{resTotalPages}</b>
+          Página <b>{resPage}</b> de <b>{totalPages}</b>
           {Number.isFinite(resTotal) && resTotal > 0 ? (
             <> — <b>{resTotal}</b> reserva(s) no total</>
           ) : null}
