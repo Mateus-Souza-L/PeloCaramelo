@@ -755,12 +755,14 @@ export default function Dashboard() {
                 : [];
 
           // ✅ meta da paginação (tolerante)
-          const nextPage = Number(parsed?.page ?? resPage);
           const nextLimit = Number(parsed?.limit ?? RESERVATIONS_PAGE_SIZE);
           const nextTotal = Number(parsed?.total ?? 0);
           const nextTotalPages = Number(parsed?.totalPages ?? parsed?.total_pages ?? 1);
 
-          setResPage(Number.isFinite(nextPage) && nextPage > 0 ? nextPage : resPage);
+          // ✅ NÃO deixar o backend sobrescrever o resPage do frontend
+          // (se o backend devolver page=1 sempre, ele “quebra” a paginação do front)
+          void nextLimit;
+
           setResTotal(Number.isFinite(nextTotal) && nextTotal >= 0 ? nextTotal : 0);
           setResTotalPages(
             Number.isFinite(nextTotalPages) && nextTotalPages > 0 ? nextTotalPages : 1
