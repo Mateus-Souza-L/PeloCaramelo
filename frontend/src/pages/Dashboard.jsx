@@ -257,6 +257,7 @@ function getStatusToastType(status) {
   return "notify";
 }
 
+
 // -----------------------------------------------------
 // ✅ merge: preserva rating/review do cache local quando servidor vier vazio
 // -----------------------------------------------------
