@@ -1769,8 +1769,8 @@ export default function Dashboard() {
           <button
             onClick={() => setTab("reservasTutor")}
             className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${tab === "reservasTutor"
-                ? "bg-[#5A3A22] text-white"
-                : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
+              ? "bg-[#5A3A22] text-white"
+              : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
               }`}
             type="button"
           >
@@ -1780,8 +1780,8 @@ export default function Dashboard() {
           <button
             onClick={() => setTab("pets")}
             className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${tab === "pets"
-                ? "bg-[#5A3A22] text-white"
-                : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
+              ? "bg-[#5A3A22] text-white"
+              : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
               }`}
             type="button"
           >
@@ -1827,13 +1827,115 @@ export default function Dashboard() {
 
                     const statusHelper = getStatusHelperText(r, "tutor");
                     const rejectReason = r.status === "Recusada" ? r.rejectReason || null : null;
+                    const cancelReason = r.status === "Cancelada" ? r.cancelReason || null : null;
 
-                    const showTutorRating =
-                      r.tutorRating != null && Number.isFinite(Number(r.tutorRating));
+                    const showTutorRating = r.tutorRating != null && Number.isFinite(Number(r.tutorRating));
+
+                    const periodText =
+                      (r.startDate ? formatDateBR(r.startDate) : "—") +
+                      " até " +
+                      (r.endDate ? formatDateBR(r.endDate) : "—");
+
+                    const placeText = [r.neighborhood, r.city].filter(Boolean).join(" — ") || "—";
 
                     return (
                       <div key={r.id} className={cardClasses}>
-                        {/* ...seu card como já está... */}
+                        {/* topo */}
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold">
+                              {r.service ? String(r.service) : "Serviço não informado"}
+                            </p>
+
+                            <p className="text-xs opacity-80 mt-1">
+                              <b>Status:</b> {r.status || "—"}
+                            </p>
+
+                            <p className="text-xs opacity-80">
+                              <b>Período:</b> {periodText}
+                            </p>
+
+                            <p className="text-xs opacity-80">
+                              <b>Local:</b> {placeText}
+                            </p>
+
+                            {!!statusHelper && <p className="text-xs mt-2 opacity-80">{statusHelper}</p>}
+                          </div>
+
+                          {(hasUnreadChat || hasUnreadResNotif) && (
+                            <span className="text-[11px] px-2 py-1 rounded-full bg-[#FFD700]/60 text-[#5A3A22] font-semibold">
+                              Nova atualização
+                            </span>
+                          )}
+                        </div>
+
+                        {/* motivos */}
+                        {rejectReason && (
+                          <div className="mt-3 p-3 rounded-lg border bg-[#FFF8F0]">
+                            <p className="text-xs">
+                              <b>Motivo da recusa:</b> {rejectReason}
+                            </p>
+                          </div>
+                        )}
+
+                        {cancelReason && (
+                          <div className="mt-3 p-3 rounded-lg border bg-[#FFF8F0]">
+                            <p className="text-xs">
+                              <b>Motivo do cancelamento:</b> {cancelReason}
+                            </p>
+                          </div>
+                        )}
+
+                        {/* avaliação (se já tiver) */}
+                        {showTutorRating && (
+                          <div className="mt-3 text-xs opacity-90">
+                            <b>Sua avaliação:</b> ⭐ {Number(r.tutorRating)}/5
+                            {r.tutorReview ? ` — "${String(r.tutorReview)}"` : ""}
+                          </div>
+                        )}
+
+                        {/* ações */}
+                        <div className="mt-4 flex flex-wrap gap-2 justify-end">
+                          <Link
+                            to={`/reservas/${r.id}`}
+                            className="px-3 py-2 rounded-lg text-xs font-semibold bg-[#5A3A22] hover:bg-[#95301F] text-white"
+                          >
+                            Ver detalhes
+                          </Link>
+
+                          {String(r.status) === "Aceita" && (
+                            <Link
+                              to={`/reservas/${r.id}#chat`}
+                              state={{ scrollToChat: true }}
+                              className="px-3 py-2 rounded-lg text-xs font-semibold bg-[#FFD700] hover:bg-[#f5c400] text-[#5A3A22]"
+                            >
+                              Abrir chat
+                            </Link>
+                          )}
+
+                          {canRate && !alreadyRated && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRatingReservation(r);
+                                setRatingTitle("Avaliar cuidador");
+                              }}
+                              className="px-3 py-2 rounded-lg text-xs font-semibold bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22]"
+                            >
+                              Avaliar
+                            </button>
+                          )}
+
+                          {["Pendente", "Aceita"].includes(String(r.status)) && (
+                            <button
+                              type="button"
+                              onClick={() => setCancelConfirmId(String(r.id))}
+                              className="px-3 py-2 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 text-white"
+                            >
+                              Cancelar
+                            </button>
+                          )}
+                        </div>
                       </div>
                     );
                   })}
