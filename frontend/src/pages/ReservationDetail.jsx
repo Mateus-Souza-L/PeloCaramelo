@@ -11,7 +11,7 @@ import { markReservationNotifsRead } from "../utils/reservationNotifs";
 
 const DEFAULT_PET_IMG = "/paw.png";
 
-{/* helpers simples/seguros */}
+// ---------- helpers simples/seguros ----------
 const toStr = (v) => (v == null ? "" : String(v));
 
 const safeJsonParse = (val) => {
@@ -42,7 +42,7 @@ const safeGetLocalStorage = (key) => {
 const isNonEmptyArray = (v) => Array.isArray(v) && v.length > 0;
 const onlyDigits = (v) => String(v ?? "").replace(/\D+/g, "");
 
-// ✅ NOVO: num safe (mantém null se inválido)
+// ✅ num safe (mantém null se inválido)
 const toNumSafe = (v) => {
   if (v == null || v === "") return null;
   const n = typeof v === "number" ? v : Number(String(v).replace(",", "."));
@@ -99,62 +99,27 @@ const pickPetImage = (p) =>
 const normalizePetObject = (p) => {
   if (!p || typeof p !== "object") return null;
 
-  const id =
-    toStr(p.id) ||
-    toStr(p.pet_id) ||
-    toStr(p.petId) ||
-    toStr(p.petID) ||
-    "";
+  const id = toStr(p.id) || toStr(p.pet_id) || toStr(p.petId) || toStr(p.petID) || "";
 
-  const name =
-    p.name ??
-    p.pet_name ??
-    p.petName ??
-    p.pet_nome ??
-    p.nome ??
-    "";
+  const name = p.name ?? p.pet_name ?? p.petName ?? p.pet_nome ?? p.nome ?? "";
 
   const specie =
-    p.specie ??
-    p.species ??
-    p.specie_name ??
-    p.species_name ??
-    p.especie ??
-    p.tipo ??
-    "";
+    p.specie ?? p.species ?? p.specie_name ?? p.species_name ?? p.especie ?? p.tipo ?? "";
 
-  const breed =
-    p.breed ??
-    p.race ??
-    p.raca ??
-    p.breed_name ??
-    p.race_name ??
-    "";
+  const breed = p.breed ?? p.race ?? p.raca ?? p.breed_name ?? p.race_name ?? "";
 
-  const porte =
-    p.porte ??
-    p.port ??
-    p.size ??
-    p.portePet ??
-    p.pet_size ??
-    p.tamanho ??
-    "";
+  const porte = p.porte ?? p.port ?? p.size ?? p.portePet ?? p.pet_size ?? p.tamanho ?? "";
 
-  const approxAge =
-    p.approxAge ??
-    p.approx_age ??
-    p.age ??
-    p.idade ??
-    "";
+  const approxAge = p.approxAge ?? p.approx_age ?? p.age ?? p.idade ?? "";
 
   const adjectivesRaw = p.adjectives ?? p.adjetivos ?? p.tags ?? null;
   const adjectives = Array.isArray(adjectivesRaw)
     ? adjectivesRaw.filter(Boolean).map(String)
     : typeof adjectivesRaw === "string"
       ? adjectivesRaw
-        .split(/[,•|]/g)
-        .map((s) => s.trim())
-        .filter(Boolean)
+          .split(/[,•|]/g)
+          .map((s) => s.trim())
+          .filter(Boolean)
       : [];
 
   const image = pickPetImage(p);
@@ -385,12 +350,15 @@ export default function ReservationDetail() {
   const [ratingTitle, setRatingTitle] = useState("");
   const [ratingBusy, setRatingBusy] = useState(false);
 
-  // ✅ NOVO: fluxo padrão do cancelamento (sem prompt do browser)
+  // ✅ fluxo padrão do cancelamento (sem prompt do browser)
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   const [cancelReasonOpen, setCancelReasonOpen] = useState(false);
   const [cancelReasonText, setCancelReasonText] = useState("");
   const [cancelBusy, setCancelBusy] = useState(false);
   const cancelReasonRef = useRef(null);
+
+  // ✅ trava para evitar abrir o modal 2 indevidamente (clique duplo/Enter)
+  const cancelFlowLockRef = useRef(false);
 
   const chatSectionRef = useRef(null);
   const didAutoScrollChatRef = useRef(false);
@@ -681,7 +649,7 @@ export default function ReservationDetail() {
     user?.id ?? (isTutor ? reservation?.tutorId : isCaregiver ? reservation?.caregiverId : "") ?? ""
   );
 
-  // ✅ AQUI ERA O BUG: useMemo não pode ficar depois dos returns.
+  // ✅ ok ficar como função simples (não use hook depois de returns)
   const canChatNow = (() => {
     const s = String(reservation?.status || "");
     return s === "Aceita" || s === "Concluída" || s === "Concluida" || s === "Finalizada";
@@ -950,7 +918,7 @@ export default function ReservationDetail() {
       console.error("Erro ao sincronizar status no servidor:", err);
       showToast(
         err?.message ||
-        "Não foi possível sincronizar o status com o servidor. Ele foi atualizado apenas localmente por enquanto.",
+          "Não foi possível sincronizar o status com o servidor. Ele foi atualizado apenas localmente por enquanto.",
         "error"
       );
       return false;
@@ -1062,7 +1030,7 @@ export default function ReservationDetail() {
     if (ok) showToast("Reserva recusada.", "error");
   };
 
-  // ✅ NOVO: clique no botão Cancelar abre modal de confirmação (padrão)
+  // ✅ clique no botão Cancelar abre modal de confirmação (padrão)
   const tutorCancel = async () => {
     if (!isTutor || !reservation) return;
 
@@ -1071,11 +1039,16 @@ export default function ReservationDetail() {
       return;
     }
 
+    cancelFlowLockRef.current = false;
     setCancelConfirmOpen(true);
   };
 
-  // ✅ confirma no modal 1 -> abre modal 2 (motivo obrigatório)
+  // ✅ confirma no modal 1 -> abre modal 2 (motivo obrigatório) + trava anti-duplo-clique
   const confirmCancelFlow = () => {
+    if (cancelBusy) return;
+    if (cancelFlowLockRef.current) return;
+    cancelFlowLockRef.current = true;
+
     setCancelConfirmOpen(false);
     setCancelReasonText("");
     setCancelReasonOpen(true);
@@ -1088,15 +1061,17 @@ export default function ReservationDetail() {
   const closeCancelConfirm = () => {
     if (cancelBusy) return;
     setCancelConfirmOpen(false);
+    cancelFlowLockRef.current = false;
   };
 
   const closeCancelReason = () => {
     if (cancelBusy) return;
     setCancelReasonOpen(false);
     setCancelReasonText("");
+    cancelFlowLockRef.current = false;
   };
 
-  // ✅ submit do motivo (obrigatório)
+  // ✅ submit do motivo (obrigatório) + reverte se backend falhar
   const submitCancelReason = async () => {
     if (!isTutor || !reservation) return;
     if (cancelBusy) return;
@@ -1111,19 +1086,26 @@ export default function ReservationDetail() {
 
     setCancelBusy(true);
 
+    const prev = reservation;
+
     try {
       const next = { ...reservation, status: "Cancelada", cancelReason: reason };
       persistLocalReservation(next);
 
       const ok = await syncStatusWithBackend("Cancelada", { cancelReason: reason });
 
+      if (!ok) {
+        persistLocalReservation(prev);
+        showToast("Não foi possível cancelar agora. Tente novamente.", "error");
+        return;
+      }
+
       setCancelReasonOpen(false);
       setCancelReasonText("");
+      cancelFlowLockRef.current = false;
 
-      if (ok) {
-        showToast("Reserva cancelada.", "success");
-        navigate("/dashboard", { replace: true });
-      }
+      showToast("Reserva cancelada.", "success");
+      navigate("/dashboard", { replace: true });
     } finally {
       setCancelBusy(false);
     }
@@ -1191,7 +1173,10 @@ export default function ReservationDetail() {
 
     if (!hasAnySelected && !hasAnyDisplay && !tutorHasAnyPet && !didWarnNoPetsRef.current) {
       didWarnNoPetsRef.current = true;
-      showToast("Para fazer uma reserva, você precisa cadastrar pelo menos 1 pet. Vá em Painel → Meus Pets. 🐾", "notify");
+      showToast(
+        "Para fazer uma reserva, você precisa cadastrar pelo menos 1 pet. Vá em Painel → Meus Pets. 🐾",
+        "notify"
+      );
     }
   }, [loading, isTutor, reservation?.id, selectedPetIds.length, displayPets.length, tutorPets?.length, showToast]);
 
@@ -1216,25 +1201,19 @@ export default function ReservationDetail() {
   return (
     <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] py-8 px-6">
       {/* ✅ MODAL 1: confirmar cancelamento */}
-      <PcModal
-        open={cancelConfirmOpen}
-        title="Cancelar reserva?"
-        onClose={closeCancelConfirm}
-        disableClose={cancelBusy}
-      >
-        <p className="text-sm opacity-90">
-          Você tem certeza que deseja cancelar esta reserva?
-        </p>
+      <PcModal open={cancelConfirmOpen} title="Cancelar reserva?" onClose={closeCancelConfirm} disableClose={cancelBusy}>
+        <p className="text-sm opacity-90">Você tem certeza que deseja cancelar esta reserva?</p>
 
         <div className="mt-4 flex flex-wrap gap-3 justify-end">
           <button
             type="button"
             onClick={closeCancelConfirm}
             disabled={cancelBusy}
-            className={`px-4 py-2 rounded-lg font-semibold ${cancelBusy
+            className={`px-4 py-2 rounded-lg font-semibold ${
+              cancelBusy
                 ? "bg-gray-200 text-gray-500 cursor-not-allowed"
                 : "bg-gray-200 hover:bg-gray-300 text-[#5A3A22]"
-              }`}
+            }`}
           >
             Voltar
           </button>
@@ -1243,8 +1222,9 @@ export default function ReservationDetail() {
             type="button"
             onClick={confirmCancelFlow}
             disabled={cancelBusy}
-            className={`px-4 py-2 rounded-lg font-semibold text-white ${cancelBusy ? "bg-gray-400 cursor-not-allowed" : "bg-[#95301F] hover:bg-[#7d2618]"
-              }`}
+            className={`px-4 py-2 rounded-lg font-semibold text-white ${
+              cancelBusy ? "bg-gray-400 cursor-not-allowed" : "bg-[#95301F] hover:bg-[#7d2618]"
+            }`}
           >
             Sim, cancelar
           </button>
@@ -1259,9 +1239,7 @@ export default function ReservationDetail() {
         disableClose={cancelBusy}
         maxWidth="max-w-[640px]"
       >
-        <p className="text-sm opacity-90">
-          Para cancelar, informe o motivo (obrigatório).
-        </p>
+        <p className="text-sm opacity-90">Para cancelar, informe o motivo (obrigatório).</p>
 
         <div className="mt-3">
           <textarea
@@ -1273,9 +1251,7 @@ export default function ReservationDetail() {
             className="w-full rounded-xl border p-3 text-sm outline-none focus:ring-2 focus:ring-[#FFD700]/60"
             disabled={cancelBusy}
           />
-          <p className="mt-2 text-xs opacity-70">
-            * Campo obrigatório
-          </p>
+          <p className="mt-2 text-xs opacity-70">* Campo obrigatório</p>
         </div>
 
         <div className="mt-4 flex flex-wrap gap-3 justify-end">
@@ -1283,10 +1259,11 @@ export default function ReservationDetail() {
             type="button"
             onClick={closeCancelReason}
             disabled={cancelBusy}
-            className={`px-4 py-2 rounded-lg font-semibold ${cancelBusy
+            className={`px-4 py-2 rounded-lg font-semibold ${
+              cancelBusy
                 ? "bg-gray-200 text-gray-500 cursor-not-allowed"
                 : "bg-gray-200 hover:bg-gray-300 text-[#5A3A22]"
-              }`}
+            }`}
           >
             Voltar
           </button>
@@ -1295,8 +1272,9 @@ export default function ReservationDetail() {
             type="button"
             onClick={submitCancelReason}
             disabled={cancelBusy}
-            className={`px-4 py-2 rounded-lg font-semibold text-[#5A3A22] ${cancelBusy ? "bg-[#FFD700]/50 cursor-not-allowed" : "bg-[#FFD700] hover:bg-[#f5c400]"
-              }`}
+            className={`px-4 py-2 rounded-lg font-semibold text-[#5A3A22] ${
+              cancelBusy ? "bg-[#FFD700]/50 cursor-not-allowed" : "bg-[#FFD700] hover:bg-[#f5c400]"
+            }`}
           >
             {cancelBusy ? "Cancelando..." : "Confirmar cancelamento"}
           </button>
@@ -1496,7 +1474,9 @@ export default function ReservationDetail() {
               })}
             </div>
           ) : (
-            <p className="text-sm md:text-base opacity-80 bg-[#FFF8F0] rounded-xl p-3">Pets desta reserva não informados.</p>
+            <p className="text-sm md:text-base opacity-80 bg-[#FFF8F0] rounded-xl p-3">
+              Pets desta reserva não informados.
+            </p>
           )}
         </div>
 
@@ -1523,10 +1503,11 @@ export default function ReservationDetail() {
                   type="button"
                   onClick={openRatingModal}
                   disabled={ratingBusy}
-                  className={`mt-3 px-4 py-2 rounded-lg font-semibold shadow-md text-sm ${ratingBusy
+                  className={`mt-3 px-4 py-2 rounded-lg font-semibold shadow-md text-sm ${
+                    ratingBusy
                       ? "bg-[#FFD700]/60 cursor-not-allowed text-[#5A3A22]"
                       : "bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22]"
-                    }`}
+                  }`}
                 >
                   {ratingBusy ? "Enviando..." : isTutor ? "Avaliar cuidador" : "Avaliar tutor"}
                 </button>
@@ -1561,9 +1542,7 @@ export default function ReservationDetail() {
                 />
               </ChatErrorBoundary>
             ) : (
-              <div className="pc-card pc-card-accent text-[#5A3A22]">
-                O chat só é liberado após a reserva ser aceita.
-              </div>
+              <div className="pc-card pc-card-accent text-[#5A3A22]">O chat só é liberado após a reserva ser aceita.</div>
             )}
           </div>
         )}
