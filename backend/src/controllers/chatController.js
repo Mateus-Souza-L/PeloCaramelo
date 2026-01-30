@@ -7,8 +7,8 @@ const {
   listChatMessagesByReservation,
   markMessagesAsRead,
   listUnreadReservationsByUser,
-  shouldSendChatEmailThrottle, // ✅ novo
-  touchChatEmailThrottle, // ✅ novo
+  shouldSendChatEmailThrottle,
+  touchChatEmailThrottle,
 } = require("../models/chatModel");
 
 // ✅ e-mails transacionais (Resend)
@@ -24,21 +24,35 @@ function getUserId(req, res) {
   return String(userId);
 }
 
-async function getReservationOr404(reservationId, res) {
-  const idNum = Number(reservationId);
-  if (!Number.isFinite(idNum)) {
-    res.status(400).json({ error: "reservationId inválido." });
-    return null;
-  }
-
-  const reservation = await reservationModel.getReservationById(idNum);
-  if (!reservation) {
-    res.status(404).json({ error: "Reserva não encontrada." });
-    return null;
-  }
-
-  return reservation;
+/**
+ * ✅ Normaliza status (trim + lower + remove espaços múltiplos)
+ */
+function normalizeStatus(status) {
+  return String(status || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
 }
+
+/**
+ * Regra do chat:
+ * - leitura pode ser mais permissiva
+ * - envio deve ser mais restrito
+ */
+const CHAT_READABLE_STATUSES = new Set([
+  "aceita",
+  "aceito", // ✅ tolerância
+  "em andamento",
+  "concluida",
+  "concluída",
+  "finalizada",
+]);
+
+const CHAT_WRITABLE_STATUSES = new Set([
+  "aceita",
+  "aceito", // ✅ tolerância
+  "em andamento",
+]);
 
 // ✅ snake/camel safe
 function getResIds(reservation) {
@@ -58,95 +72,92 @@ function canAccessChat(reservation, userId) {
 }
 
 /**
- * ✅ Normaliza status de forma "forte":
- * - trim
- * - lower
- * - remove acento
- * - colapsa múltiplos espaços
- * - remove caracteres estranhos
- *
- * Evita 403 por:
- * - "Concluída" vs "Concluida"
- * - "Aceita " (espaço)
- * - "EM   ANDAMENTO"
+ * ✅ nome da sala por reserva
  */
-function normalizeStatus(status) {
-  return String(status || "")
-    .trim()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "") // remove acentos
-    .toLowerCase()
-    .replace(/\s+/g, " ") // colapsa espaços
-    .replace(/[^\w\s]/g, "") // remove pontuação/símbolos
-    .trim();
+function reservationRoom(reservationId) {
+  return `reservation:${String(reservationId)}`;
 }
 
 /**
- * ✅ Mapeia variações comuns pra um conjunto reduzido
- * (se vier algo inesperado, cai no próprio normalizeStatus)
+ * ✅ Fallback duro:
+ * Se o reservationModel não trouxer `status` (ou tutor/caregiver),
+ * buscamos direto no DB e mesclamos.
  */
-function canonicalStatus(status) {
-  const s = normalizeStatus(status);
+async function ensureReservationFieldsFromDb(idNum, reservationMaybe) {
+  const hasStatus = reservationMaybe?.status != null && String(reservationMaybe.status).trim() !== "";
+  const ids = getResIds(reservationMaybe);
+  const hasTutor = ids?.tutorId != null && String(ids.tutorId).trim() !== "";
+  const hasCare = ids?.caregiverId != null && String(ids.caregiverId).trim() !== "";
 
-  // variações comuns
-  if (s === "aceito" || s === "aceita") return "aceita";
-  if (s === "concluida" || s === "concluido") return "concluida";
-  if (s === "finalizada" || s === "finalizado") return "finalizada";
-  if (s === "em andamento" || s === "andamento") return "em andamento";
+  if (hasStatus && hasTutor && hasCare) return reservationMaybe;
 
-  return s;
+  const sql = `
+    SELECT id, status, tutor_id, caregiver_id
+    FROM reservations
+    WHERE id = $1
+    LIMIT 1
+  `;
+  const { rows } = await pool.query(sql, [idNum]);
+  const r = rows?.[0] || null;
+  if (!r) return reservationMaybe;
+
+  return {
+    ...(reservationMaybe || {}),
+    id: reservationMaybe?.id ?? r.id,
+    status: reservationMaybe?.status ?? r.status,
+    tutor_id: reservationMaybe?.tutor_id ?? r.tutor_id,
+    caregiver_id: reservationMaybe?.caregiver_id ?? r.caregiver_id,
+    tutorId: reservationMaybe?.tutorId ?? r.tutor_id,
+    caregiverId: reservationMaybe?.caregiverId ?? r.caregiver_id,
+  };
 }
 
-/**
- * Regra do chat:
- * - leitura (GET mensagens) pode ser mais permissiva (após aceitar)
- * - envio deve ser mais restrito
- */
-const CHAT_READABLE_STATUSES = new Set([
-  "aceita",
-  "em andamento",
-  "concluida",
-  "finalizada",
-]);
+async function getReservationOr404(reservationId, res) {
+  const idNum = Number(reservationId);
+  if (!Number.isFinite(idNum)) {
+    res.status(400).json({ error: "reservationId inválido." });
+    return null;
+  }
 
-const CHAT_WRITABLE_STATUSES = new Set([
-  "aceita",
-  "em andamento",
-]);
+  let reservation = await reservationModel.getReservationById(idNum);
+
+  if (!reservation) {
+    res.status(404).json({ error: "Reserva não encontrada." });
+    return null;
+  }
+
+  // ✅ garante status/tutor/caregiver sempre
+  reservation = await ensureReservationFieldsFromDb(idNum, reservation);
+
+  return reservation;
+}
 
 function ensureChatReadable(reservation, res) {
-  const stRaw = reservation?.status;
-  const st = canonicalStatus(stRaw);
+  const original = reservation?.status;
+  const st = normalizeStatus(original);
 
   if (!CHAT_READABLE_STATUSES.has(st)) {
-    res.status(403).json({
+    return res.status(403).json({
       error: "O chat só é liberado após a reserva ser aceita.",
-      status: stRaw,
+      status: original ?? null,
       normalizedStatus: st,
     });
-    return false;
   }
   return true;
 }
 
 function ensureChatWritable(reservation, res) {
-  const stRaw = reservation?.status;
-  const st = canonicalStatus(stRaw);
+  const original = reservation?.status;
+  const st = normalizeStatus(original);
 
   if (!CHAT_WRITABLE_STATUSES.has(st)) {
-    res.status(403).json({
+    return res.status(403).json({
       error: "O chat só permite envio de mensagens quando a reserva está aceita.",
-      status: stRaw,
+      status: original ?? null,
       normalizedStatus: st,
     });
-    return false;
   }
   return true;
-}
-
-// ✅ nome da sala por reserva
-function reservationRoom(reservationId) {
-  return `reservation:${String(reservationId)}`;
 }
 
 /* ===========================================================
@@ -277,15 +288,13 @@ async function sendChatMessageController(req, res) {
         if (!toEmail) {
           console.warn("[chatEmail] destinatário sem email. Não envia.");
         } else {
-          // ✅ cooldown por conversa + destinatário (default 15min)
           const canSend = await shouldSendChatEmailThrottle({
             reservationId: reservation.id,
             toUserId: String(toUserId),
           });
 
           if (canSend) {
-            // se você tiver rota melhor, ajuste aqui:
-            // ex: `${base}/dashboard?tab=chat&reservationId=${reservation.id}`
+            // ✅ Se quiser abrir direto na reserva/chat depois, ajuste aqui
             const chatUrl = `${base}/dashboard`;
 
             const payload = newChatMessageEmail({
@@ -297,13 +306,10 @@ async function sendChatMessageController(req, res) {
 
             await sendEmail({ to: toEmail, ...payload });
 
-            // ✅ grava throttle (se tabela existir; senão cai no fallback in-memory do model)
             await touchChatEmailThrottle({
               reservationId: reservation.id,
               toUserId: String(toUserId),
             });
-          } else {
-            // silencioso: anti-spam ativo
           }
         }
       }
@@ -320,7 +326,6 @@ async function sendChatMessageController(req, res) {
 
 /**
  * GET /chat/:reservationId -> listar mensagens da reserva
- * (não marca como lido automaticamente)
  */
 async function getChatMessagesController(req, res) {
   try {
@@ -339,7 +344,7 @@ async function getChatMessagesController(req, res) {
       });
     }
 
-    // ✅ leitura: permite em Aceita/Em andamento/Concluída/Finalizada (robusto)
+    // ✅ leitura: permite em Aceita/Em andamento/Concluída/Finalizada
     if (!ensureChatReadable(reservation, res)) return;
 
     const messages = await listChatMessagesByReservation(reservation.id);
@@ -352,7 +357,7 @@ async function getChatMessagesController(req, res) {
 
 /**
  * POST /chat/:reservationId/read -> marca como lidas
- * ✅ Emite `chat:read` em tempo real para a sala.
+ * ✅ NÃO bloqueia por status (pode limpar unread sempre)
  */
 async function markChatAsReadController(req, res) {
   try {
@@ -371,7 +376,6 @@ async function markChatAsReadController(req, res) {
       });
     }
 
-    // ✅ NÃO bloquear por status aqui (permite limpar unread mesmo após finalizar)
     const updated = await markMessagesAsRead({
       reservationId: reservation.id,
       userId,
