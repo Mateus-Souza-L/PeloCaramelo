@@ -1950,7 +1950,7 @@ export default function Dashboard() {
 
                           {String(r.status) === "Aceita" && (
                             <Link
-                              to={/reserva/${r.id} #chat}
+                              to={`/reserva/${r.id}#chat`}
                           state={{ scrollToChat: true }}
                           className="px-3 py-2 rounded-lg text-xs font-semibold bg-[#FFD700] hover:bg-[#f5c400] text-[#5A3A22]"
                             >
