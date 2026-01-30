@@ -1345,6 +1345,12 @@ export default function Dashboard() {
     activeRoleRef.current = activeRole;
   }, [activeRole]);
 
+  // ✅ quando trocar a página das reservas, buscar a página nova
+  useEffect(() => {
+    if (!user?.id) return;
+    loadReservations();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resPage]);
 
   // ---------- status da reserva ----------
   const applyAndPersistReservation = useCallback(
@@ -1885,196 +1891,220 @@ export default function Dashboard() {
 
                     return (
                       <div key={r.id} className={cardClasses}>
-                        {/* topo */}
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-semibold">
-                              {r.service ? String(r.service) : "Serviço não informado"}
-                            </p>
-
-                            <p className="text-xs opacity-80 mt-1">
-                              <b>Status:</b> {r.status || "—"}
-                            </p>
-
-                            <p className="text-xs opacity-80">
-                              <b>Período:</b> {periodText}
-                            </p>
-
-                            <p className="text-xs opacity-80">
-                              <b>Local:</b> {placeText}
-                            </p>
-
-                            {!!statusHelper && <p className="text-xs mt-2 opacity-80">{statusHelper}</p>}
+                        {(hasUnreadChat || hasUnreadResNotif) && (
+                          <div className="absolute top-3 right-3 flex items-center gap-2">
+                            <span
+                              className={`w-2.5 h-2.5 rounded-full ${hasUnreadChat ? "bg-blue-600" : "bg-red-600"
+                                }`}
+                              title={hasUnreadChat ? "Nova mensagem" : "Atualização"}
+                            />
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/70 border border-[#FFD700]/50 text-[#5A3A22]">
+                              {hasUnreadChat ? "CHAT" : "UPDATE"}
+                            </span>
                           </div>
+                        )}
+
+                        {/* ✅ card no padrão do cuidador */}
+                        <button
+                          onClick={() => openReservation(r.id, { scrollToChat: hasUnreadChat })}
+                          className="text-left w-full"
+                          type="button"
+                          title="Abrir detalhes da reserva"
+                        >
+                          <p>
+                            <b>Cuidador:</b> {r.caregiverName || "—"}
+                          </p>
+
+                          <p>
+                            <b>Período:</b> {formatDateBR(r.startDate)} até {formatDateBR(r.endDate)}
+                          </p>
+
+                          <p>
+                            <b>Total:</b> R$ {Number(r.total || 0).toFixed(2)}
+                          </p>
+
+                          <p>
+                            <b>Status:</b>{" "}
+                            <span className={`font-semibold ${getStatusColor(r.status)}`}>
+                              {r.status}
+                            </span>
+                          </p>
 
                           {(hasUnreadChat || hasUnreadResNotif) && (
-                            <span className="text-[11px] px-2 py-1 rounded-full bg-[#FFD700]/60 text-[#5A3A22] font-semibold">
-                              Nova atualização
-                            </span>
-                          )}
-                        </div>
-
-                        {/* motivos */}
-                        {rejectReason && (
-                          <div className="mt-3 p-3 rounded-lg border bg-[#FFF8F0]">
-                            <p className="text-xs">
-                              <b>Motivo da recusa:</b> {rejectReason}
+                            <p className="mt-1 text-xs font-semibold text-[#B25B38]">
+                              {hasUnreadChat ? "Nova mensagem nesta reserva" : "Atualização nesta reserva"}
                             </p>
-                          </div>
-                        )}
+                          )}
 
-                        {cancelReason && (
-                          <div className="mt-3 p-3 rounded-lg border bg-[#FFF8F0]">
-                            <p className="text-xs">
+                          {statusHelper && (
+                            <p className="mt-1 text-xs text-[#5A3A22]">{statusHelper}</p>
+                          )}
+
+                          {r.status === "Cancelada" && cancelReason && (
+                            <p className="mt-2 text-xs text-[#5A3A22] bg-[#FFF8F0] border rounded-lg p-2">
                               <b>Motivo do cancelamento:</b> {cancelReason}
                             </p>
-                          </div>
-                        )}
-
-                        {/* avaliação (se já tiver) */}
-                        {showTutorRating && (
-                          <div className="mt-3 text-xs opacity-90">
-                            <b>Sua avaliação:</b> ⭐ {Number(r.tutorRating)}/5
-                            {r.tutorReview ? ` — "${String(r.tutorReview)}"` : ""}
-                          </div>
-                        )}
-
-                        {/* ações */}
-                        <div className="mt-4 flex flex-wrap gap-2 justify-end">
-                          <Link
-                            to={`/reserva/${r.id}`}
-                            className="px-3 py-2 rounded-lg text-xs font-semibold bg-[#5A3A22] hover:bg-[#95301F] text-white"
-                          >
-                            Ver detalhes
-                          </Link>
-
-                          {String(r.status) === "Aceita" && (
-                            <Link
-                              to={`/reserva/${r.id}#chat`}
-                          state={{ scrollToChat: true }}
-                          className="px-3 py-2 rounded-lg text-xs font-semibold bg-[#FFD700] hover:bg-[#f5c400] text-[#5A3A22]"
-                            >
-                          Abrir chat
-                        </Link>
                           )}
 
-                        {canRate && !alreadyRated && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setRatingReservation(r);
-                              setRatingTitle("Avaliar cuidador");
-                            }}
-                            className="px-3 py-2 rounded-lg text-xs font-semibold bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22]"
-                          >
-                            Avaliar
-                          </button>
-                        )}
+                          {r.status === "Recusada" && rejectReason && (
+                            <p className="mt-2 text-xs text-[#5A3A22] bg-[#FFF8F0] border rounded-lg p-2">
+                              <b>Motivo da recusa:</b> {rejectReason}
+                            </p>
+                          )}
+                        </button>
 
-                        {["Pendente", "Aceita"].includes(String(r.status)) && (
-                          <button
-                            type="button"
-                            onClick={() => setCancelConfirmId(String(r.id))}
-                            className="px-3 py-2 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 text-white"
-                          >
-                            Cancelar
-                          </button>
-                        )}
+                        <div className="mt-2 flex items-center justify-between">
+                          {alreadyRated ? (
+                            <p className="text-xs text-[#5A3A22] opacity-80">
+                              {showTutorRating ? (
+                                <>
+                                  Sua avaliação: <b>⭐ {Number(r.tutorRating)}/5</b>
+                                  {r.tutorReview ? ` — "${String(r.tutorReview)}"` : ""}
+                                </>
+                              ) : (
+                                <>Você já avaliou esta reserva.</>
+                              )}
+                            </p>
+                          ) : (
+                            <p className="text-xs text-[#5A3A22] opacity-70">
+                              Após a reserva ser concluída, você poderá avaliar o cuidador.
+                            </p>
+                          )}
+
+                          <div className="flex gap-2 items-center">
+                            {String(r.status) === "Aceita" && (
+                              <Link
+                                to={`/reserva/${r.id}#chat`}
+                                state={{ scrollToChat: true }}
+                                className="px-3 py-1 rounded-lg text-xs font-semibold bg-[#FFD700] hover:bg-[#f5c400] text-[#5A3A22] shadow"
+                              >
+                                Abrir chat
+                              </Link>
+                            )}
+
+                            {canRate && !alreadyRated && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  openRatingModal(r, "Avaliar cuidador");
+                                }}
+                                className="px-3 py-1 rounded-lg text-xs font-semibold bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22] shadow"
+                              >
+                                Avaliar
+                              </button>
+                            )}
+
+                            {["Pendente", "Aceita"].includes(String(r.status)) && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setCancelConfirmId(String(r.id));
+                                }}
+                                className="px-3 py-1 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 text-white shadow"
+                              >
+                                Cancelar
+                              </button>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                      </div>
-              );
+                    );
                   })}
-            </>
-          ) : reservationsLoading ? (
-          <p className="text-center text-[#5A3A22]">Carregando suas reservas...</p>
-          ) : (
-          <p className="text-center text-[#5A3A22]">Você ainda não fez reservas.</p>
+                </>
+              ) : reservationsLoading ? (
+                <p className="text-center text-[#5A3A22]">Carregando suas reservas...</p>
+              ) : (
+                <p className="text-center text-[#5A3A22]">Você ainda não fez reservas.</p>
               )}
-        </>
+            </>
           )}
 
-        {/* ✅ TAB: PETS (fora do reservasTutor, como deve ser) */}
-        {tab === "pets" && <TutorPets />}
-      </div>
-
-        {/* ✅ CONFIRMAR CANCELAMENTO */ }
-    {
-      cancelConfirmId && (
-        <div className="fixed bottom-6 right-6 z-[9999] w-[360px] max-w-[92vw]">
-          <div className="bg-white shadow-xl rounded-2xl border-l-4 border-red-600 p-4">
-            <p className="text-sm text-[#5A3A22] font-semibold">
-              Tem certeza que deseja cancelar esta reserva?
-            </p>
-            <p className="text-xs text-[#5A3A22] opacity-80 mt-1">
-              Essa ação não pode ser desfeita.
-            </p>
-
-            <div className="flex justify-end gap-2 mt-4">
-              <button
-                type="button"
-                onClick={dismissCancelReservation}
-                className="px-3 py-2 rounded-lg text-xs font-semibold bg-gray-200 hover:bg-gray-300 text-[#5A3A22]"
-              >
-                Manter reserva
-              </button>
-              <button
-                type="button"
-                onClick={confirmCancelReservation}
-                className="px-3 py-2 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 text-white"
-              >
-                Cancelar reserva
-              </button>
-            </div>
-          </div>
+          {/* ✅ TAB: PETS (fora do reservasTutor, como deve ser) */}
+          {tab === "pets" && <TutorPets />}
         </div>
-      )
-    }
 
-    {/* ✅ MODAL: MOTIVO DO CANCELAMENTO (obrigatório) */ }
-    {
-      cancelModal.open && (
-        <div className="fixed inset-0 z-[9999] flex items-end md:items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-[520px] bg-white rounded-2xl shadow-xl border-l-4 border-red-600 p-4">
-            <p className="text-sm font-semibold text-[#5A3A22]">Cancelar reserva</p>
-            <p className="text-xs text-[#5A3A22] opacity-80 mt-1">
-              Escreva um motivo para o cuidador entender o cancelamento. <b>(Obrigatório)</b>
-            </p>
+        {/* ✅ CONFIRMAR CANCELAMENTO */}
+        {
+          cancelConfirmId && (
+            <div className="fixed bottom-6 right-6 z-[9999] w-[360px] max-w-[92vw]">
+              <div className="bg-white shadow-xl rounded-2xl border-l-4 border-red-600 p-4">
+                <p className="text-sm text-[#5A3A22] font-semibold">
+                  Tem certeza que deseja cancelar esta reserva?
+                </p>
+                <p className="text-xs text-[#5A3A22] opacity-80 mt-1">
+                  Essa ação não pode ser desfeita.
+                </p>
 
-            <textarea
-              value={cancelModal.text}
-              onChange={(e) => setCancelModal((s) => ({ ...s, text: e.target.value }))}
-              rows={4}
-              placeholder="Ex.: Mudança de planos / Imprevisto / Encontrei outro cuidador..."
-              className="mt-3 w-full border rounded-xl p-3 text-sm text-[#5A3A22] outline-none focus:ring-2 focus:ring-[#FFD700]/70"
-            />
-
-            <div className="flex justify-end gap-2 mt-4">
-              <button
-                type="button"
-                onClick={closeCancelModal}
-                className="px-3 py-2 rounded-lg text-xs font-semibold bg-gray-200 hover:bg-gray-300 text-[#5A3A22]"
-              >
-                Voltar
-              </button>
-              <button
-                type="button"
-                onClick={confirmCancelWithReason}
-                className="px-3 py-2 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 text-white"
-              >
-                Cancelar reserva
-              </button>
+                <div className="flex justify-end gap-2 mt-4">
+                  <button
+                    type="button"
+                    onClick={dismissCancelReservation}
+                    className="px-3 py-2 rounded-lg text-xs font-semibold bg-gray-200 hover:bg-gray-300 text-[#5A3A22]"
+                  >
+                    Manter reserva
+                  </button>
+                  <button
+                    type="button"
+                    onClick={confirmCancelReservation}
+                    className="px-3 py-2 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 text-white"
+                  >
+                    Cancelar reserva
+                  </button>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-      )
-    }
+          )
+        }
 
-    <RatingModal
-      isOpen={!!ratingReservation}
-      title={ratingTitle || "Avaliar"}
-      onClose={closeRatingModal}
-      onSubmit={handleSubmitRating}
-    />
+        {/* ✅ MODAL: MOTIVO DO CANCELAMENTO (obrigatório) */}
+        {
+          cancelModal.open && (
+            <div className="fixed inset-0 z-[9999] flex items-end md:items-center justify-center bg-black/40 p-4">
+              <div className="w-full max-w-[520px] bg-white rounded-2xl shadow-xl border-l-4 border-red-600 p-4">
+                <p className="text-sm font-semibold text-[#5A3A22]">Cancelar reserva</p>
+                <p className="text-xs text-[#5A3A22] opacity-80 mt-1">
+                  Escreva um motivo para o cuidador entender o cancelamento. <b>(Obrigatório)</b>
+                </p>
+
+                <textarea
+                  value={cancelModal.text}
+                  onChange={(e) => setCancelModal((s) => ({ ...s, text: e.target.value }))}
+                  rows={4}
+                  placeholder="Ex.: Mudança de planos / Imprevisto / Encontrei outro cuidador..."
+                  className="mt-3 w-full border rounded-xl p-3 text-sm text-[#5A3A22] outline-none focus:ring-2 focus:ring-[#FFD700]/70"
+                />
+
+                <div className="flex justify-end gap-2 mt-4">
+                  <button
+                    type="button"
+                    onClick={closeCancelModal}
+                    className="px-3 py-2 rounded-lg text-xs font-semibold bg-gray-200 hover:bg-gray-300 text-[#5A3A22]"
+                  >
+                    Voltar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={confirmCancelWithReason}
+                    className="px-3 py-2 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 text-white"
+                  >
+                    Cancelar reserva
+                  </button>
+                </div>
+              </div>
+            </div>
+          )
+        }
+
+        <RatingModal
+          isOpen={!!ratingReservation}
+          title={ratingTitle || "Avaliar"}
+          onClose={closeRatingModal}
+          onSubmit={handleSubmitRating}
+        />
       </div >
     );
   }
