@@ -8,7 +8,7 @@ const {
   markMessagesAsRead,
   listUnreadReservationsByUser,
   shouldSendChatEmailThrottle, // ✅ novo
-  touchChatEmailThrottle,      // ✅ novo
+  touchChatEmailThrottle, // ✅ novo
 } = require("../models/chatModel");
 
 // ✅ e-mails transacionais (Resend)
@@ -58,27 +58,71 @@ function canAccessChat(reservation, userId) {
 }
 
 /**
- * Normaliza status (trim + lower) para evitar 403 por variação de texto
+ * ✅ Normaliza status de forma "forte":
+ * - trim
+ * - lower
+ * - remove acento
+ * - colapsa múltiplos espaços
+ * - remove caracteres estranhos
+ *
+ * Evita 403 por:
+ * - "Concluída" vs "Concluida"
+ * - "Aceita " (espaço)
+ * - "EM   ANDAMENTO"
  */
 function normalizeStatus(status) {
-  return String(status || "").trim().toLowerCase();
+  return String(status || "")
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // remove acentos
+    .toLowerCase()
+    .replace(/\s+/g, " ") // colapsa espaços
+    .replace(/[^\w\s]/g, "") // remove pontuação/símbolos
+    .trim();
+}
+
+/**
+ * ✅ Mapeia variações comuns pra um conjunto reduzido
+ * (se vier algo inesperado, cai no próprio normalizeStatus)
+ */
+function canonicalStatus(status) {
+  const s = normalizeStatus(status);
+
+  // variações comuns
+  if (s === "aceito" || s === "aceita") return "aceita";
+  if (s === "concluida" || s === "concluido") return "concluida";
+  if (s === "finalizada" || s === "finalizado") return "finalizada";
+  if (s === "em andamento" || s === "andamento") return "em andamento";
+
+  return s;
 }
 
 /**
  * Regra do chat:
- * - leitura (GET mensagens / marcar como lido) pode ser mais permissiva
+ * - leitura (GET mensagens) pode ser mais permissiva (após aceitar)
  * - envio deve ser mais restrito
  */
-const CHAT_READABLE_STATUSES = new Set(["aceita", "em andamento", "concluida", "concluída", "finalizada"]);
-const CHAT_WRITABLE_STATUSES = new Set(["aceita", "em andamento"]);
+const CHAT_READABLE_STATUSES = new Set([
+  "aceita",
+  "em andamento",
+  "concluida",
+  "finalizada",
+]);
+
+const CHAT_WRITABLE_STATUSES = new Set([
+  "aceita",
+  "em andamento",
+]);
 
 function ensureChatReadable(reservation, res) {
-  const st = normalizeStatus(reservation?.status);
+  const stRaw = reservation?.status;
+  const st = canonicalStatus(stRaw);
 
   if (!CHAT_READABLE_STATUSES.has(st)) {
     res.status(403).json({
       error: "O chat só é liberado após a reserva ser aceita.",
-      status: reservation?.status,
+      status: stRaw,
+      normalizedStatus: st,
     });
     return false;
   }
@@ -86,12 +130,14 @@ function ensureChatReadable(reservation, res) {
 }
 
 function ensureChatWritable(reservation, res) {
-  const st = normalizeStatus(reservation?.status);
+  const stRaw = reservation?.status;
+  const st = canonicalStatus(stRaw);
 
   if (!CHAT_WRITABLE_STATUSES.has(st)) {
     res.status(403).json({
       error: "O chat só permite envio de mensagens quando a reserva está aceita.",
-      status: reservation?.status,
+      status: stRaw,
+      normalizedStatus: st,
     });
     return false;
   }
@@ -258,7 +304,6 @@ async function sendChatMessageController(req, res) {
             });
           } else {
             // silencioso: anti-spam ativo
-            // console.log("[chatEmail] throttle ativo, não enviou.");
           }
         }
       }
@@ -294,7 +339,7 @@ async function getChatMessagesController(req, res) {
       });
     }
 
-    // ✅ leitura: permite em Aceita/Em andamento/Concluída/Finalizada
+    // ✅ leitura: permite em Aceita/Em andamento/Concluída/Finalizada (robusto)
     if (!ensureChatReadable(reservation, res)) return;
 
     const messages = await listChatMessagesByReservation(reservation.id);
