@@ -11,7 +11,7 @@ import { markReservationNotifsRead } from "../utils/reservationNotifs";
 
 const DEFAULT_PET_IMG = "/paw.png";
 
-/* helpers simples/seguros */
+{/* helpers simples/seguros */}
 const toStr = (v) => (v == null ? "" : String(v));
 
 const safeJsonParse = (val) => {
