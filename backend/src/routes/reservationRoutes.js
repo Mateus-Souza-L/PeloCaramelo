@@ -82,6 +82,32 @@ function requireAnyLoggedUserOrAdmin() {
 }
 
 /**
+ * ✅ Paginação (page/limit) — default e clamp
+ * - page >= 1
+ * - limit entre 1..50
+ * - defaultLimit = 6 (igual ao front)
+ * Observação: mantém compatibilidade; o controller pode seguir lendo req.query.
+ */
+function applyPaginationDefaults({ defaultLimit = 6, maxLimit = 50 } = {}) {
+  return (req, _res, next) => {
+    const rawPage = req.query?.page;
+    const rawLimit = req.query?.limit;
+
+    const pageNum = Math.max(1, Math.trunc(Number(rawPage || 1) || 1));
+
+    let limitNum = Math.trunc(Number(rawLimit || defaultLimit) || defaultLimit);
+    if (!Number.isFinite(limitNum) || limitNum <= 0) limitNum = defaultLimit;
+    limitNum = Math.max(1, Math.min(maxLimit, limitNum));
+
+    // escreve de volta como string (padrão do querystring)
+    req.query.page = String(pageNum);
+    req.query.limit = String(limitNum);
+
+    next();
+  };
+}
+
+/**
  * Fail-closed: se o middleware de ownership ainda não existir,
  * bloqueia rotas sensíveis ao invés de deixar inseguro.
  */
@@ -146,17 +172,21 @@ router.post(
 // ✅ Aqui NÃO deve depender do role do token em multi-perfil.
 // O controller já lista por user.id. Então basta estar logado.
 // (Admin continua funcionando, pois também está logado.)
+// ✅ Suporta paginação: ?page=1&limit=6
 router.get(
   "/tutor",
   requireAnyLoggedUserOrAdmin(),
+  applyPaginationDefaults({ defaultLimit: 6, maxLimit: 50 }),
   pickHandler("listTutorReservationsController")
 );
 
 // GET /reservations/caregiver
 // ✅ Admin OU tem caregiver_profiles (perfil cuidador)
+// ✅ Suporta paginação: ?page=1&limit=6
 router.get(
   "/caregiver",
   requireAdminOrCaregiverProfile(),
+  applyPaginationDefaults({ defaultLimit: 6, maxLimit: 50 }),
   pickHandler("listCaregiverReservationsController")
 );
 

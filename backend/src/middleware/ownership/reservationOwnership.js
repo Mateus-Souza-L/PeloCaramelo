@@ -6,7 +6,7 @@ function toStr(v) {
   return v == null ? "" : String(v);
 }
 
-function toInt(v) {
+function toPosInt(v) {
   if (v == null) return null;
   const n = Number(v);
   if (!Number.isFinite(n)) return null;
@@ -20,7 +20,7 @@ function toInt(v) {
  * Retorna null se não existir.
  */
 async function getReservationParticipants(reservationId) {
-  const id = toInt(reservationId);
+  const id = toPosInt(reservationId);
   if (!id) return null;
 
   const sql = `
@@ -42,19 +42,20 @@ async function getReservationParticipants(reservationId) {
 
 /**
  * Ownership middleware:
- * - admin sempre passa
+ * - admin/admin_master sempre passa
  * - tutor/caregiver só se forem participantes da reserva
- * - 404 se não existe
+ * - 404 se a reserva não existir
  *
  * Anexa:
  * - req.reservation (dados básicos da reserva)
+ * - req.reservationId (id normalizado)
  * - req.reservationOwnership { isTutor, isCaregiver, isAdmin }
  */
 async function mustBeReservationParticipant(req, res, next) {
   try {
-    const userId = toStr(req.user?.id);
-    const roleRaw = toStr(req.user?.role);
-    const role = roleRaw.trim().toLowerCase();
+    const userId = toStr(req.user?.id).trim();
+    const roleRaw = toStr(req.user?.role).trim();
+    const role = roleRaw.toLowerCase();
 
     if (!userId || !role) {
       return res.status(401).json({
@@ -63,7 +64,16 @@ async function mustBeReservationParticipant(req, res, next) {
       });
     }
 
-    const reservationId = req.params?.id ?? req.params?.reservationId;
+    const reservationIdRaw =
+      req.params?.id ?? req.params?.reservationId ?? req.params?.resId ?? null;
+
+    const reservationId = toPosInt(reservationIdRaw);
+    if (!reservationId) {
+      return res.status(400).json({
+        error: "ID da reserva inválido.",
+        code: "INVALID_RESERVATION_ID",
+      });
+    }
 
     const row = await getReservationParticipants(reservationId);
 
@@ -76,16 +86,17 @@ async function mustBeReservationParticipant(req, res, next) {
 
     const isAdmin = role === "admin" || role === "admin_master";
     if (isAdmin) {
+      req.reservationId = reservationId;
       req.reservation = row;
       req.reservationOwnership = { isTutor: false, isCaregiver: false, isAdmin: true };
       return next();
     }
 
-    const tutorId = toStr(row.tutor_id);
-    const caregiverId = toStr(row.caregiver_id);
+    const tutorId = toStr(row.tutor_id).trim();
+    const caregiverId = toStr(row.caregiver_id).trim();
 
-    const isTutor = tutorId && tutorId === userId;
-    const isCaregiver = caregiverId && caregiverId === userId;
+    const isTutor = !!tutorId && tutorId === userId;
+    const isCaregiver = !!caregiverId && caregiverId === userId;
 
     if (!isTutor && !isCaregiver) {
       return res.status(403).json({
@@ -94,6 +105,7 @@ async function mustBeReservationParticipant(req, res, next) {
       });
     }
 
+    req.reservationId = reservationId;
     req.reservation = row;
     req.reservationOwnership = { isTutor, isCaregiver, isAdmin: false };
 

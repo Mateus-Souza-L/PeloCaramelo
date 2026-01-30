@@ -424,6 +424,82 @@ async function listAllReservations(limit = 500) {
   return result.rows.map(mapReservationRow);
 }
 
+/* ===========================================================
+   ✅ PAGINATION (NOVO)
+   =========================================================== */
+
+async function listTutorReservationsPaged(tutorId, { limit, offset } = {}) {
+  const lim = Number.isFinite(Number(limit)) ? Math.trunc(Number(limit)) : 6;
+  const off = Number.isFinite(Number(offset)) ? Math.trunc(Number(offset)) : 0;
+
+  const safeLimit = Math.max(1, Math.min(lim, 50));
+  const safeOffset = Math.max(0, off);
+
+  const sql = selectReservationWithReviewJoins(`
+    WHERE r.tutor_id::text = $1
+    ORDER BY r.updated_at DESC NULLS LAST, r.created_at DESC, r.id DESC
+    LIMIT $2 OFFSET $3
+  `);
+
+  const result = await pool.query(sql, [String(tutorId), safeLimit, safeOffset]);
+  return result.rows.map(mapReservationRow);
+}
+
+async function countTutorReservations(tutorId) {
+  const sql = `SELECT COUNT(*)::int AS total FROM reservations WHERE tutor_id::text = $1`;
+  const { rows } = await pool.query(sql, [String(tutorId)]);
+  return Number(rows?.[0]?.total || 0);
+}
+
+async function listCaregiverReservationsPaged(caregiverId, { limit, offset } = {}) {
+  const lim = Number.isFinite(Number(limit)) ? Math.trunc(Number(limit)) : 6;
+  const off = Number.isFinite(Number(offset)) ? Math.trunc(Number(offset)) : 0;
+
+  const safeLimit = Math.max(1, Math.min(lim, 50));
+  const safeOffset = Math.max(0, off);
+
+  const sql = selectReservationWithReviewJoins(`
+    WHERE r.caregiver_id::text = $1
+    ORDER BY r.updated_at DESC NULLS LAST, r.created_at DESC, r.id DESC
+    LIMIT $2 OFFSET $3
+  `);
+
+  const result = await pool.query(sql, [String(caregiverId), safeLimit, safeOffset]);
+  return result.rows.map(mapReservationRow);
+}
+
+async function countCaregiverReservations(caregiverId) {
+  const sql = `SELECT COUNT(*)::int AS total FROM reservations WHERE caregiver_id::text = $1`;
+  const { rows } = await pool.query(sql, [String(caregiverId)]);
+  return Number(rows?.[0]?.total || 0);
+}
+
+async function listAllReservationsPaged({ limit, offset } = {}) {
+  const lim = Number.isFinite(Number(limit)) ? Math.trunc(Number(limit)) : 6;
+  const off = Number.isFinite(Number(offset)) ? Math.trunc(Number(offset)) : 0;
+
+  const safeLimit = Math.max(1, Math.min(lim, 50));
+  const safeOffset = Math.max(0, off);
+
+  const sql = selectReservationWithReviewJoins(`
+    ORDER BY r.updated_at DESC NULLS LAST, r.created_at DESC, r.id DESC
+    LIMIT $1 OFFSET $2
+  `);
+
+  const result = await pool.query(sql, [safeLimit, safeOffset]);
+  return result.rows.map(mapReservationRow);
+}
+
+async function countAllReservations() {
+  const sql = `SELECT COUNT(*)::int AS total FROM reservations`;
+  const { rows } = await pool.query(sql);
+  return Number(rows?.[0]?.total || 0);
+}
+
+/* ===========================================================
+   GET BY ID
+   =========================================================== */
+
 async function getReservationById(id) {
   const sql = selectReservationWithReviewJoins(`
     WHERE r.id = $1
@@ -565,9 +641,19 @@ async function assertCaregiverCanBeBooked(caregiverId, startDate, endDate, exclu
 
 module.exports = {
   createReservation,
+
   listTutorReservations,
   listCaregiverReservations,
   listAllReservations,
+
+  // ✅ paginado (novo)
+  listTutorReservationsPaged,
+  countTutorReservations,
+  listCaregiverReservationsPaged,
+  countCaregiverReservations,
+  listAllReservationsPaged,
+  countAllReservations,
+
   getReservationById,
   updateReservationStatus,
   updateReservationRating,

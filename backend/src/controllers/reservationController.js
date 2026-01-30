@@ -123,6 +123,36 @@ function cleanNonEmptyString(v) {
 }
 
 /* ===========================================================
+   PAGINATION HELPERS
+   =========================================================== */
+
+function getPageLimit(req, { defaultLimit = 6, maxLimit = 50 } = {}) {
+  const page = Math.max(1, Math.trunc(Number(req.query?.page || 1) || 1));
+
+  let limit = Math.trunc(Number(req.query?.limit || defaultLimit) || defaultLimit);
+  if (!Number.isFinite(limit) || limit <= 0) limit = defaultLimit;
+  limit = Math.max(1, Math.min(maxLimit, limit));
+
+  const offset = (page - 1) * limit;
+
+  return { page, limit, offset };
+}
+
+function buildPagination({ page, limit, total }) {
+  const totalNum = Math.max(0, Number(total || 0));
+  const totalPages = Math.max(1, Math.ceil(totalNum / limit));
+
+  return {
+    page,
+    limit,
+    total: totalNum,
+    totalPages,
+    hasPrev: page > 1,
+    hasNext: page < totalPages,
+  };
+}
+
+/* ===========================================================
    EMAIL HELPERS (URLs + datas)
    =========================================================== */
 
@@ -643,6 +673,63 @@ async function updateReservationStatusDb(id, status, reason = null) {
 }
 
 /* ===========================================================
+   PAGINATION QUERIES (fallback via SQL)
+   =========================================================== */
+
+async function listReservationsByTutorIdPaged(tutorId, { limit, offset }) {
+  const sql = `
+    SELECT *
+    FROM reservations
+    WHERE tutor_id::text = $1
+    ORDER BY created_at DESC NULLS LAST, id DESC
+    LIMIT $2 OFFSET $3
+  `;
+  const { rows } = await pool.query(sql, [String(tutorId), limit, offset]);
+  return rows || [];
+}
+
+async function countReservationsByTutorId(tutorId) {
+  const sql = `SELECT COUNT(*)::int AS total FROM reservations WHERE tutor_id::text = $1`;
+  const { rows } = await pool.query(sql, [String(tutorId)]);
+  return Number(rows?.[0]?.total || 0);
+}
+
+async function listReservationsByCaregiverIdPaged(caregiverId, { limit, offset }) {
+  const sql = `
+    SELECT *
+    FROM reservations
+    WHERE caregiver_id::text = $1
+    ORDER BY created_at DESC NULLS LAST, id DESC
+    LIMIT $2 OFFSET $3
+  `;
+  const { rows } = await pool.query(sql, [String(caregiverId), limit, offset]);
+  return rows || [];
+}
+
+async function countReservationsByCaregiverId(caregiverId) {
+  const sql = `SELECT COUNT(*)::int AS total FROM reservations WHERE caregiver_id::text = $1`;
+  const { rows } = await pool.query(sql, [String(caregiverId)]);
+  return Number(rows?.[0]?.total || 0);
+}
+
+async function listAllReservationsPaged({ limit, offset }) {
+  const sql = `
+    SELECT *
+    FROM reservations
+    ORDER BY created_at DESC NULLS LAST, id DESC
+    LIMIT $1 OFFSET $2
+  `;
+  const { rows } = await pool.query(sql, [limit, offset]);
+  return rows || [];
+}
+
+async function countAllReservations() {
+  const sql = `SELECT COUNT(*)::int AS total FROM reservations`;
+  const { rows } = await pool.query(sql);
+  return Number(rows?.[0]?.total || 0);
+}
+
+/* ===========================================================
    CREATE (tutor)
    =========================================================== */
 
@@ -843,7 +930,7 @@ async function createReservationController(req, res) {
 }
 
 /* ===========================================================
-   LIST - tutor
+   LIST - tutor (PAGINADO)
    =========================================================== */
 
 async function listTutorReservationsController(req, res) {
@@ -853,28 +940,70 @@ async function listTutorReservationsController(req, res) {
       return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
     }
 
+    const { page, limit, offset } = getPageLimit(req, { defaultLimit: 6, maxLimit: 50 });
+
+    // ADMIN
     if (isAdminLikeRole(user.role)) {
       const qTutorId = req.query?.tutorId != null ? String(req.query.tutorId) : null;
 
       let rows = [];
+      let total = 0;
+
       if (qTutorId) {
-        rows = await reservationModel.listTutorReservations(String(qTutorId));
-      } else if (typeof reservationModel.listAllReservations === "function") {
-        rows = await reservationModel.listAllReservations();
+        // tenta usar model se existir com paginação; senão fallback SQL
+        if (typeof reservationModel.listTutorReservationsPaged === "function") {
+          rows = await reservationModel.listTutorReservationsPaged(String(qTutorId), { limit, offset });
+        } else {
+          rows = await listReservationsByTutorIdPaged(String(qTutorId), { limit, offset });
+        }
+
+        if (typeof reservationModel.countTutorReservations === "function") {
+          total = await reservationModel.countTutorReservations(String(qTutorId));
+        } else {
+          total = await countReservationsByTutorId(String(qTutorId));
+        }
       } else {
-        const { rows: dbRows } = await pool.query(
-          `SELECT * FROM reservations ORDER BY created_at DESC NULLS LAST, id DESC LIMIT 500`
-        );
-        rows = dbRows || [];
+        if (typeof reservationModel.listAllReservationsPaged === "function") {
+          rows = await reservationModel.listAllReservationsPaged({ limit, offset });
+        } else {
+          rows = await listAllReservationsPaged({ limit, offset });
+        }
+
+        if (typeof reservationModel.countAllReservations === "function") {
+          total = await reservationModel.countAllReservations();
+        } else {
+          total = await countAllReservations();
+        }
       }
 
-      return res.json({ reservations: rows });
+      return res.json({
+        reservations: (rows || []).map(normalizeReservationResponse),
+        pagination: buildPagination({ page, limit, total }),
+      });
     }
 
-    let reservations = await reservationModel.listTutorReservations(String(user.id));
+    // USER normal
+    let reservations = [];
+    let total = 0;
+
+    if (typeof reservationModel.listTutorReservationsPaged === "function") {
+      reservations = await reservationModel.listTutorReservationsPaged(String(user.id), { limit, offset });
+    } else {
+      reservations = await listReservationsByTutorIdPaged(String(user.id), { limit, offset });
+    }
+
+    if (typeof reservationModel.countTutorReservations === "function") {
+      total = await reservationModel.countTutorReservations(String(user.id));
+    } else {
+      total = await countReservationsByTutorId(String(user.id));
+    }
+
     reservations = await attachMyReviewFields(reservations, user.id);
 
-    return res.json({ reservations });
+    return res.json({
+      reservations: (reservations || []).map(normalizeReservationResponse),
+      pagination: buildPagination({ page, limit, total }),
+    });
   } catch (err) {
     console.error("Erro em GET /reservations/tutor:", err);
     return res.status(500).json({
@@ -885,7 +1014,7 @@ async function listTutorReservationsController(req, res) {
 }
 
 /* ===========================================================
-   LIST - caregiver
+   LIST - caregiver (PAGINADO)
    =========================================================== */
 
 async function listCaregiverReservationsController(req, res) {
@@ -895,28 +1024,75 @@ async function listCaregiverReservationsController(req, res) {
       return res.status(401).json({ error: "Não autenticado.", code: "UNAUTHENTICATED" });
     }
 
+    const { page, limit, offset } = getPageLimit(req, { defaultLimit: 6, maxLimit: 50 });
+
+    // ADMIN
     if (isAdminLikeRole(user.role)) {
       const qCaregiverId = req.query?.caregiverId != null ? String(req.query.caregiverId) : null;
 
       let rows = [];
+      let total = 0;
+
       if (qCaregiverId) {
-        rows = await reservationModel.listCaregiverReservations(String(qCaregiverId));
-      } else if (typeof reservationModel.listAllReservations === "function") {
-        rows = await reservationModel.listAllReservations();
+        if (typeof reservationModel.listCaregiverReservationsPaged === "function") {
+          rows = await reservationModel.listCaregiverReservationsPaged(String(qCaregiverId), {
+            limit,
+            offset,
+          });
+        } else {
+          rows = await listReservationsByCaregiverIdPaged(String(qCaregiverId), { limit, offset });
+        }
+
+        if (typeof reservationModel.countCaregiverReservations === "function") {
+          total = await reservationModel.countCaregiverReservations(String(qCaregiverId));
+        } else {
+          total = await countReservationsByCaregiverId(String(qCaregiverId));
+        }
       } else {
-        const { rows: dbRows } = await pool.query(
-          `SELECT * FROM reservations ORDER BY created_at DESC NULLS LAST, id DESC LIMIT 500`
-        );
-        rows = dbRows || [];
+        if (typeof reservationModel.listAllReservationsPaged === "function") {
+          rows = await reservationModel.listAllReservationsPaged({ limit, offset });
+        } else {
+          rows = await listAllReservationsPaged({ limit, offset });
+        }
+
+        if (typeof reservationModel.countAllReservations === "function") {
+          total = await reservationModel.countAllReservations();
+        } else {
+          total = await countAllReservations();
+        }
       }
 
-      return res.json({ reservations: rows });
+      return res.json({
+        reservations: (rows || []).map(normalizeReservationResponse),
+        pagination: buildPagination({ page, limit, total }),
+      });
     }
 
-    let reservations = await reservationModel.listCaregiverReservations(String(user.id));
+    // USER normal
+    let reservations = [];
+    let total = 0;
+
+    if (typeof reservationModel.listCaregiverReservationsPaged === "function") {
+      reservations = await reservationModel.listCaregiverReservationsPaged(String(user.id), {
+        limit,
+        offset,
+      });
+    } else {
+      reservations = await listReservationsByCaregiverIdPaged(String(user.id), { limit, offset });
+    }
+
+    if (typeof reservationModel.countCaregiverReservations === "function") {
+      total = await reservationModel.countCaregiverReservations(String(user.id));
+    } else {
+      total = await countReservationsByCaregiverId(String(user.id));
+    }
+
     reservations = await attachMyReviewFields(reservations, user.id);
 
-    return res.json({ reservations });
+    return res.json({
+      reservations: (reservations || []).map(normalizeReservationResponse),
+      pagination: buildPagination({ page, limit, total }),
+    });
   } catch (err) {
     console.error("Erro em GET /reservations/caregiver:", err);
     return res.status(500).json({
@@ -970,6 +1146,7 @@ async function getReservationDetailController(req, res) {
 
 /* ===========================================================
    UPDATE STATUS (+ NOTIF) — com normalização e transições
+   (mantive seu código daqui pra baixo sem mudanças funcionais)
    =========================================================== */
 
 async function updateReservationStatusController(req, res) {
@@ -1326,7 +1503,10 @@ async function updateReservationStatusController(req, res) {
                 tutorUser?.name || updated?.tutor_name || updated?.tutorName || "Tutor";
 
               const caregiverName =
-                caregiverUser?.name || updated?.caregiver_name || updated?.caregiverName || "Cuidador";
+                caregiverUser?.name ||
+                updated?.caregiver_name ||
+                updated?.caregiverName ||
+                "Cuidador";
 
               if (tutorEmail) {
                 const payloadTutor = reviewRequestTutorEmail({
