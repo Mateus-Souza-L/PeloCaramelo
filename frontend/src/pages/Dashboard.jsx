@@ -1876,13 +1876,15 @@ if (isTutor) {
 
   return (
     <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] p-6">
+      {/* Tabs */}
       <div className="max-w-[1400px] mx-auto mb-4 flex gap-3 justify-center">
         <button
           onClick={() => setTab("reservasTutor")}
-          className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${tab === "reservasTutor"
-            ? "bg-[#5A3A22] text-white"
-            : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
-            }`}
+          className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${
+            tab === "reservasTutor"
+              ? "bg-[#5A3A22] text-white"
+              : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
+          }`}
           type="button"
         >
           Minhas Reservas
@@ -1890,16 +1892,18 @@ if (isTutor) {
 
         <button
           onClick={() => setTab("pets")}
-          className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${tab === "pets"
-            ? "bg-[#5A3A22] text-white"
-            : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
-            }`}
+          className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${
+            tab === "pets"
+              ? "bg-[#5A3A22] text-white"
+              : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
+          }`}
           type="button"
         >
           Meus Pets
         </button>
       </div>
 
+      {/* Avaliações */}
       <div className="max-w-[1400px] mx-auto mb-4 flex justify-end">
         <Link
           to={`/avaliacoes?mode=${activeRole}`}
@@ -1909,6 +1913,7 @@ if (isTutor) {
         </Link>
       </div>
 
+      {/* Conteúdo */}
       <div className="max-w-[1400px] mx-auto bg-white rounded-2xl shadow p-6 border-l-4 border-[#FFD700]/80">
         {/* ✅ TAB: RESERVAS */}
         {tab === "reservasTutor" && (
@@ -1940,22 +1945,17 @@ if (isTutor) {
                   const rejectReason = r.status === "Recusada" ? r.rejectReason || null : null;
                   const cancelReason = r.status === "Cancelada" ? r.cancelReason || null : null;
 
-                  const showTutorRating = r.tutorRating != null && Number.isFinite(Number(r.tutorRating));
-
-                  const periodText =
-                    (r.startDate ? formatDateBR(r.startDate) : "—") +
-                    " até " +
-                    (r.endDate ? formatDateBR(r.endDate) : "—");
-
-                  const placeText = [r.neighborhood, r.city].filter(Boolean).join(" — ") || "—";
+                  const showTutorRating =
+                    r.tutorRating != null && Number.isFinite(Number(r.tutorRating));
 
                   return (
                     <div key={r.id} className={cardClasses}>
                       {(hasUnreadChat || hasUnreadResNotif) && (
                         <div className="absolute top-3 right-3 flex items-center gap-2">
                           <span
-                            className={`w-2.5 h-2.5 rounded-full ${hasUnreadChat ? "bg-blue-600" : "bg-red-600"
-                              }`}
+                            className={`w-2.5 h-2.5 rounded-full ${
+                              hasUnreadChat ? "bg-blue-600" : "bg-red-600"
+                            }`}
                             title={hasUnreadChat ? "Nova mensagem" : "Atualização"}
                           />
                           <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/70 border border-[#FFD700]/50 text-[#5A3A22]">
@@ -1992,7 +1992,9 @@ if (isTutor) {
 
                         {(hasUnreadChat || hasUnreadResNotif) && (
                           <p className="mt-1 text-xs font-semibold text-[#B25B38]">
-                            {hasUnreadChat ? "Nova mensagem nesta reserva" : "Atualização nesta reserva"}
+                            {hasUnreadChat
+                              ? "Nova mensagem nesta reserva"
+                              : "Atualização nesta reserva"}
                           </p>
                         )}
 
@@ -2036,6 +2038,7 @@ if (isTutor) {
                             <Link
                               to={`/reserva/${r.id}#chat`}
                               state={{ scrollToChat: true }}
+                              onClick={(e) => e.stopPropagation()}
                               className="px-3 py-1 rounded-lg text-xs font-semibold bg-[#FFD700] hover:bg-[#f5c400] text-[#5A3A22] shadow"
                             >
                               Abrir chat
@@ -2083,81 +2086,80 @@ if (isTutor) {
           </>
         )}
 
-        {/* ✅ TAB: PETS (fora do reservasTutor, como deve ser) */}
+        {/* ✅ TAB: PETS */}
         {tab === "pets" && <TutorPets />}
       </div>
 
       {/* ✅ CONFIRMAR CANCELAMENTO */}
-      {
-        cancelConfirmId && (
-          <div className="fixed bottom-6 right-6 z-[9999] w-[360px] max-w-[92vw]">
-            <div className="bg-white shadow-xl rounded-2xl border-l-4 border-red-600 p-4">
-              <p className="text-sm text-[#5A3A22] font-semibold">
-                Tem certeza que deseja cancelar esta reserva?
-              </p>
-              <p className="text-xs text-[#5A3A22] opacity-80 mt-1">
-                Essa ação não pode ser desfeita.
-              </p>
+      {cancelConfirmId && (
+        <div className="fixed bottom-6 right-6 z-[9999] w-[360px] max-w-[92vw]">
+          <div className="bg-white shadow-xl rounded-2xl border-l-4 border-red-600 p-4">
+            <p className="text-sm text-[#5A3A22] font-semibold">
+              Tem certeza que deseja cancelar esta reserva?
+            </p>
+            <p className="text-xs text-[#5A3A22] opacity-80 mt-1">
+              Essa ação não pode ser desfeita.
+            </p>
 
-              <div className="flex justify-end gap-2 mt-4">
-                <button
-                  type="button"
-                  onClick={dismissCancelReservation}
-                  className="px-3 py-2 rounded-lg text-xs font-semibold bg-gray-200 hover:bg-gray-300 text-[#5A3A22]"
-                >
-                  Manter reserva
-                </button>
-                <button
-                  type="button"
-                  onClick={confirmCancelReservation}
-                  className="px-3 py-2 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 text-white"
-                >
-                  Cancelar reserva
-                </button>
-              </div>
+            <div className="flex justify-end gap-2 mt-4">
+              <button
+                type="button"
+                onClick={dismissCancelReservation}
+                className="px-3 py-2 rounded-lg text-xs font-semibold bg-gray-200 hover:bg-gray-300 text-[#5A3A22]"
+              >
+                Manter reserva
+              </button>
+              <button
+                type="button"
+                onClick={confirmCancelReservation}
+                className="px-3 py-2 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 text-white"
+              >
+                Cancelar reserva
+              </button>
             </div>
           </div>
-        )
-      }
+        </div>
+      )}
 
-      {/* ✅ MODAL: MOTIVO DO CANCELAMENTO (obrigatório) */}
-      {
-        cancelModal.open && (
-          <div className="fixed inset-0 z-[9999] flex items-end md:items-center justify-center bg-black/40 p-4">
-            <div className="w-full max-w-[520px] bg-white rounded-2xl shadow-xl border-l-4 border-red-600 p-4">
-              <p className="text-sm font-semibold text-[#5A3A22]">Cancelar reserva</p>
-              <p className="text-xs text-[#5A3A22] opacity-80 mt-1">
-                Escreva um motivo para o cuidador entender o cancelamento. <b>(Obrigatório)</b>
-              </p>
+      {/* ✅ MODAL: MOTIVO DO CANCELAMENTO */}
+      {cancelModal.open && (
+        <div className="fixed inset-0 z-[9999] flex items-end md:items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-[520px] bg-white rounded-2xl shadow-xl border-l-4 border-red-600 p-4">
+            <p className="text-sm font-semibold text-[#5A3A22]">Cancelar reserva</p>
+            <p className="text-xs text-[#5A3A22] opacity-80 mt-1">
+              Escreva um motivo para o cuidador entender o cancelamento.{" "}
+              <b>(Obrigatório)</b>
+            </p>
 
-              <textarea
-                value={cancelModal.text}
-                onChange={(e) => setCancelModal((s) => ({ ...s, text: e.target.value }))}
-                rows={4}
-                placeholder="Ex.: Mudança de planos / Imprevisto / Encontrei outro cuidador..."
-                className="mt-3 w-full border rounded-xl p-3 text-sm text-[#5A3A22] outline-none focus:ring-2 focus:ring-[#FFD700]/70"
-              />
+            <textarea
+              value={cancelModal.text}
+              onChange={(e) =>
+                setCancelModal((s) => ({ ...s, text: e.target.value }))
+              }
+              rows={4}
+              placeholder="Ex.: Mudança de planos / Imprevisto / Encontrei outro cuidador..."
+              className="mt-3 w-full border rounded-xl p-3 text-sm text-[#5A3A22] outline-none focus:ring-2 focus:ring-[#FFD700]/70"
+            />
 
-              <div className="flex justify-end gap-2 mt-4">
-                <button
-                  type="button"
-                  onClick={closeCancelModal}
-                  className="px-3 py-2 rounded-lg text-xs font-semibold bg-gray-200 hover:bg-gray-300 text-[#5A3A22]"
-                >
-                  Voltar
-                </button>
-                <button
-                  type="button"
-                  onClick={confirmCancelWithReason}
-                  className="px-3 py-2 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 text-white"
-                >
-                  Cancelar reserva
-                </button>
-              </div>
+            <div className="flex justify-end gap-2 mt-4">
+              <button
+                type="button"
+                onClick={closeCancelModal}
+                className="px-3 py-2 rounded-lg text-xs font-semibold bg-gray-200 hover:bg-gray-300 text-[#5A3A22]"
+              >
+                Voltar
+              </button>
+              <button
+                type="button"
+                onClick={confirmCancelWithReason}
+                className="px-3 py-2 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 text-white"
+              >
+                Cancelar reserva
+              </button>
             </div>
           </div>
-        )
-      }
+        </div>
+      )}
 
       <RatingModal
         isOpen={!!ratingReservation}
@@ -2165,7 +2167,7 @@ if (isTutor) {
         onClose={closeRatingModal}
         onSubmit={handleSubmitRating}
       />
-    </div >
+    </div>
   );
 }
 
