@@ -18,6 +18,7 @@ const { newChatMessageEmail } = require("../email/templates/newChatMessageEmail"
 function getUserId(req, res) {
   const userId = req.user?.id;
   if (!userId) {
+    // ⚠️ aqui é ok responder e retornar null (caller checa)
     res.status(401).json({ error: "Não autenticado." });
     return null;
   }
@@ -38,8 +39,13 @@ function normalizeStatus(status) {
  * Regra do chat:
  * - leitura pode ser mais permissiva
  * - envio deve ser mais restrito
+ *
+ * ✅ IMPORTANTE:
+ * O front pode renderizar o chat antes do PATCH "Aceita" concluir (race).
+ * Para evitar 403 transitório, permitimos "pendente" apenas para leitura.
  */
 const CHAT_READABLE_STATUSES = new Set([
+  "pendente", // ✅ evita 403 transitório antes do PATCH terminar
   "aceita",
   "aceito", // ✅ tolerância
   "em andamento",
@@ -132,16 +138,23 @@ async function getReservationOr404(reservationId, res) {
   return reservation;
 }
 
+/**
+ * ✅ MUITO IMPORTANTE:
+ * Essas funções devem retornar boolean.
+ * Se responderem via res.json(), têm que retornar FALSE,
+ * senão o controller continua e tenta responder de novo (ERR_HTTP_HEADERS_SENT).
+ */
 function ensureChatReadable(reservation, res) {
   const original = reservation?.status;
   const st = normalizeStatus(original);
 
   if (!CHAT_READABLE_STATUSES.has(st)) {
-    return res.status(403).json({
+    res.status(403).json({
       error: "O chat só é liberado após a reserva ser aceita.",
       status: original ?? null,
       normalizedStatus: st,
     });
+    return false;
   }
   return true;
 }
@@ -151,11 +164,12 @@ function ensureChatWritable(reservation, res) {
   const st = normalizeStatus(original);
 
   if (!CHAT_WRITABLE_STATUSES.has(st)) {
-    return res.status(403).json({
+    res.status(403).json({
       error: "O chat só permite envio de mensagens quando a reserva está aceita.",
       status: original ?? null,
       normalizedStatus: st,
     });
+    return false;
   }
   return true;
 }
@@ -344,7 +358,7 @@ async function getChatMessagesController(req, res) {
       });
     }
 
-    // ✅ leitura: permite em Aceita/Em andamento/Concluída/Finalizada
+    // ✅ leitura: permite em Pendente/Aceita/Em andamento/Concluída/Finalizada
     if (!ensureChatReadable(reservation, res)) return;
 
     const messages = await listChatMessagesByReservation(reservation.id);
