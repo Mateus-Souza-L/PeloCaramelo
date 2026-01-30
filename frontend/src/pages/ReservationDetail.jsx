@@ -682,10 +682,10 @@ export default function ReservationDetail() {
   );
 
   // ✅ AQUI ERA O BUG: useMemo não pode ficar depois dos returns.
-  const canChatNow = useMemo(() => {
+  const canChatNow = (() => {
     const s = String(reservation?.status || "");
-    return s === "Aceita" || s === "Concluída" || s === "Concluida";
-  }, [reservation?.status]);
+    return s === "Aceita" || s === "Concluída" || s === "Concluida" || s === "Finalizada";
+  })();
 
   const reservationDays = useMemo(() => {
     if (!reservation?.startDate || !reservation?.endDate) return null;
@@ -1231,11 +1231,10 @@ export default function ReservationDetail() {
             type="button"
             onClick={closeCancelConfirm}
             disabled={cancelBusy}
-            className={`px-4 py-2 rounded-lg font-semibold ${
-              cancelBusy
+            className={`px-4 py-2 rounded-lg font-semibold ${cancelBusy
                 ? "bg-gray-200 text-gray-500 cursor-not-allowed"
                 : "bg-gray-200 hover:bg-gray-300 text-[#5A3A22]"
-            }`}
+              }`}
           >
             Voltar
           </button>
@@ -1244,9 +1243,8 @@ export default function ReservationDetail() {
             type="button"
             onClick={confirmCancelFlow}
             disabled={cancelBusy}
-            className={`px-4 py-2 rounded-lg font-semibold text-white ${
-              cancelBusy ? "bg-gray-400 cursor-not-allowed" : "bg-[#95301F] hover:bg-[#7d2618]"
-            }`}
+            className={`px-4 py-2 rounded-lg font-semibold text-white ${cancelBusy ? "bg-gray-400 cursor-not-allowed" : "bg-[#95301F] hover:bg-[#7d2618]"
+              }`}
           >
             Sim, cancelar
           </button>
@@ -1285,11 +1283,10 @@ export default function ReservationDetail() {
             type="button"
             onClick={closeCancelReason}
             disabled={cancelBusy}
-            className={`px-4 py-2 rounded-lg font-semibold ${
-              cancelBusy
+            className={`px-4 py-2 rounded-lg font-semibold ${cancelBusy
                 ? "bg-gray-200 text-gray-500 cursor-not-allowed"
                 : "bg-gray-200 hover:bg-gray-300 text-[#5A3A22]"
-            }`}
+              }`}
           >
             Voltar
           </button>
@@ -1298,9 +1295,8 @@ export default function ReservationDetail() {
             type="button"
             onClick={submitCancelReason}
             disabled={cancelBusy}
-            className={`px-4 py-2 rounded-lg font-semibold text-[#5A3A22] ${
-              cancelBusy ? "bg-[#FFD700]/50 cursor-not-allowed" : "bg-[#FFD700] hover:bg-[#f5c400]"
-            }`}
+            className={`px-4 py-2 rounded-lg font-semibold text-[#5A3A22] ${cancelBusy ? "bg-[#FFD700]/50 cursor-not-allowed" : "bg-[#FFD700] hover:bg-[#f5c400]"
+              }`}
           >
             {cancelBusy ? "Cancelando..." : "Confirmar cancelamento"}
           </button>
@@ -1527,11 +1523,10 @@ export default function ReservationDetail() {
                   type="button"
                   onClick={openRatingModal}
                   disabled={ratingBusy}
-                  className={`mt-3 px-4 py-2 rounded-lg font-semibold shadow-md text-sm ${
-                    ratingBusy
+                  className={`mt-3 px-4 py-2 rounded-lg font-semibold shadow-md text-sm ${ratingBusy
                       ? "bg-[#FFD700]/60 cursor-not-allowed text-[#5A3A22]"
                       : "bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22]"
-                  }`}
+                    }`}
                 >
                   {ratingBusy ? "Enviando..." : isTutor ? "Avaliar cuidador" : "Avaliar tutor"}
                 </button>
