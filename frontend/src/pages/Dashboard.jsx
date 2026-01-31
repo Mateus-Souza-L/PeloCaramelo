@@ -607,6 +607,136 @@ export default function Dashboard() {
   const [unreadChatIds, setUnreadChatIds] = useState([]);
   const [unreadResIds, setUnreadResIds] = useState([]);
 
+  /* ===========================================================
+   ✅ PRIORIDADE GLOBAL (Página 1)
+   - Faz reservas não lidas aparecerem no topo da página 1
+     mesmo se estiverem em outras páginas do backend.
+   - Usa cache local + fetch por ID quando precisar.
+   =========================================================== */
+
+  const priorityCacheKey = useMemo(() => {
+    const uid = user?.id != null ? String(user.id) : "anon";
+    return `priorityReservations_${String(activeRole)}_${uid}`;
+  }, [user?.id, activeRole]);
+
+  const readPriorityCache = useCallback(() => {
+    try {
+      const raw = localStorage.getItem(priorityCacheKey) || "[]";
+      const parsed = JSON.parse(raw);
+      const list = Array.isArray(parsed) ? parsed : [];
+      return list.map(normalizeReservationFromLocal).filter(Boolean);
+    } catch {
+      return [];
+    }
+  }, [priorityCacheKey]);
+
+  const writePriorityCache = useCallback(
+    (list) => {
+      try {
+        const safe = Array.isArray(list) ? list : [];
+        localStorage.setItem(priorityCacheKey, JSON.stringify(safe));
+      } catch {
+        // ignore
+      }
+    },
+    [priorityCacheKey]
+  );
+
+  const getPriorityIds = useCallback(() => {
+    return Array.from(
+      new Set(
+        [...(unreadChatIds || []), ...(unreadResIds || [])].map((x) => String(x))
+      )
+    );
+  }, [unreadChatIds, unreadResIds]);
+
+  const ensurePriorityReservations = useCallback(
+    async (currentPageList) => {
+      // Só faz sentido garantir isso para a Página 1 (onde queremos “puxar” pro topo)
+      if (Number(resPage || 1) !== 1) return;
+
+      if (!token) return;
+
+      const priorityIds = getPriorityIds();
+      if (!priorityIds.length) return;
+
+      const base = Array.isArray(currentPageList) ? currentPageList : [];
+      const baseIds = new Set(base.map((r) => String(r?.id)));
+
+      const cached = readPriorityCache();
+      const cachedIds = new Set(cached.map((r) => String(r?.id)));
+
+      // Busca só o que está faltando (e limita pra não fazer rajada de requests)
+      const missing = priorityIds
+        .filter((id) => !baseIds.has(id) && !cachedIds.has(id))
+        .slice(0, 6);
+
+      if (!missing.length) return;
+
+      const fetched = [];
+
+      for (const rid of missing) {
+        try {
+          // ✅ esse endpoint geralmente existe porque o detalhe da reserva precisa dele
+          const data = await authRequest(`/reservations/${encodeURIComponent(rid)}`, token);
+
+          const item =
+            data?.reservation != null
+              ? normalizeReservationFromApi(data.reservation)
+              : data != null
+                ? normalizeReservationFromApi(data)
+                : null;
+
+          if (item?.id) fetched.push(item);
+        } catch (err) {
+          // se não conseguir buscar um ID, só ignora
+          console.warn("[priority] não conseguiu buscar reserva", rid, err);
+        }
+      }
+
+      if (!fetched.length) return;
+
+      // Atualiza cache com merge por id
+      const map = new Map();
+      for (const r of cached) map.set(String(r.id), r);
+      for (const r of fetched) map.set(String(r.id), r);
+
+      writePriorityCache(Array.from(map.values()));
+    },
+    [resPage, token, getPriorityIds, readPriorityCache, writePriorityCache]
+  );
+
+  // ✅ lista usada pelos cards: na Página 1 injeta as reservas não-lidas no topo
+  const reservationsForDisplay = useMemo(() => {
+    const base = Array.isArray(reservations) ? reservations : [];
+
+    if (Number(resPage || 1) !== 1) return base;
+
+    const priorityIds = getPriorityIds();
+    if (!priorityIds.length) return base;
+
+    const cached = readPriorityCache();
+
+    // junta “cache + página 1 atual” e cria índice
+    const pool = [...cached, ...base].filter(Boolean);
+    const byId = new Map(pool.map((r) => [String(r.id), r]));
+
+    // monta lista: primeiro os prioritários (na ordem do array de IDs),
+    // depois completa com os da página atual, sem duplicar.
+    const priorityItems = priorityIds.map((id) => byId.get(String(id))).filter(Boolean);
+
+    const prioritySet = new Set(priorityIds.map(String));
+    const rest = base.filter((r) => !prioritySet.has(String(r.id)));
+
+    // mantém 6 cards como o backend (não estoura o layout/pager)
+    return [...priorityItems, ...rest].slice(0, RESERVATIONS_PAGE_SIZE);
+  }, [reservations, resPage, getPriorityIds, readPriorityCache, RESERVATIONS_PAGE_SIZE]);
+
+  // sempre que mudar lista/página/unreads, garante cache e melhora o topo da página 1
+  useEffect(() => {
+    ensurePriorityReservations(reservations);
+  }, [ensurePriorityReservations, reservations]);
+
   const [availableDates, setAvailableDates] = useState([]);
   const [pendingDates, setPendingDates] = useState([]);
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -1949,7 +2079,7 @@ export default function Dashboard() {
 
   // ------------------ TUTOR ------------------
   if (isTutor) {
-    const myRes = (reservations || [])
+    const myRes = (reservationsForDisplay || [])
       .filter((r) => String(r.tutorId) === String(user.id))
       .sort((a, b) => {
         const idA = String(a.id);
@@ -2257,7 +2387,7 @@ export default function Dashboard() {
 
   // ------------------ CUIDADOR ------------------
   if (isCaregiver) {
-    const received = (reservations || [])
+    const received = (reservationsForDisplay || [])
       .filter((r) => String(r.caregiverId) === String(user.id))
       .sort((a, b) => {
         const idA = String(a.id);
