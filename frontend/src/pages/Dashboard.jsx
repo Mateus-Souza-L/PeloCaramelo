@@ -457,10 +457,19 @@ export default function Dashboard() {
   const [resTotalPages, setResTotalPages] = useState(1);
   const [resHasNext, setResHasNext] = useState(false);
   const computedTotalPages = useMemo(() => {
+    // 1) se o backend mandou totalPages válido, prioriza
+    const tp = Number(resTotalPages || 0);
+    if (Number.isFinite(tp) && tp > 0) return tp;
+
+    // 2) senão, calcula por total (se vier)
     const total = Number(resTotal || 0);
-    if (!Number.isFinite(total) || total <= 0) return 1;
-    return Math.max(1, Math.ceil(total / RESERVATIONS_PAGE_SIZE));
-  }, [resTotal]);
+    if (Number.isFinite(total) && total > 0) {
+      return Math.max(1, Math.ceil(total / RESERVATIONS_PAGE_SIZE));
+    }
+
+    // 3) sem total e sem totalPages → assume pelo menos a página atual
+    return Math.max(1, Number(resPage || 1));
+  }, [resTotalPages, resTotal, resPage]);
 
   // ===========================================================
   // 🧮 Capacidade diária do cuidador (1..50 no backend)
@@ -1749,20 +1758,42 @@ export default function Dashboard() {
     }
   };
 
-    function ReservationsPager() {
-    const totalPages = computedTotalPages;
-
-    if (!totalPages || totalPages <= 1) return null;
-
+  function ReservationsPager() {
+    const totalPages = Number(computedTotalPages || 1);
     const curPage = Number(resPage || 1);
+
     const canPrev = curPage > 1;
-    const canNext = curPage < totalPages;
+
+    // ✅ se totalPages é desconhecido/1, ainda assim permite "Próxima"
+    // quando o backend retornou uma página cheia (resHasNext = true)
+    const canNext = resHasNext || curPage < totalPages;
+
+    // ✅ só esconde pager se realmente não tem navegação nenhuma
+    if (!canPrev && !canNext) return null;
+
+    const showTotal = Number.isFinite(Number(resTotal)) && Number(resTotal) > 0;
+
+    // ✅ texto de páginas:
+    // - se totalPages > 1: "Página X de Y"
+    // - se totalPages == 1 mas tem próxima: "Página X" (sem “de 1”)
+    const pageText =
+      totalPages > 1
+        ? (
+          <>
+            Página <b>{curPage}</b> de <b>{totalPages}</b>
+          </>
+        )
+        : (
+          <>
+            Página <b>{curPage}</b>
+          </>
+        );
 
     return (
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
         <p className="text-xs text-[#5A3A22] opacity-80">
-          Página <b>{curPage}</b> de <b>{totalPages}</b>
-          {Number.isFinite(Number(resTotal)) && Number(resTotal) > 0 ? (
+          {pageText}
+          {showTotal ? (
             <>
               {" "}
               — <b>{Number(resTotal)}</b> reserva(s) no total
@@ -1780,11 +1811,10 @@ export default function Dashboard() {
               })
             }
             disabled={!canPrev}
-            className={`px-3 py-2 rounded-lg text-xs font-semibold shadow ${
-              canPrev
+            className={`px-3 py-2 rounded-lg text-xs font-semibold shadow ${canPrev
                 ? "bg-[#D2A679] hover:bg-[#B25B38] text-[#5A3A22]"
                 : "bg-gray-200 text-[#5A3A22]/50 cursor-not-allowed"
-            }`}
+              }`}
           >
             ← Anterior
           </button>
@@ -1794,15 +1824,18 @@ export default function Dashboard() {
             onClick={() =>
               setResPage((p) => {
                 const cur = Number(p || 1);
+
+                // ✅ quando não sabemos totalPages, mas existe próxima, avança normalmente
+                if (resHasNext && cur >= totalPages) return cur + 1;
+
                 return Math.min(totalPages, cur + 1);
               })
             }
             disabled={!canNext}
-            className={`px-3 py-2 rounded-lg text-xs font-semibold shadow ${
-              canNext
+            className={`px-3 py-2 rounded-lg text-xs font-semibold shadow ${canNext
                 ? "bg-[#D2A679] hover:bg-[#B25B38] text-[#5A3A22]"
                 : "bg-gray-200 text-[#5A3A22]/50 cursor-not-allowed"
-            }`}
+              }`}
           >
             Próxima →
           </button>
@@ -1854,11 +1887,10 @@ export default function Dashboard() {
         <div className="max-w-[1400px] mx-auto mb-4 flex gap-3 justify-center">
           <button
             onClick={() => setTab("reservasTutor")}
-            className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${
-              tab === "reservasTutor"
-                ? "bg-[#5A3A22] text-white"
-                : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
-            }`}
+            className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${tab === "reservasTutor"
+              ? "bg-[#5A3A22] text-white"
+              : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
+              }`}
             type="button"
           >
             Minhas Reservas
@@ -1866,11 +1898,10 @@ export default function Dashboard() {
 
           <button
             onClick={() => setTab("pets")}
-            className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${
-              tab === "pets"
-                ? "bg-[#5A3A22] text-white"
-                : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
-            }`}
+            className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${tab === "pets"
+              ? "bg-[#5A3A22] text-white"
+              : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
+              }`}
             type="button"
           >
             Meus Pets
@@ -1927,9 +1958,8 @@ export default function Dashboard() {
                         {(hasUnreadChat || hasUnreadResNotif) && (
                           <div className="absolute top-3 right-3 flex items-center gap-2">
                             <span
-                              className={`w-2.5 h-2.5 rounded-full ${
-                                hasUnreadChat ? "bg-blue-600" : "bg-red-600"
-                              }`}
+                              className={`w-2.5 h-2.5 rounded-full ${hasUnreadChat ? "bg-blue-600" : "bg-red-600"
+                                }`}
                               title={hasUnreadChat ? "Nova mensagem" : "Atualização"}
                             />
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/70 border border-[#FFD700]/50 text-[#5A3A22]">
@@ -2166,22 +2196,20 @@ export default function Dashboard() {
         <div className="max-w-[1400px] mx-auto mb-4 flex gap-3 justify-center">
           <button
             onClick={() => setTab("disponibilidade")}
-            className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${
-              tab === "disponibilidade"
-                ? "bg-[#5A3A22] text-white"
-                : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
-            }`}
+            className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${tab === "disponibilidade"
+              ? "bg-[#5A3A22] text-white"
+              : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
+              }`}
             type="button"
           >
             Disponibilidade
           </button>
           <button
             onClick={() => setTab("reservas")}
-            className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${
-              tab === "reservas"
-                ? "bg-[#5A3A22] text-white"
-                : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
-            }`}
+            className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${tab === "reservas"
+              ? "bg-[#5A3A22] text-white"
+              : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
+              }`}
             type="button"
           >
             Reservas Recebidas
@@ -2303,11 +2331,10 @@ export default function Dashboard() {
                   onClick={saveAvailability}
                   type="button"
                   disabled={!unsaved}
-                  className={`font-semibold px-5 py-2 rounded-lg shadow-md ${
-                    unsaved
-                      ? "bg-green-700 hover:bg-green-800 text-white"
-                      : "bg-green-700/50 text-white/70 cursor-not-allowed"
-                  }`}
+                  className={`font-semibold px-5 py-2 rounded-lg shadow-md ${unsaved
+                    ? "bg-green-700 hover:bg-green-800 text-white"
+                    : "bg-green-700/50 text-white/70 cursor-not-allowed"
+                    }`}
                 >
                   💾 Salvar Alterações
                 </button>
@@ -2404,9 +2431,8 @@ export default function Dashboard() {
                         {(hasUnreadChat || hasUnreadResNotif) && (
                           <div className="absolute top-3 right-3 flex items-center gap-2">
                             <span
-                              className={`w-2.5 h-2.5 rounded-full ${
-                                hasUnreadChat ? "bg-blue-600" : "bg-red-600"
-                              }`}
+                              className={`w-2.5 h-2.5 rounded-full ${hasUnreadChat ? "bg-blue-600" : "bg-red-600"
+                                }`}
                               title={hasUnreadChat ? "Nova mensagem" : "Atualização"}
                             />
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/70 border border-[#FFD700]/50 text-[#5A3A22]">
