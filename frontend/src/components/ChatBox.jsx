@@ -11,6 +11,9 @@ import { useToast } from "./ToastProvider";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:4000";
 
+// janela para “colar” msg otimista + msg real (ms)
+const DEDUPE_WINDOW_MS = 10_000;
+
 export default function ChatBox({
   reservationId,
   token,
@@ -89,6 +92,10 @@ export default function ChatBox({
     return Number.isFinite(t) ? t : 0;
   }, []);
 
+  const isOptimistic = useCallback((m) => {
+    return m?.__optimistic === true || String(m?.id || "").startsWith("temp-");
+  }, []);
+
   const isMineMsg = useCallback(
     (m) => String(getSenderId(m)) === String(currentUserId),
     [getSenderId, currentUserId]
@@ -106,43 +113,17 @@ export default function ChatBox({
     });
   }, []);
 
-  /** -----------------------------------------------------------
-   * ✅ DEDUPE ANTI-PISCAR (otimista + socket/polling)
-   * - prioridade:
-   *   1) se existe msg real (não otimista), ela ganha
-   *   2) se ambas são reais, mantém a mais "completa" (status/read_at etc.)
-   * - chave:
-   *   - se tiver clientId/client_id: usa isso
-   *   - senão usa id
-   *   - senão usa assinatura (sender + texto + bucket de tempo)
-   * ----------------------------------------------------------- */
-  const messageKey = useCallback(
-    (m) => {
-      const cid = m?.clientId ?? m?.client_id ?? null;
-      if (cid) return `c:${String(cid)}`;
-
-      const id = m?.id ?? m?.message_id ?? null;
-      if (id != null) return `i:${String(id)}`;
-
-      const sender = String(getSenderId(m) ?? "");
-      const text = getMsgText(m);
-      const t = getMsgTimeMs(m);
-      // bucket 2s pra “colar” o otimista + server (evita duplicar/piscar)
-      const bucket = Math.floor((Number(t || 0) || 0) / 2000);
-      return `s:${sender}|${text}|${bucket}`;
-    },
-    [getSenderId, getMsgText, getMsgTimeMs]
-  );
-
+  // ---------------------------
+  // ✅ DEDUPE / SQUASH
+  // ---------------------------
   const pickBetter = useCallback(
     (a, b) => {
-      // b "vence" se a é otimista e b não é
-      const aOpt = a?.__optimistic === true || String(a?.id || "").startsWith("temp-");
-      const bOpt = b?.__optimistic === true || String(b?.id || "").startsWith("temp-");
-      if (aOpt && !bOpt) return b;
-      if (!aOpt && bOpt) return a;
+      const aOpt = isOptimistic(a);
+      const bOpt = isOptimistic(b);
 
-      // se um tem status melhor, tenta preservar
+      if (aOpt && !bOpt) return { ...a, ...b, __optimistic: false };
+      if (!aOpt && bOpt) return { ...b, ...a, __optimistic: false };
+
       const aStatus = a?.status || (a?.read_at ? "read" : undefined);
       const bStatus = b?.status || (b?.read_at ? "read" : undefined);
 
@@ -157,36 +138,89 @@ export default function ChatBox({
       if (rank(bStatus) > rank(aStatus)) return { ...a, ...b };
       if (rank(aStatus) > rank(bStatus)) return { ...b, ...a };
 
-      // fallback: merge suave
       return { ...a, ...b };
     },
-    []
+    [isOptimistic]
   );
 
-  const mergeDedupeMessages = useCallback(
+  // “igualdade” por conteúdo + janela de tempo
+  const sameContentNear = useCallback(
+    (a, b) => {
+      if (!a || !b) return false;
+      if (String(getSenderId(a)) !== String(getSenderId(b))) return false;
+      const ta = getMsgText(a);
+      const tb = getMsgText(b);
+      if (!ta || !tb) return false;
+      if (ta !== tb) return false;
+
+      const da = getMsgTimeMs(a);
+      const db = getMsgTimeMs(b);
+
+      // se um deles não tem tempo confiável, ainda cola se for otimista
+      if ((!da || !db) && (isOptimistic(a) || isOptimistic(b))) return true;
+
+      return Math.abs((da || 0) - (db || 0)) <= DEDUPE_WINDOW_MS;
+    },
+    [getSenderId, getMsgText, getMsgTimeMs, isOptimistic]
+  );
+
+  // Remove duplicatas “coladas” (mesmo autor+texto em tempo próximo)
+  const squashNearDuplicates = useCallback(
+    (list) => {
+      const arr = Array.isArray(list) ? [...list] : [];
+      arr.sort((a, b) => getMsgTimeMs(a) - getMsgTimeMs(b));
+
+      const out = [];
+      for (const m of arr) {
+        const prev = out[out.length - 1];
+        if (prev && sameContentNear(prev, m)) {
+          out[out.length - 1] = pickBetter(prev, m);
+        } else {
+          out.push(m);
+        }
+      }
+      return out;
+    },
+    [getMsgTimeMs, sameContentNear, pickBetter]
+  );
+
+  // merge “safe”: preserva status local e remove duplicatas por:
+  // 1) id igual
+  // 2) clientId igual
+  // 3) conteúdo+tempo (squash)
+  const mergeSafe = useCallback(
     (prevList, incomingList) => {
+      const prev = Array.isArray(prevList) ? prevList : [];
+      const inc = Array.isArray(incomingList) ? incomingList : [];
       const map = new Map();
+
+      const key = (m) => {
+        const cid = m?.clientId ?? m?.client_id ?? null;
+        if (cid) return `c:${String(cid)}`;
+        const id = m?.id ?? m?.message_id ?? null;
+        if (id != null) return `i:${String(id)}`;
+        // sem ids → joga num key único e o squash resolve
+        return `u:${Math.random().toString(16).slice(2)}`;
+      };
 
       const push = (m) => {
         if (!m) return;
-        const k = messageKey(m);
-        const existing = map.get(k);
-        if (!existing) map.set(k, m);
-        else map.set(k, pickBetter(existing, m));
+        const k = key(m);
+        if (!map.has(k)) map.set(k, m);
+        else map.set(k, pickBetter(map.get(k), m));
       };
 
-      (Array.isArray(prevList) ? prevList : []).forEach(push);
-      (Array.isArray(incomingList) ? incomingList : []).forEach(push);
+      prev.forEach(push);
+      inc.forEach(push);
 
-      const out = Array.from(map.values());
-
-      out.sort((a, b) => getMsgTimeMs(a) - getMsgTimeMs(b));
-      return out;
+      return squashNearDuplicates(Array.from(map.values()));
     },
-    [messageKey, pickBetter, getMsgTimeMs]
+    [pickBetter, squashNearDuplicates]
   );
 
-  /** --------- NOTIFICAÇÃO GLOBAL (Navbar/Dashboard) VIA BACKEND --------- **/
+  // ---------------------------
+  // NOTIFICAÇÕES (unread)
+  // ---------------------------
   const refreshUnread = useCallback(
     async ({ force = false } = {}) => {
       if (!token) return;
@@ -198,7 +232,7 @@ export default function ChatBox({
       lastUnreadRefreshAtRef.current = now;
 
       try {
-        const ids = await getUnreadChats(token); // string[]
+        const ids = await getUnreadChats(token);
         window.dispatchEvent(
           new CustomEvent("chat-unread-changed", { detail: { list: ids } })
         );
@@ -209,7 +243,6 @@ export default function ChatBox({
     [token]
   );
 
-  // ✅ liga/desliga polling de forma determinística
   const stopPolling = useCallback(() => {
     if (pollingTimerRef.current) {
       clearInterval(pollingTimerRef.current);
@@ -226,7 +259,6 @@ export default function ChatBox({
         return;
       }
 
-      // se for habilitar: só liga se já tiver tick
       if (pollingTickRef.current) {
         stopPolling();
         pollingTimerRef.current = setInterval(() => {
@@ -237,7 +269,6 @@ export default function ChatBox({
     [stopPolling]
   );
 
-  // ✅ marca como lido com throttle e só chama /chat/unread quando mudou algo
   const markReadServer = useCallback(
     async ({ force = false } = {}) => {
       if (!reservationId || !token) return;
@@ -262,7 +293,6 @@ export default function ChatBox({
 
         setHasNewWhileAway(false);
 
-        // ✅ emite "read" via socket (tempo real)
         const s = socketRef.current;
         if (s && joinedRef.current) {
           try {
@@ -278,7 +308,6 @@ export default function ChatBox({
     },
     [reservationId, token, refreshUnread]
   );
-  /** -------------------------------------------------------------- **/
 
   const handleScroll = () => {
     const el = containerRef.current;
@@ -289,11 +318,11 @@ export default function ChatBox({
 
     if (isAtBottomRef.current) {
       setHasNewWhileAway(false);
-      markReadServer(); // throttle interno
+      markReadServer();
     }
   };
 
-  // ✅ detecta se o chat está visível na viewport (tela)
+  // chat visível na viewport
   useEffect(() => {
     const el = rootRef.current;
     if (!el) return;
@@ -311,7 +340,7 @@ export default function ChatBox({
     return () => obs.disconnect();
   }, []);
 
-  // ✅ evento para "ir pro fim" a partir do ReservationDetail
+  // evento: scroll bottom
   useEffect(() => {
     const onScrollBottom = (e) => {
       const rid = e?.detail?.reservationId;
@@ -327,7 +356,6 @@ export default function ChatBox({
     return () => window.removeEventListener("chat-scroll-bottom", onScrollBottom);
   }, [reservationId, scrollToBottom, markReadServer]);
 
-  // Rolagem automática: primeiro load ou se o usuário está no fim
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -337,7 +365,6 @@ export default function ChatBox({
     }
   }, [messages, scrollToBottom]);
 
-  // Se a aba voltar a ficar visível e o usuário está no bottom, marca como lido
   useEffect(() => {
     const onVisibility = () => {
       if (document.visibilityState === "visible" && isAtBottomRef.current) {
@@ -348,7 +375,6 @@ export default function ChatBox({
     return () => document.removeEventListener("visibilitychange", onVisibility);
   }, [markReadServer]);
 
-  // Normaliza lista (backend pode retornar {messages: []})
   const normalizeList = useCallback(
     (data) => {
       const list = Array.isArray(data)
@@ -373,7 +399,6 @@ export default function ChatBox({
   useEffect(() => {
     if (!canUseSocket) return;
 
-    // cooldown local: evita reconectar em loop se backend rate limitou
     const now = Date.now();
     if (socketCooldownUntilRef.current > now) {
       setPollingEnabled(true);
@@ -449,21 +474,50 @@ export default function ChatBox({
       if (!rid || String(rid) !== String(reservationId)) return;
       if (!msg) return;
 
+      const fromMe = isMineMsg(msg);
+
       setMessages((prev) => {
-        // ✅ MERGE/DEDUPE para não piscar quando chega a mesma msg do "meu envio"
-        const next = mergeDedupeMessages(prev, [msg]);
+        // ✅ CASO CRÍTICO: eco da minha msg via socket
+        // Em vez de adicionar, tenta "colar" em uma otimista recente com mesmo texto.
+        if (fromMe) {
+          const incomingText = getMsgText(msg);
+          const incomingTime = getMsgTimeMs(msg) || Date.now();
 
-        // atualiza lastMessageId de forma segura
-        const last = next[next.length - 1];
-        const lastId = last?.id ?? null;
-        if (lastId !=null) lastMessageIdRef.current = lastId;
+          let replaced = false;
 
-        return next;
+          const next = prev.map((m) => {
+            if (replaced) return m;
+            if (!isMineMsg(m)) return m;
+            if (!isOptimistic(m)) return m;
+
+            const t = getMsgText(m);
+            if (!t || t !== incomingText) return m;
+
+            const tm = getMsgTimeMs(m) || incomingTime;
+            if (Math.abs(incomingTime - tm) > DEDUPE_WINDOW_MS) return m;
+
+            replaced = true;
+            return {
+              ...m,
+              ...msg,
+              __optimistic: false,
+              status: msg?.status || "sent",
+            };
+          });
+
+          // se substituiu, só squash pra garantir
+          if (replaced) return mergeSafe(next, []);
+
+          // se não achou otimista, faz merge normal (e squash remove duplicatas próximas)
+          return mergeSafe(prev, [msg]);
+        }
+
+        // msg do outro usuário: merge normal
+        return mergeSafe(prev, [msg]);
       });
 
       // ✅ ACK delivered
-      const fromOther = !isMineMsg(msg);
-      if (fromOther && joinedRef.current) {
+      if (!fromMe && joinedRef.current) {
         const msgId = msg?.id;
         if (msgId != null) {
           try {
@@ -472,7 +526,7 @@ export default function ChatBox({
         }
       }
 
-      if (!fromOther) return;
+      if (fromMe) return;
 
       const msgId = msg?.id;
       if (msgId != null && String(lastNewEventIdRef.current) === String(msgId)) return;
@@ -567,12 +621,15 @@ export default function ChatBox({
     token,
     currentUserId,
     isMineMsg,
+    getMsgText,
+    getMsgTimeMs,
+    isOptimistic,
     onNewMessage,
     scrollToBottom,
     markReadServer,
     refreshUnread,
     setPollingEnabled,
-    mergeDedupeMessages,
+    mergeSafe,
   ]);
 
   // --------------------------------------------
@@ -600,24 +657,11 @@ export default function ChatBox({
         const list = normalizeList(data);
 
         setMessages((prev) => {
-          // ✅ SEM SUBSTITUIR “na pancada” (isso causa flicker)
-          // faz merge + dedupe, preservando status local
-          const merged = mergeDedupeMessages(prev, list);
-          return merged;
+          // ✅ merge + squash (não substitui seco)
+          return mergeSafe(prev, list);
         });
 
-        if (!list.length) {
-          initialLoadRef.current = false;
-          return;
-        }
-
-        const lastMsg = list[list.length - 1];
-
-        if (initialLoadRef.current) {
-          lastMessageIdRef.current = lastMsg.id ?? null;
-          initialLoadRef.current = false;
-          return;
-        }
+        initialLoadRef.current = false;
       } catch (err) {
         const status = err?.status ?? err?.response?.status ?? err?.statusCode ?? null;
         if (status === 401 || status === 403) return;
@@ -659,7 +703,7 @@ export default function ChatBox({
     normalizeList,
     setPollingEnabled,
     stopPolling,
-    mergeDedupeMessages,
+    mergeSafe,
   ]);
 
   async function handleSend(e) {
@@ -667,13 +711,12 @@ export default function ChatBox({
     const text = input.trim();
     if (!text || !canChat || !reservationId || !token || !currentUserId) return;
 
-    // ✅ id local + assinatura anti-duplicação
     const clientId = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
     const tempId = `temp-${clientId}`;
 
     const optimisticMessage = {
       id: tempId,
-      clientId, // ✅ ajuda o dedupe local
+      clientId,
       reservation_id: reservationId,
       sender_id: currentUserId,
       receiver_id: null,
@@ -683,11 +726,7 @@ export default function ChatBox({
       __optimistic: true,
     };
 
-    setMessages((prev) => {
-      const next = mergeDedupeMessages(prev, [optimisticMessage]);
-      lastMessageIdRef.current = tempId;
-      return next;
-    });
+    setMessages((prev) => mergeSafe(prev, [optimisticMessage]));
 
     setInput("");
     isAtBottomRef.current = true;
@@ -695,27 +734,37 @@ export default function ChatBox({
 
     try {
       setSending(true);
-
-      // ⚠️ Mantém assinatura do seu chatApi (não muda dependência)
-      // Se no futuro você quiser, dá pra enviar clientId no backend também.
       const saved = await sendChatMessage(reservationId, text, token);
 
+      // ✅ Em vez de “inserir mais uma fonte”, só melhora a otimista
       setMessages((prev) => {
-        // substitui o temp pelo "saved" (se conseguir localizar)
-        const replaced = prev.map((m) => {
-          if (String(m?.id) === String(tempId)) {
-            return {
-              ...saved,
-              clientId: m?.clientId || m?.client_id || clientId,
-              __optimistic: false,
-              status: saved?.status || "sent",
-            };
-          }
-          return m;
+        const incomingTime = getMsgTimeMs(saved) || Date.now();
+        const incomingText = getMsgText(saved);
+
+        let updated = false;
+
+        const next = prev.map((m) => {
+          if (updated) return m;
+          if (!isMineMsg(m)) return m;
+          if (!isOptimistic(m)) return m;
+
+          if (getMsgText(m) !== incomingText) return m;
+
+          const tm = getMsgTimeMs(m) || incomingTime;
+          if (Math.abs(incomingTime - tm) > DEDUPE_WINDOW_MS) return m;
+
+          updated = true;
+          return {
+            ...m,
+            ...saved,
+            clientId: m?.clientId || clientId,
+            __optimistic: false,
+            status: saved?.status || "sent",
+          };
         });
 
-        // ✅ merge/dedupe final — remove duplicação vinda do socket/polling
-        return mergeDedupeMessages(replaced, []);
+        // se por algum motivo não achou a otimista, faz merge normal
+        return updated ? mergeSafe(next, []) : mergeSafe(prev, [saved]);
       });
 
       lastMessageIdRef.current = saved?.id ?? lastMessageIdRef.current;
