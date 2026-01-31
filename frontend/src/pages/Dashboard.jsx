@@ -302,6 +302,70 @@ function mergePreservingLocalRatings(apiList, localList) {
   });
 }
 
+// ===========================================================
+// ✅ PRIORIDADE GLOBAL: traz reservas "unread" de outras páginas
+// para o topo da página 1, usando cache local por página.
+// ===========================================================
+function boostUnreadToFirstPage({
+  pageList,
+  userId,
+  role,
+  pageSize,
+  totalPages,
+  unreadIds,
+}) {
+  const safePage = Array.isArray(pageList) ? pageList : [];
+  const uid = userId != null ? String(userId) : null;
+  if (!uid) return safePage;
+
+  const roleKey = role === "caregiver" ? "caregiver" : "tutor";
+  const unreadSet = new Set((Array.isArray(unreadIds) ? unreadIds : []).map(String));
+  if (!unreadSet.size) return safePage;
+
+  // lê caches locais de páginas 1..totalPages
+  const cachedAll = [];
+  const maxPages = Math.max(1, Number(totalPages || 1));
+
+  for (let p = 1; p <= maxPages; p++) {
+    const key = `reservations_${roleKey}_${uid}_p${String(p)}`;
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw);
+      const list = Array.isArray(parsed) ? parsed : [];
+      for (const item of list) {
+        const n = normalizeReservationFromLocal(item);
+        if (n) cachedAll.push(n);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // pega somente as reservas unread (de qualquer página que esteja no cache)
+  const unreadFromCache = [];
+  const seen = new Set();
+
+  for (const r of cachedAll) {
+    const id = String(r?.id || "");
+    if (!id) continue;
+    if (!unreadSet.has(id)) continue;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    unreadFromCache.push(r);
+  }
+
+  if (!unreadFromCache.length) return safePage;
+
+  // remove do page atual quem já vai ser promovido
+  const rest = safePage.filter((r) => !seen.has(String(r?.id)));
+
+  // unread no topo, completa com o resto, respeitando pageSize
+  const boosted = [...unreadFromCache, ...rest].slice(0, Math.max(1, Number(pageSize || 6)));
+
+  return boosted;
+}
+
 export default function Dashboard() {
   const { user, token, hasCaregiverProfile, activeMode } = useAuth();
   const { showToast } = useToast();
@@ -824,7 +888,24 @@ export default function Dashboard() {
               };
             });
 
-          const merged = mergePreservingLocalRatings(normalized, localCache);
+          let merged = mergePreservingLocalRatings(normalized, localCache);
+
+          // ✅ prioridade global: se estou na página 1, trago unread de outras páginas (do cache)
+          // para o topo, até o usuário abrir a reserva (e marcar como lida)
+          if (Number(resPage) === 1 && user?.id) {
+            const unreadUnion = Array.from(
+              new Set([...(unreadChatIds || []).map(String), ...(unreadResIds || []).map(String)])
+            );
+
+            merged = boostUnreadToFirstPage({
+              pageList: merged,
+              userId: user.id,
+              role: activeRole,
+              pageSize: RESERVATIONS_PAGE_SIZE,
+              totalPages: computedTotalPages,
+              unreadIds: unreadUnion,
+            });
+          }
 
           try {
             localStorage.setItem(reservationsStorageKey, JSON.stringify(merged));
@@ -1812,8 +1893,8 @@ export default function Dashboard() {
             }
             disabled={!canPrev}
             className={`px-3 py-2 rounded-lg text-xs font-semibold shadow ${canPrev
-                ? "bg-[#D2A679] hover:bg-[#B25B38] text-[#5A3A22]"
-                : "bg-gray-200 text-[#5A3A22]/50 cursor-not-allowed"
+              ? "bg-[#D2A679] hover:bg-[#B25B38] text-[#5A3A22]"
+              : "bg-gray-200 text-[#5A3A22]/50 cursor-not-allowed"
               }`}
           >
             ← Anterior
@@ -1833,8 +1914,8 @@ export default function Dashboard() {
             }
             disabled={!canNext}
             className={`px-3 py-2 rounded-lg text-xs font-semibold shadow ${canNext
-                ? "bg-[#D2A679] hover:bg-[#B25B38] text-[#5A3A22]"
-                : "bg-gray-200 text-[#5A3A22]/50 cursor-not-allowed"
+              ? "bg-[#D2A679] hover:bg-[#B25B38] text-[#5A3A22]"
+              : "bg-gray-200 text-[#5A3A22]/50 cursor-not-allowed"
               }`}
           >
             Próxima →
@@ -2501,18 +2582,39 @@ export default function Dashboard() {
                           )}
 
                           <div className="flex gap-2 items-center">
+                            {String(r.status) === "Aceita" && (
+                              <Link
+                                to={`/reserva/${r.id}#chat`}
+                                state={{ scrollToChat: true }}
+                                onClick={(e) => e.stopPropagation()}
+                                className="px-3 py-1 rounded-lg text-xs font-semibold bg-[#FFD700] hover:bg-[#f5c400] text-[#5A3A22] shadow"
+                                title="Abrir chat desta reserva"
+                              >
+                                Abrir chat
+                              </Link>
+                            )}
+
                             {showActions && (
                               <>
                                 <button
                                   type="button"
-                                  onClick={() => handleAcceptReservationFromList(r)}
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    handleAcceptReservationFromList(r);
+                                  }}
                                   className="px-3 py-1 rounded-lg text-xs font-semibold bg-green-700 hover:bg-green-800 text-white shadow"
                                 >
                                   Aceitar
                                 </button>
+
                                 <button
                                   type="button"
-                                  onClick={() => openRejectModal(r)}
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    openRejectModal(r);
+                                  }}
                                   className="px-3 py-1 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 text-white shadow"
                                 >
                                   Recusar
@@ -2523,7 +2625,11 @@ export default function Dashboard() {
                             {canRate && (
                               <button
                                 type="button"
-                                onClick={() => openRatingModal(r, "Avaliar tutor")}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  openRatingModal(r, "Avaliar tutor");
+                                }}
                                 className="px-3 py-1 rounded-lg text-xs font-semibold bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22] shadow"
                               >
                                 Avaliar tutor
