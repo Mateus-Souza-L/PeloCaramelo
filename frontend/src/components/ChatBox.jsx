@@ -78,6 +78,17 @@ export default function ChatBox({
     []
   );
 
+  const getMsgText = useCallback((m) => {
+    return String(m?.message ?? m?.text ?? m?.content ?? "").trim();
+  }, []);
+
+  const getMsgTimeMs = useCallback((m) => {
+    const raw = m?.created_at ?? m?.createdAt ?? m?.created ?? m?.timestamp ?? null;
+    if (!raw) return 0;
+    const t = new Date(raw).getTime();
+    return Number.isFinite(t) ? t : 0;
+  }, []);
+
   const isMineMsg = useCallback(
     (m) => String(getSenderId(m)) === String(currentUserId),
     [getSenderId, currentUserId]
@@ -94,6 +105,86 @@ export default function ChatBox({
       });
     });
   }, []);
+
+  /** -----------------------------------------------------------
+   * ✅ DEDUPE ANTI-PISCAR (otimista + socket/polling)
+   * - prioridade:
+   *   1) se existe msg real (não otimista), ela ganha
+   *   2) se ambas são reais, mantém a mais "completa" (status/read_at etc.)
+   * - chave:
+   *   - se tiver clientId/client_id: usa isso
+   *   - senão usa id
+   *   - senão usa assinatura (sender + texto + bucket de tempo)
+   * ----------------------------------------------------------- */
+  const messageKey = useCallback(
+    (m) => {
+      const cid = m?.clientId ?? m?.client_id ?? null;
+      if (cid) return `c:${String(cid)}`;
+
+      const id = m?.id ?? m?.message_id ?? null;
+      if (id != null) return `i:${String(id)}`;
+
+      const sender = String(getSenderId(m) ?? "");
+      const text = getMsgText(m);
+      const t = getMsgTimeMs(m);
+      // bucket 2s pra “colar” o otimista + server (evita duplicar/piscar)
+      const bucket = Math.floor((Number(t || 0) || 0) / 2000);
+      return `s:${sender}|${text}|${bucket}`;
+    },
+    [getSenderId, getMsgText, getMsgTimeMs]
+  );
+
+  const pickBetter = useCallback(
+    (a, b) => {
+      // b "vence" se a é otimista e b não é
+      const aOpt = a?.__optimistic === true || String(a?.id || "").startsWith("temp-");
+      const bOpt = b?.__optimistic === true || String(b?.id || "").startsWith("temp-");
+      if (aOpt && !bOpt) return b;
+      if (!aOpt && bOpt) return a;
+
+      // se um tem status melhor, tenta preservar
+      const aStatus = a?.status || (a?.read_at ? "read" : undefined);
+      const bStatus = b?.status || (b?.read_at ? "read" : undefined);
+
+      const rank = (s) => {
+        if (s === "read") return 3;
+        if (s === "delivered") return 2;
+        if (s === "sent" || s === "enviada") return 1;
+        if (s === "sending") return 0;
+        return 0;
+      };
+
+      if (rank(bStatus) > rank(aStatus)) return { ...a, ...b };
+      if (rank(aStatus) > rank(bStatus)) return { ...b, ...a };
+
+      // fallback: merge suave
+      return { ...a, ...b };
+    },
+    []
+  );
+
+  const mergeDedupeMessages = useCallback(
+    (prevList, incomingList) => {
+      const map = new Map();
+
+      const push = (m) => {
+        if (!m) return;
+        const k = messageKey(m);
+        const existing = map.get(k);
+        if (!existing) map.set(k, m);
+        else map.set(k, pickBetter(existing, m));
+      };
+
+      (Array.isArray(prevList) ? prevList : []).forEach(push);
+      (Array.isArray(incomingList) ? incomingList : []).forEach(push);
+
+      const out = Array.from(map.values());
+
+      out.sort((a, b) => getMsgTimeMs(a) - getMsgTimeMs(b));
+      return out;
+    },
+    [messageKey, pickBetter, getMsgTimeMs]
+  );
 
   /** --------- NOTIFICAÇÃO GLOBAL (Navbar/Dashboard) VIA BACKEND --------- **/
   const refreshUnread = useCallback(
@@ -176,14 +267,11 @@ export default function ChatBox({
         if (s && joinedRef.current) {
           try {
             s.emit("chat:read", { reservationId });
-          } catch { }
+          } catch {}
         }
       } catch (err) {
-        // ✅ 401/403 podem acontecer no "timing" da aceitação — não é erro real pro usuário
         const status = err?.status ?? err?.response?.status ?? err?.statusCode ?? null;
         if (status === 401 || status === 403) return;
-
-        // demais erros ficam silenciosos também (como já estava)
       } finally {
         markReadInFlightRef.current = false;
       }
@@ -261,21 +349,19 @@ export default function ChatBox({
   }, [markReadServer]);
 
   // Normaliza lista (backend pode retornar {messages: []})
-  const normalizeList = useCallback((data) => {
-    const list = Array.isArray(data)
-      ? data
-      : Array.isArray(data?.messages)
+  const normalizeList = useCallback(
+    (data) => {
+      const list = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.messages)
         ? data.messages
         : [];
 
-    list.sort(
-      (a, b) =>
-        new Date(a.created_at || a.createdAt || 0).getTime() -
-        new Date(b.created_at || b.createdAt || 0).getTime()
-    );
-
-    return list;
-  }, []);
+      list.sort((a, b) => getMsgTimeMs(a) - getMsgTimeMs(b));
+      return list;
+    },
+    [getMsgTimeMs]
+  );
 
   // --------------------------------------------
   // Socket.IO: conecta e entra na sala da reserva
@@ -290,7 +376,6 @@ export default function ChatBox({
     // cooldown local: evita reconectar em loop se backend rate limitou
     const now = Date.now();
     if (socketCooldownUntilRef.current > now) {
-      // durante cooldown, mantém polling ligado
       setPollingEnabled(true);
       return;
     }
@@ -308,17 +393,12 @@ export default function ChatBox({
 
       socketRef.current.on("connect", () => {
         connectedRef.current = true;
-        // conectado não significa joined ainda, então não desliga polling aqui
       });
 
-      socketRef.current.on("disconnect", (reason) => {
+      socketRef.current.on("disconnect", () => {
         connectedRef.current = false;
         joinedRef.current = false;
         setPollingEnabled(true);
-
-        // se cair por transporte, deixa tentar; se cair por "io server disconnect", ainda tenta
-        // (controle real fica no connect_error)
-        // console.log("[socket] disconnect:", reason);
       });
 
       socketRef.current.on("connect_error", (err) => {
@@ -329,26 +409,24 @@ export default function ChatBox({
         joinedRef.current = false;
         setPollingEnabled(true);
 
-        // ✅ se foi rate-limited: entra em cooldown local
         if (msg.includes("RATE_LIMITED")) {
           socketCooldownUntilRef.current = Date.now() + SOCKET_COOLDOWN_MS;
           try {
             socketRef.current?.disconnect();
-          } catch { }
+          } catch {}
         }
       });
     }
 
     const s = socketRef.current;
 
-    // entra na sala desta reserva
     joinedRef.current = false;
     s.emit("join:reservation", { reservationId });
 
     const onJoined = (payload) => {
       if (String(payload?.reservationId) === String(reservationId)) {
         joinedRef.current = true;
-        setPollingEnabled(false); // ✅ desliga polling de forma definitiva enquanto joined
+        setPollingEnabled(false);
       }
     };
 
@@ -358,7 +436,6 @@ export default function ChatBox({
         joinedRef.current = false;
         setPollingEnabled(true);
 
-        // se o backend limitou join, entra em cooldown local (menos agressivo)
         if (String(payload?.error || "") === "RATE_LIMITED") {
           socketCooldownUntilRef.current = Date.now() + 30_000;
         }
@@ -372,33 +449,38 @@ export default function ChatBox({
       if (!rid || String(rid) !== String(reservationId)) return;
       if (!msg) return;
 
-      const msgId = msg?.id;
-
       setMessages((prev) => {
-        if (msgId && prev.some((m) => String(m?.id) === String(msgId))) {
-          return prev;
-        }
-        const next = [...prev, msg];
-        if (msgId != null) lastMessageIdRef.current = msgId;
+        // ✅ MERGE/DEDUPE para não piscar quando chega a mesma msg do "meu envio"
+        const next = mergeDedupeMessages(prev, [msg]);
+
+        // atualiza lastMessageId de forma segura
+        const last = next[next.length - 1];
+        const lastId = last?.id ?? null;
+        if (lastId !=null) lastMessageIdRef.current = lastId;
+
         return next;
       });
 
       // ✅ ACK delivered
       const fromOther = !isMineMsg(msg);
-      if (fromOther && joinedRef.current && msgId != null) {
-        try {
-          s.emit("chat:delivered", { reservationId, messageId: msgId });
-        } catch { }
+      if (fromOther && joinedRef.current) {
+        const msgId = msg?.id;
+        if (msgId != null) {
+          try {
+            s.emit("chat:delivered", { reservationId, messageId: msgId });
+          } catch {}
+        }
       }
 
       if (!fromOther) return;
 
+      const msgId = msg?.id;
       if (msgId != null && String(lastNewEventIdRef.current) === String(msgId)) return;
       if (msgId != null) lastNewEventIdRef.current = msgId;
 
       try {
         onNewMessage?.({ reservationId });
-      } catch { }
+      } catch {}
 
       window.dispatchEvent(
         new CustomEvent("chat-new-message", { detail: { reservationId } })
@@ -419,7 +501,7 @@ export default function ChatBox({
         markReadServer();
       } else {
         setHasNewWhileAway(true);
-        refreshUnread(); // com cooldown
+        refreshUnread();
       }
     };
 
@@ -468,7 +550,7 @@ export default function ChatBox({
     return () => {
       try {
         s.emit("leave:reservation", { reservationId });
-      } catch { }
+      } catch {}
 
       joinedRef.current = false;
       setPollingEnabled(true);
@@ -490,6 +572,7 @@ export default function ChatBox({
     markReadServer,
     refreshUnread,
     setPollingEnabled,
+    mergeDedupeMessages,
   ]);
 
   // --------------------------------------------
@@ -505,8 +588,6 @@ export default function ChatBox({
     setHasNewWhileAway(false);
     lastNewEventIdRef.current = null;
 
-    // ✅ 1 chamada inicial (controlada)
-    // Se o backend ainda não liberou, 401/403 serão ignorados pelo markReadServer.
     markReadServer({ force: true });
 
     async function loadMessages({ isPolling = false } = {}) {
@@ -519,22 +600,10 @@ export default function ChatBox({
         const list = normalizeList(data);
 
         setMessages((prev) => {
-          if (!prev.length) return list;
-
-          const prevLast = prev[prev.length - 1];
-          const listLast = list[list.length - 1];
-          const prevLastId = prevLast?.id;
-          const listLastId = listLast?.id;
-
-          // se mudou o último id, troca pela fonte da verdade
-          if (listLastId != null && String(listLastId) !== String(prevLastId)) {
-            return list;
-          }
-
-          // se polling trouxe mais msgs, troca
-          if (list.length > prev.length) return list;
-
-          return prev;
+          // ✅ SEM SUBSTITUIR “na pancada” (isso causa flicker)
+          // faz merge + dedupe, preservando status local
+          const merged = mergeDedupeMessages(prev, list);
+          return merged;
         });
 
         if (!list.length) {
@@ -551,12 +620,7 @@ export default function ChatBox({
         }
       } catch (err) {
         const status = err?.status ?? err?.response?.status ?? err?.statusCode ?? null;
-
-        // ✅ Durante a transição de "Aceitar reserva", o backend pode responder 401/403 por instantes.
-        // Não mostra toast (evita o "erro de chat" visual), só espera próxima tentativa.
-        if (status === 401 || status === 403) {
-          return;
-        }
+        if (status === 401 || status === 403) return;
 
         console.error("Erro ao carregar mensagens:", err);
         if (!cancelled && !isPolling) {
@@ -567,7 +631,6 @@ export default function ChatBox({
       }
     }
 
-    // tick do polling fica “registrado” num ref (pra setPollingEnabled saber o que rodar)
     pollingTickRef.current = () => {
       if (!allowPollingRef.current) return;
       loadMessages({ isPolling: true });
@@ -575,7 +638,6 @@ export default function ChatBox({
 
     loadMessages({ isPolling: false });
 
-    // ✅ regra: se ainda NÃO joined, polling pode ficar ligado; se joined, fica off
     if (joinedRef.current) {
       setPollingEnabled(false);
     } else {
@@ -597,6 +659,7 @@ export default function ChatBox({
     normalizeList,
     setPollingEnabled,
     stopPolling,
+    mergeDedupeMessages,
   ]);
 
   async function handleSend(e) {
@@ -604,19 +667,24 @@ export default function ChatBox({
     const text = input.trim();
     if (!text || !canChat || !reservationId || !token || !currentUserId) return;
 
-    const tempId = `temp-${Date.now()}`;
+    // ✅ id local + assinatura anti-duplicação
+    const clientId = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    const tempId = `temp-${clientId}`;
+
     const optimisticMessage = {
       id: tempId,
+      clientId, // ✅ ajuda o dedupe local
       reservation_id: reservationId,
       sender_id: currentUserId,
       receiver_id: null,
       message: text,
       status: "sending",
       created_at: new Date().toISOString(),
+      __optimistic: true,
     };
 
     setMessages((prev) => {
-      const next = [...prev, optimisticMessage];
+      const next = mergeDedupeMessages(prev, [optimisticMessage]);
       lastMessageIdRef.current = tempId;
       return next;
     });
@@ -627,34 +695,35 @@ export default function ChatBox({
 
     try {
       setSending(true);
+
+      // ⚠️ Mantém assinatura do seu chatApi (não muda dependência)
+      // Se no futuro você quiser, dá pra enviar clientId no backend também.
       const saved = await sendChatMessage(reservationId, text, token);
 
       setMessages((prev) => {
-        const replaced = prev.map((m) => (m.id === tempId ? { ...saved } : m));
+        // substitui o temp pelo "saved" (se conseguir localizar)
+        const replaced = prev.map((m) => {
+          if (String(m?.id) === String(tempId)) {
+            return {
+              ...saved,
+              clientId: m?.clientId || m?.client_id || clientId,
+              __optimistic: false,
+              status: saved?.status || "sent",
+            };
+          }
+          return m;
+        });
 
-        const sid = saved?.id;
-        if (sid != null) {
-          const seen = new Set();
-          return replaced.filter((m) => {
-            const id = m?.id;
-            if (id == null) return true;
-            const key = String(id);
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-          });
-        }
-        return replaced;
+        // ✅ merge/dedupe final — remove duplicação vinda do socket/polling
+        return mergeDedupeMessages(replaced, []);
       });
 
       lastMessageIdRef.current = saved?.id ?? lastMessageIdRef.current;
       scrollToBottom();
-
-      // ✅ não marca read no envio
     } catch (err) {
       console.error("Erro ao enviar mensagem:", err);
-      setMessages((prev) => prev.filter((m) => m.id !== tempId));
-      showToast(err.message || "Erro ao enviar mensagem.", "error");
+      setMessages((prev) => prev.filter((m) => String(m?.id) !== String(tempId)));
+      showToast(err?.message || "Erro ao enviar mensagem.", "error");
     } finally {
       setSending(false);
     }
@@ -728,25 +797,28 @@ export default function ChatBox({
           const previousSender = previous ? getSenderId(previous) : null;
           const isGrouped = previous && String(previousSender) === String(senderId);
 
+          const stableKey = msg?.clientId || msg?.client_id || msg?.id || `msg-${index}`;
+
           return (
             <div
-              key={msg.id ?? `msg-${index}`}
+              key={String(stableKey)}
               className={`flex ${isMine ? "justify-end" : "justify-start"}`}
             >
               <div
-                className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm ${isMine
-                  ? "bg-[#5A3A22] text-white rounded-br-sm"
-                  : "bg-[#FFE7B8] text-[#5A3A22] rounded-bl-sm"
-                  } ${isGrouped ? "mt-1" : "mt-2"}`}
+                className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm ${
+                  isMine
+                    ? "bg-[#5A3A22] text-white rounded-br-sm"
+                    : "bg-[#FFE7B8] text-[#5A3A22] rounded-bl-sm"
+                } ${isGrouped ? "mt-1" : "mt-2"}`}
               >
                 <p className="whitespace-pre-wrap break-words">{msg.message}</p>
                 <div className="mt-1 flex items-center justify-end gap-2">
                   <span className="text-[10px] opacity-80">
                     {msg.created_at || msg.createdAt
                       ? new Date(msg.created_at || msg.createdAt).toLocaleString("pt-BR", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })
                       : ""}
                   </span>
                   {renderStatus(msg)}
