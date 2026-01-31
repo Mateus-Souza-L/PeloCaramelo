@@ -455,6 +455,7 @@ export default function Dashboard() {
   const [resPage, setResPage] = useState(1);
   const [resTotal, setResTotal] = useState(0);
   const [resTotalPages, setResTotalPages] = useState(1);
+  const [resHasNext, setResHasNext] = useState(false);
   const computedTotalPages = useMemo(() => {
     const total = Number(resTotal || 0);
     if (!Number.isFinite(total) || total <= 0) return 1;
@@ -683,6 +684,7 @@ export default function Dashboard() {
     const roleAtStart = activeRole;
 
     if (!user) {
+      setResHasNext(false);
       setReservations([]);
       setReservationsLoading(false);
       setReservationsLoaded(true);
@@ -773,6 +775,11 @@ export default function Dashboard() {
             Number.isFinite(nextTotalPages) && nextTotalPages > 0 ? nextTotalPages : 1
           );
 
+          // ✅ fallback: se o backend não manda total/totalPages,
+          // a gente infere próxima página quando veio cheio (== limit)
+          const gotCount = Array.isArray(apiRes) ? apiRes.length : 0;
+          setResHasNext(gotCount >= RESERVATIONS_PAGE_SIZE);
+
           // (opcional) se backend mudar limit no futuro:
           void nextLimit; // mantém lint quieto
 
@@ -830,6 +837,7 @@ export default function Dashboard() {
       }
 
       applyReservations(localCache);
+      setResHasNext(false);
       return localCache;
     } finally {
       resFetchGuardRef.current.inFlight = false;
@@ -1742,24 +1750,46 @@ export default function Dashboard() {
   };
 
   function ReservationsPager() {
-    const totalPages = computedTotalPages;
+    const totalPagesFromServer = Number(resTotalPages || 1);
+    const totalPagesFromTotal = computedTotalPages;
 
-    if (!totalPages || totalPages <= 1) return null;
+    // ✅ se vier meta do backend, usa ela
+    const hasMeta = Number.isFinite(totalPagesFromServer) && totalPagesFromServer > 1;
+
+    // ✅ totalPages real quando tem meta
+    const totalPages = hasMeta ? totalPagesFromServer : totalPagesFromTotal;
 
     const curPage = Number(resPage || 1);
     const canPrev = curPage > 1;
-    const canNext = curPage < totalPages;
+
+    // ✅ sem meta: habilita "Próxima" por inferência (resHasNext)
+    const canNext = hasMeta ? curPage < totalPages : !!resHasNext;
+
+    // ✅ se não tem meta e não dá pra ir pra frente nem pra trás, não mostra pager
+    if (!hasMeta && !canPrev && !canNext) return null;
 
     return (
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
         <p className="text-xs text-[#5A3A22] opacity-80">
-          Página <b>{curPage}</b> de <b>{totalPages}</b>
-          {Number.isFinite(Number(resTotal)) && Number(resTotal) > 0 ? (
+          Página <b>{curPage}</b>
+          {hasMeta ? (
             <>
               {" "}
-              — <b>{Number(resTotal)}</b> reserva(s) no total
+              de <b>{totalPages}</b>
+              {Number.isFinite(Number(resTotal)) && Number(resTotal) > 0 ? (
+                <>
+                  {" "}
+                  — <b>{Number(resTotal)}</b> reserva(s) no total
+                </>
+              ) : null}
             </>
-          ) : null}
+          ) : (
+            <>
+              {" "}
+              {/* sem meta: não inventa totalPages */}
+              {canNext ? "— há mais reservas" : "— fim"}
+            </>
+          )}
         </p>
 
         <div className="flex items-center gap-2">
@@ -1773,8 +1803,8 @@ export default function Dashboard() {
             }
             disabled={!canPrev}
             className={`px-3 py-2 rounded-lg text-xs font-semibold shadow ${canPrev
-              ? "bg-[#D2A679] hover:bg-[#B25B38] text-[#5A3A22]"
-              : "bg-gray-200 text-[#5A3A22]/50 cursor-not-allowed"
+                ? "bg-[#D2A679] hover:bg-[#B25B38] text-[#5A3A22]"
+                : "bg-gray-200 text-[#5A3A22]/50 cursor-not-allowed"
               }`}
           >
             ← Anterior
@@ -1785,13 +1815,13 @@ export default function Dashboard() {
             onClick={() =>
               setResPage((p) => {
                 const cur = Number(p || 1);
-                return Math.min(totalPages, cur + 1);
+                return cur + 1; // ✅ sem meta, só avança; loadReservations valida pelo resHasNext
               })
             }
             disabled={!canNext}
             className={`px-3 py-2 rounded-lg text-xs font-semibold shadow ${canNext
-              ? "bg-[#D2A679] hover:bg-[#B25B38] text-[#5A3A22]"
-              : "bg-gray-200 text-[#5A3A22]/50 cursor-not-allowed"
+                ? "bg-[#D2A679] hover:bg-[#B25B38] text-[#5A3A22]"
+                : "bg-gray-200 text-[#5A3A22]/50 cursor-not-allowed"
               }`}
           >
             Próxima →
@@ -1801,318 +1831,777 @@ export default function Dashboard() {
     );
   }
 
-  const openReservation = (reservationId, opts = {}) => {
-    const rid = String(reservationId);
+  return (
+    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+      <p className="text-xs text-[#5A3A22] opacity-80">
+        Página <b>{curPage}</b> de <b>{totalPages}</b>
+        {Number.isFinite(Number(resTotal)) && Number(resTotal) > 0 ? (
+          <>
+            {" "}
+            — <b>{Number(resTotal)}</b> reserva(s) no total
+          </>
+        ) : null}
+      </p>
 
-    if (user?.id) {
-      markReservationNotifsRead(user.id, rid);
-      window.dispatchEvent(new Event("reservation-notifications-changed"));
-    }
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() =>
+            setResPage((p) => {
+              const cur = Number(p || 1);
+              return Math.max(1, cur - 1);
+            })
+          }
+          disabled={!canPrev}
+          className={`px-3 py-2 rounded-lg text-xs font-semibold shadow ${canPrev
+            ? "bg-[#D2A679] hover:bg-[#B25B38] text-[#5A3A22]"
+            : "bg-gray-200 text-[#5A3A22]/50 cursor-not-allowed"
+            }`}
+        >
+          ← Anterior
+        </button>
 
-    const hasUnreadChat = unreadChatIds.includes(rid);
-    const scrollToChat = !!opts.scrollToChat || hasUnreadChat;
+        <button
+          type="button"
+          onClick={() =>
+            setResPage((p) => {
+              const cur = Number(p || 1);
+              return Math.min(totalPages, cur + 1);
+            })
+          }
+          disabled={!canNext}
+          className={`px-3 py-2 rounded-lg text-xs font-semibold shadow ${canNext
+            ? "bg-[#D2A679] hover:bg-[#B25B38] text-[#5A3A22]"
+            : "bg-gray-200 text-[#5A3A22]/50 cursor-not-allowed"
+            }`}
+        >
+          Próxima →
+        </button>
+      </div>
+    </div>
+  );
+}
 
-    if (scrollToChat) {
-      navigate({ pathname: `/reserva/${rid}`, hash: "#chat" }, { state: { scrollToChat: true } });
-      return;
-    }
+const openReservation = (reservationId, opts = {}) => {
+  const rid = String(reservationId);
 
-    navigate(`/reserva/${rid}`);
-  };
+  if (user?.id) {
+    markReservationNotifsRead(user.id, rid);
+    window.dispatchEvent(new Event("reservation-notifications-changed"));
+  }
 
-  // ------------------ TUTOR ------------------
-  if (isTutor) {
-    const myRes = (reservations || [])
-      .filter((r) => String(r.tutorId) === String(user.id))
-      .sort((a, b) => {
-        const idA = String(a.id);
-        const idB = String(b.id);
+  const hasUnreadChat = unreadChatIds.includes(rid);
+  const scrollToChat = !!opts.scrollToChat || hasUnreadChat;
 
-        const attA = unreadChatIds.includes(idA) || unreadResIds.includes(idA) ? 1 : 0;
-        const attB = unreadChatIds.includes(idB) || unreadResIds.includes(idB) ? 1 : 0;
+  if (scrollToChat) {
+    navigate({ pathname: `/reserva/${rid}`, hash: "#chat" }, { state: { scrollToChat: true } });
+    return;
+  }
 
-        if (attA !== attB) return attB - attA;
-        return parseLocalKey(b.startDate) - parseLocalKey(a.startDate);
-      });
+  navigate(`/reserva/${rid}`);
+};
 
-    return (
-      <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] p-6">
-        {/* Tabs */}
-        <div className="max-w-[1400px] mx-auto mb-4 flex gap-3 justify-center">
-          <button
-            onClick={() => setTab("reservasTutor")}
-            className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${tab === "reservasTutor"
-                ? "bg-[#5A3A22] text-white"
-                : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
-              }`}
-            type="button"
-          >
-            Minhas Reservas
-          </button>
+// ------------------ TUTOR ------------------
+if (isTutor) {
+  const myRes = (reservations || [])
+    .filter((r) => String(r.tutorId) === String(user.id))
+    .sort((a, b) => {
+      const idA = String(a.id);
+      const idB = String(b.id);
 
-          <button
-            onClick={() => setTab("pets")}
-            className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${tab === "pets"
-                ? "bg-[#5A3A22] text-white"
-                : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
-              }`}
-            type="button"
-          >
-            Meus Pets
-          </button>
-        </div>
+      const attA = unreadChatIds.includes(idA) || unreadResIds.includes(idA) ? 1 : 0;
+      const attB = unreadChatIds.includes(idB) || unreadResIds.includes(idB) ? 1 : 0;
 
-        {/* Avaliações */}
-        <div className="max-w-[1400px] mx-auto mb-4 flex justify-end">
-          <Link
-            to={`/avaliacoes?mode=${activeRole}`}
-            className="px-4 py-2 rounded-2xl bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22] font-semibold shadow text-sm"
-          >
-            Ver minhas avaliações
-          </Link>
-        </div>
+      if (attA !== attB) return attB - attA;
+      return parseLocalKey(b.startDate) - parseLocalKey(a.startDate);
+    });
 
-        {/* Conteúdo */}
-        <div className="max-w-[1400px] mx-auto bg-white rounded-2xl shadow p-6 border-l-4 border-[#FFD700]/80">
-          {/* ✅ TAB: RESERVAS */}
-          {tab === "reservasTutor" && (
-            <>
-              {myRes.length ? (
-                <>
-                  <ReservationsPager />
+  return (
+    <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] p-6">
+      {/* Tabs */}
+      <div className="max-w-[1400px] mx-auto mb-4 flex gap-3 justify-center">
+        <button
+          onClick={() => setTab("reservasTutor")}
+          className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${tab === "reservasTutor"
+            ? "bg-[#5A3A22] text-white"
+            : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
+            }`}
+          type="button"
+        >
+          Minhas Reservas
+        </button>
 
-                  {myRes.map((r) => {
-                    const canRate = canRateReservation(r);
+        <button
+          onClick={() => setTab("pets")}
+          className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${tab === "pets"
+            ? "bg-[#5A3A22] text-white"
+            : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
+            }`}
+          type="button"
+        >
+          Meus Pets
+        </button>
+      </div>
 
-                    const idStr = String(r.id);
-                    const hasUnreadChat = unreadChatIds.includes(idStr);
-                    const hasUnreadResNotif = unreadResIds.includes(idStr);
+      {/* Avaliações */}
+      <div className="max-w-[1400px] mx-auto mb-4 flex justify-end">
+        <Link
+          to={`/avaliacoes?mode=${activeRole}`}
+          className="px-4 py-2 rounded-2xl bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22] font-semibold shadow text-sm"
+        >
+          Ver minhas avaliações
+        </Link>
+      </div>
 
-                    const alreadyByMe = hasMyReviewForReservation(idStr);
-                    const alreadyFallback = hasAlreadyReviewedFallback(r, "tutor");
-                    const alreadyRated = alreadyByMe || alreadyFallback;
+      {/* Conteúdo */}
+      <div className="max-w-[1400px] mx-auto bg-white rounded-2xl shadow p-6 border-l-4 border-[#FFD700]/80">
+        {/* ✅ TAB: RESERVAS */}
+        {tab === "reservasTutor" && (
+          <>
+            {myRes.length ? (
+              <>
+                <ReservationsPager />
 
-                    let cardClasses =
-                      "relative border rounded-lg p-4 mb-3 text-[#5A3A22] shadow-sm transition ";
-                    if (hasUnreadChat || hasUnreadResNotif) {
-                      cardClasses += "border-[#FFD700] bg-[#FFF8E0] ring-1 ring-[#FFD700]/40";
-                    } else {
-                      cardClasses += "bg-white hover:bg-[#FFFDF8]";
-                    }
+                {myRes.map((r) => {
+                  const canRate = canRateReservation(r);
 
-                    const statusHelper = getStatusHelperText(r, "tutor");
-                    const rejectReason = r.status === "Recusada" ? r.rejectReason || null : null;
-                    const cancelReason = r.status === "Cancelada" ? r.cancelReason || null : null;
+                  const idStr = String(r.id);
+                  const hasUnreadChat = unreadChatIds.includes(idStr);
+                  const hasUnreadResNotif = unreadResIds.includes(idStr);
 
-                    const showTutorRating =
-                      r.tutorRating != null && Number.isFinite(Number(r.tutorRating));
+                  const alreadyByMe = hasMyReviewForReservation(idStr);
+                  const alreadyFallback = hasAlreadyReviewedFallback(r, "tutor");
+                  const alreadyRated = alreadyByMe || alreadyFallback;
 
-                    return (
-                      <div key={r.id} className={cardClasses}>
+                  let cardClasses =
+                    "relative border rounded-lg p-4 mb-3 text-[#5A3A22] shadow-sm transition ";
+                  if (hasUnreadChat || hasUnreadResNotif) {
+                    cardClasses += "border-[#FFD700] bg-[#FFF8E0] ring-1 ring-[#FFD700]/40";
+                  } else {
+                    cardClasses += "bg-white hover:bg-[#FFFDF8]";
+                  }
+
+                  const statusHelper = getStatusHelperText(r, "tutor");
+                  const rejectReason = r.status === "Recusada" ? r.rejectReason || null : null;
+                  const cancelReason = r.status === "Cancelada" ? r.cancelReason || null : null;
+
+                  const showTutorRating =
+                    r.tutorRating != null && Number.isFinite(Number(r.tutorRating));
+
+                  return (
+                    <div key={r.id} className={cardClasses}>
+                      {(hasUnreadChat || hasUnreadResNotif) && (
+                        <div className="absolute top-3 right-3 flex items-center gap-2">
+                          <span
+                            className={`w-2.5 h-2.5 rounded-full ${hasUnreadChat ? "bg-blue-600" : "bg-red-600"
+                              }`}
+                            title={hasUnreadChat ? "Nova mensagem" : "Atualização"}
+                          />
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/70 border border-[#FFD700]/50 text-[#5A3A22]">
+                            {hasUnreadChat ? "CHAT" : "UPDATE"}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* ✅ card no padrão do cuidador */}
+                      <button
+                        onClick={() => openReservation(r.id, { scrollToChat: hasUnreadChat })}
+                        className="text-left w-full"
+                        type="button"
+                        title="Abrir detalhes da reserva"
+                      >
+                        <p>
+                          <b>Cuidador:</b> {r.caregiverName || "—"}
+                        </p>
+
+                        <p>
+                          <b>Período:</b> {formatDateBR(r.startDate)} até {formatDateBR(r.endDate)}
+                        </p>
+
+                        <p>
+                          <b>Total:</b> R$ {Number(r.total || 0).toFixed(2)}
+                        </p>
+
+                        <p>
+                          <b>Status:</b>{" "}
+                          <span className={`font-semibold ${getStatusColor(r.status)}`}>
+                            {r.status}
+                          </span>
+                        </p>
+
                         {(hasUnreadChat || hasUnreadResNotif) && (
-                          <div className="absolute top-3 right-3 flex items-center gap-2">
-                            <span
-                              className={`w-2.5 h-2.5 rounded-full ${hasUnreadChat ? "bg-blue-600" : "bg-red-600"
-                                }`}
-                              title={hasUnreadChat ? "Nova mensagem" : "Atualização"}
-                            />
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/70 border border-[#FFD700]/50 text-[#5A3A22]">
-                              {hasUnreadChat ? "CHAT" : "UPDATE"}
-                            </span>
-                          </div>
+                          <p className="mt-1 text-xs font-semibold text-[#B25B38]">
+                            {hasUnreadChat
+                              ? "Nova mensagem nesta reserva"
+                              : "Atualização nesta reserva"}
+                          </p>
                         )}
 
-                        {/* ✅ card no padrão do cuidador */}
-                        <button
-                          onClick={() => openReservation(r.id, { scrollToChat: hasUnreadChat })}
-                          className="text-left w-full"
-                          type="button"
-                          title="Abrir detalhes da reserva"
-                        >
-                          <p>
-                            <b>Cuidador:</b> {r.caregiverName || "—"}
+                        {statusHelper && (
+                          <p className="mt-1 text-xs text-[#5A3A22]">{statusHelper}</p>
+                        )}
+
+                        {r.status === "Cancelada" && cancelReason && (
+                          <p className="mt-2 text-xs text-[#5A3A22] bg-[#FFF8F0] border rounded-lg p-2">
+                            <b>Motivo do cancelamento:</b> {cancelReason}
                           </p>
+                        )}
 
-                          <p>
-                            <b>Período:</b> {formatDateBR(r.startDate)} até {formatDateBR(r.endDate)}
+                        {r.status === "Recusada" && rejectReason && (
+                          <p className="mt-2 text-xs text-[#5A3A22] bg-[#FFF8F0] border rounded-lg p-2">
+                            <b>Motivo da recusa:</b> {rejectReason}
                           </p>
+                        )}
+                      </button>
 
-                          <p>
-                            <b>Total:</b> R$ {Number(r.total || 0).toFixed(2)}
-                          </p>
-
-                          <p>
-                            <b>Status:</b>{" "}
-                            <span className={`font-semibold ${getStatusColor(r.status)}`}>
-                              {r.status}
-                            </span>
-                          </p>
-
-                          {(hasUnreadChat || hasUnreadResNotif) && (
-                            <p className="mt-1 text-xs font-semibold text-[#B25B38]">
-                              {hasUnreadChat
-                                ? "Nova mensagem nesta reserva"
-                                : "Atualização nesta reserva"}
-                            </p>
-                          )}
-
-                          {statusHelper && (
-                            <p className="mt-1 text-xs text-[#5A3A22]">{statusHelper}</p>
-                          )}
-
-                          {r.status === "Cancelada" && cancelReason && (
-                            <p className="mt-2 text-xs text-[#5A3A22] bg-[#FFF8F0] border rounded-lg p-2">
-                              <b>Motivo do cancelamento:</b> {cancelReason}
-                            </p>
-                          )}
-
-                          {r.status === "Recusada" && rejectReason && (
-                            <p className="mt-2 text-xs text-[#5A3A22] bg-[#FFF8F0] border rounded-lg p-2">
-                              <b>Motivo da recusa:</b> {rejectReason}
-                            </p>
-                          )}
-                        </button>
-
-                        <div className="mt-2 flex items-center justify-between">
-                          {alreadyRated ? (
-                            <p className="text-xs text-[#5A3A22] opacity-80">
-                              {showTutorRating ? (
-                                <>
-                                  Sua avaliação: <b>⭐ {Number(r.tutorRating)}/5</b>
-                                  {r.tutorReview ? ` — "${String(r.tutorReview)}"` : ""}
-                                </>
-                              ) : (
-                                <>Você já avaliou esta reserva.</>
-                              )}
-                            </p>
-                          ) : (
-                            <p className="text-xs text-[#5A3A22] opacity-70">
-                              Após a reserva ser concluída, você poderá avaliar o cuidador.
-                            </p>
-                          )}
-
-                          <div className="flex gap-2 items-center">
-                            {String(r.status) === "Aceita" && (
-                              <Link
-                                to={`/reserva/${r.id}#chat`}
-                                state={{ scrollToChat: true }}
-                                onClick={(e) => e.stopPropagation()}
-                                className="px-3 py-1 rounded-lg text-xs font-semibold bg-[#FFD700] hover:bg-[#f5c400] text-[#5A3A22] shadow"
-                              >
-                                Abrir chat
-                              </Link>
+                      <div className="mt-2 flex items-center justify-between">
+                        {alreadyRated ? (
+                          <p className="text-xs text-[#5A3A22] opacity-80">
+                            {showTutorRating ? (
+                              <>
+                                Sua avaliação: <b>⭐ {Number(r.tutorRating)}/5</b>
+                                {r.tutorReview ? ` — "${String(r.tutorReview)}"` : ""}
+                              </>
+                            ) : (
+                              <>Você já avaliou esta reserva.</>
                             )}
+                          </p>
+                        ) : (
+                          <p className="text-xs text-[#5A3A22] opacity-70">
+                            Após a reserva ser concluída, você poderá avaliar o cuidador.
+                          </p>
+                        )}
 
-                            {canRate && !alreadyRated && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  openRatingModal(r, "Avaliar cuidador");
-                                }}
-                                className="px-3 py-1 rounded-lg text-xs font-semibold bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22] shadow"
-                              >
-                                Avaliar
-                              </button>
-                            )}
+                        <div className="flex gap-2 items-center">
+                          {String(r.status) === "Aceita" && (
+                            <Link
+                              to={`/reserva/${r.id}#chat`}
+                              state={{ scrollToChat: true }}
+                              onClick={(e) => e.stopPropagation()}
+                              className="px-3 py-1 rounded-lg text-xs font-semibold bg-[#FFD700] hover:bg-[#f5c400] text-[#5A3A22] shadow"
+                            >
+                              Abrir chat
+                            </Link>
+                          )}
 
-                            {["Pendente", "Aceita"].includes(String(r.status)) && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  setCancelConfirmId(String(r.id));
-                                }}
-                                className="px-3 py-1 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 text-white shadow"
-                              >
-                                Cancelar
-                              </button>
-                            )}
-                          </div>
+                          {canRate && !alreadyRated && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                openRatingModal(r, "Avaliar cuidador");
+                              }}
+                              className="px-3 py-1 rounded-lg text-xs font-semibold bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22] shadow"
+                            >
+                              Avaliar
+                            </button>
+                          )}
+
+                          {["Pendente", "Aceita"].includes(String(r.status)) && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setCancelConfirmId(String(r.id));
+                              }}
+                              className="px-3 py-1 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 text-white shadow"
+                            >
+                              Cancelar
+                            </button>
+                          )}
                         </div>
                       </div>
-                    );
-                  })}
-                </>
-              ) : reservationsLoading ? (
-                <p className="text-center text-[#5A3A22]">Carregando suas reservas...</p>
-              ) : (
-                <p className="text-center text-[#5A3A22]">Você ainda não fez reservas.</p>
-              )}
-            </>
-          )}
-
-          {/* ✅ TAB: PETS */}
-          {tab === "pets" && <TutorPets />}
-        </div>
-
-        {/* ✅ CONFIRMAR CANCELAMENTO */}
-        {cancelConfirmId && (
-          <div className="fixed bottom-6 right-6 z-[9999] w-[360px] max-w-[92vw]">
-            <div className="bg-white shadow-xl rounded-2xl border-l-4 border-red-600 p-4">
-              <p className="text-sm text-[#5A3A22] font-semibold">
-                Tem certeza que deseja cancelar esta reserva?
-              </p>
-              <p className="text-xs text-[#5A3A22] opacity-80 mt-1">
-                Essa ação não pode ser desfeita.
-              </p>
-
-              <div className="flex justify-end gap-2 mt-4">
-                <button
-                  type="button"
-                  onClick={dismissCancelReservation}
-                  className="px-3 py-2 rounded-lg text-xs font-semibold bg-gray-200 hover:bg-gray-300 text-[#5A3A22]"
-                >
-                  Manter reserva
-                </button>
-                <button
-                  type="button"
-                  onClick={confirmCancelReservation}
-                  className="px-3 py-2 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 text-white"
-                >
-                  Cancelar reserva
-                </button>
-              </div>
-            </div>
-          </div>
+                    </div>
+                  );
+                })}
+              </>
+            ) : reservationsLoading ? (
+              <p className="text-center text-[#5A3A22]">Carregando suas reservas...</p>
+            ) : (
+              <p className="text-center text-[#5A3A22]">Você ainda não fez reservas.</p>
+            )}
+          </>
         )}
 
-        {/* ✅ MODAL: MOTIVO DO CANCELAMENTO */}
-        {cancelModal.open && (
+        {/* ✅ TAB: PETS */}
+        {tab === "pets" && <TutorPets />}
+      </div>
+
+      {/* ✅ CONFIRMAR CANCELAMENTO */}
+      {cancelConfirmId && (
+        <div className="fixed bottom-6 right-6 z-[9999] w-[360px] max-w-[92vw]">
+          <div className="bg-white shadow-xl rounded-2xl border-l-4 border-red-600 p-4">
+            <p className="text-sm text-[#5A3A22] font-semibold">
+              Tem certeza que deseja cancelar esta reserva?
+            </p>
+            <p className="text-xs text-[#5A3A22] opacity-80 mt-1">
+              Essa ação não pode ser desfeita.
+            </p>
+
+            <div className="flex justify-end gap-2 mt-4">
+              <button
+                type="button"
+                onClick={dismissCancelReservation}
+                className="px-3 py-2 rounded-lg text-xs font-semibold bg-gray-200 hover:bg-gray-300 text-[#5A3A22]"
+              >
+                Manter reserva
+              </button>
+              <button
+                type="button"
+                onClick={confirmCancelReservation}
+                className="px-3 py-2 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 text-white"
+              >
+                Cancelar reserva
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ MODAL: MOTIVO DO CANCELAMENTO */}
+      {cancelModal.open && (
+        <div className="fixed inset-0 z-[9999] flex items-end md:items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-[520px] bg-white rounded-2xl shadow-xl border-l-4 border-red-600 p-4">
+            <p className="text-sm font-semibold text-[#5A3A22]">Cancelar reserva</p>
+            <p className="text-xs text-[#5A3A22] opacity-80 mt-1">
+              Escreva um motivo para o cuidador entender o cancelamento.{" "}
+              <b>(Obrigatório)</b>
+            </p>
+
+            <textarea
+              value={cancelModal.text}
+              onChange={(e) =>
+                setCancelModal((s) => ({ ...s, text: e.target.value }))
+              }
+              rows={4}
+              placeholder="Ex.: Mudança de planos / Imprevisto / Encontrei outro cuidador..."
+              className="mt-3 w-full border rounded-xl p-3 text-sm text-[#5A3A22] outline-none focus:ring-2 focus:ring-[#FFD700]/70"
+            />
+
+            <div className="flex justify-end gap-2 mt-4">
+              <button
+                type="button"
+                onClick={closeCancelModal}
+                className="px-3 py-2 rounded-lg text-xs font-semibold bg-gray-200 hover:bg-gray-300 text-[#5A3A22]"
+              >
+                Voltar
+              </button>
+              <button
+                type="button"
+                onClick={confirmCancelWithReason}
+                className="px-3 py-2 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 text-white"
+              >
+                Cancelar reserva
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <RatingModal
+        isOpen={!!ratingReservation}
+        title={ratingTitle || "Avaliar"}
+        onClose={closeRatingModal}
+        onSubmit={handleSubmitRating}
+      />
+    </div>
+  );
+}
+
+// ------------------ CUIDADOR ------------------
+if (isCaregiver) {
+  const received = (reservations || [])
+    .filter((r) => String(r.caregiverId) === String(user.id))
+    .sort((a, b) => {
+      const idA = String(a.id);
+      const idB = String(b.id);
+
+      const attA = unreadChatIds.includes(idA) || unreadResIds.includes(idA) ? 1 : 0;
+      const attB = unreadChatIds.includes(idB) || unreadResIds.includes(idB) ? 1 : 0;
+
+      if (attA !== attB) return attB - attA;
+      return parseLocalKey(b.startDate) - parseLocalKey(a.startDate);
+    });
+
+  const todayKey = toLocalKey(today);
+
+  return (
+    <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] p-6">
+      <div className="max-w-[1400px] mx-auto mb-4 flex gap-3 justify-center">
+        <button
+          onClick={() => setTab("disponibilidade")}
+          className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${tab === "disponibilidade"
+            ? "bg-[#5A3A22] text-white"
+            : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
+            }`}
+          type="button"
+        >
+          Disponibilidade
+        </button>
+        <button
+          onClick={() => setTab("reservas")}
+          className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${tab === "reservas"
+            ? "bg-[#5A3A22] text-white"
+            : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
+            }`}
+          type="button"
+        >
+          Reservas Recebidas
+        </button>
+      </div>
+
+      <div className="max-w-[1400px] mx-auto mb-4 flex justify-end">
+        <Link
+          to={`/avaliacoes?mode=${activeRole}`}
+          className="px-4 py-2 rounded-2xl bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22] font-semibold shadow text-sm"
+        >
+          Ver minhas avaliações
+        </Link>
+      </div>
+
+      <div className="max-w-[1400px] mx-auto bg-white rounded-2xl shadow p-6 border-l-4 border-[#FFD700]/80">
+        {tab === "disponibilidade" && (
+          <section>
+            <div className="flex flex-wrap items-center gap-4 text-sm text-[#5A3A22] mb-4">
+              <span className="inline-flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-[#D2A679] inline-block" /> Hoje
+              </span>
+              <span className="inline-flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-green-700 inline-block" /> Salvo
+              </span>
+              <span className="inline-flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-green-500 inline-block" /> Novo
+              </span>
+              <span className="inline-flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-red-400 inline-block" /> Remover
+              </span>
+            </div>
+
+            {/* ✅ Capacidade diária */}
+            <div className="bg-[#F9F5F2] p-4 rounded-lg shadow-md mb-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-semibold text-[#5A3A22]">
+                    Capacidade diária
+                  </h3>
+                  <p className="text-xs text-[#5A3A22] opacity-80 mt-1">
+                    Quantas reservas simultâneas você aceita por dia (máx. {capacityMax}).
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <select
+                    value={dailyCapacity}
+                    disabled={capacityLoading || capacitySaving}
+                    onChange={(e) => saveMyCapacityIfCaregiver(e.target.value)}
+                    className="border rounded-xl px-3 py-2 text-sm text-[#5A3A22] bg-white shadow-sm outline-none focus:ring-2 focus:ring-[#FFD700]/70"
+                  >
+                    {Array.from({ length: capacityMax - capacityMin + 1 }, (_, i) => capacityMin + i).map(
+                      (n) => (
+                        <option key={n} value={n}>
+                          {n} / dia
+                        </option>
+                      )
+                    )}
+                  </select>
+
+                  {(capacityLoading || capacitySaving) && (
+                    <span className="text-xs text-[#5A3A22] opacity-70">
+                      {capacityLoading ? "Carregando..." : "Salvando..."}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-center">
+              <Calendar
+                className="mx-auto"
+                activeStartDate={currentMonth}
+                onActiveStartDateChange={({ activeStartDate }) => setCurrentMonth(activeStartDate)}
+                onClickDay={(date) => {
+                  if (date < today) return;
+
+                  const key = toLocalKey(date);
+                  setPendingDates((prev) =>
+                    prev.includes(key) ? prev.filter((d) => d !== key) : [...prev, key]
+                  );
+                  setUnsaved(true);
+                }}
+                tileDisabled={({ date }) => date < today}
+                tileClassName={({ date }) => {
+                  const key = toLocalKey(date);
+
+                  const isSaved = availableDates.includes(key);
+                  const isPending = pendingDates.includes(key);
+                  const isPast = date < today;
+
+                  const cls = [];
+
+                  if (key === todayKey) cls.push("pc-cal-today");
+
+                  if (isSaved && isPending) cls.push("pc-cal-saved");
+                  if (isSaved && !isPending) cls.push("pc-cal-remove");
+                  if (isPending && !isSaved) cls.push("pc-cal-new");
+                  if (isPast) cls.push("pc-cal-past");
+
+                  return cls.join(" ");
+                }}
+              />
+            </div>
+
+            <div className="flex justify-end gap-3 mt-5">
+              <button
+                onClick={discardAvailability}
+                type="button"
+                className="bg-gray-400 hover:bg-gray-500 text-white font-semibold px-5 py-2 rounded-lg shadow-md"
+              >
+                ↩️ Descartar
+              </button>
+              <button
+                onClick={saveAvailability}
+                type="button"
+                disabled={!unsaved}
+                className={`font-semibold px-5 py-2 rounded-lg shadow-md ${unsaved
+                  ? "bg-green-700 hover:bg-green-800 text-white"
+                  : "bg-green-700/50 text-white/70 cursor-not-allowed"
+                  }`}
+              >
+                💾 Salvar Alterações
+              </button>
+            </div>
+
+            <div className="bg-[#F9F5F2] p-4 rounded-lg shadow-md mt-6">
+              <h3 className="text-lg font-semibold text-[#5A3A22] mb-3">
+                Datas disponíveis em{" "}
+                {currentMonth.toLocaleString("pt-BR", { month: "long", year: "numeric" })}
+              </h3>
+
+              {pendingDates.length ? (
+                <ul className="list-disc pl-5 text-sm text-[#5A3A22] space-y-1">
+                  {normalizeAvailKeys(pendingDates)
+                    .filter((key) => {
+                      const dt = parseLocalKey(key);
+                      return (
+                        dt.getMonth() === currentMonth.getMonth() &&
+                        dt.getFullYear() === currentMonth.getFullYear()
+                      );
+                    })
+                    .sort()
+                    .map((key) => {
+                      const dt = parseLocalKey(key);
+                      const isPast = dt < today;
+                      const wasSaved = availableDates.includes(key);
+                      const isNew = !wasSaved;
+
+                      return (
+                        <li
+                          key={key}
+                          className={isPast ? "line-through opacity-60" : ""}
+                          title={isPast ? "Data já passou" : isNew ? "Novo (ainda não salvo)" : "Salvo"}
+                        >
+                          {formatDateBR(key)}
+                          {isNew ? (
+                            <span className="ml-2 text-xs font-semibold text-green-600">(novo)</span>
+                          ) : null}
+                        </li>
+                      );
+                    })}
+                </ul>
+              ) : (
+                <p className="text-gray-600 text-sm">Nenhuma data disponível neste mês.</p>
+              )}
+
+              {unsaved && (
+                <p className="mt-3 text-xs text-[#B25B38] font-semibold">
+                  Você tem alterações não salvas.
+                </p>
+              )}
+            </div>
+          </section>
+        )}
+
+        {tab === "reservas" && (
+          <section>
+            {reservationsLoading ? (
+              <p className="text-center text-[#5A3A22]">Carregando reservas...</p>
+            ) : received.length === 0 ? (
+              <p className="text-center text-[#5A3A22]">Nenhuma reserva recebida.</p>
+            ) : (
+              <>
+                <ReservationsPager />
+
+                {received.map((r) => {
+                  const canRate = canRateReservation(r);
+
+                  const idStr = String(r.id);
+                  const hasUnreadChat = unreadChatIds.includes(idStr);
+                  const hasUnreadResNotif = unreadResIds.includes(idStr);
+
+                  const alreadyByMe = hasMyReviewForReservation(idStr);
+                  const alreadyFallback = hasAlreadyReviewedFallback(r, "caregiver");
+                  const alreadyRated = alreadyByMe || alreadyFallback;
+
+                  let cardClasses =
+                    "relative border rounded-lg p-4 mb-3 text-[#5A3A22] shadow-sm transition ";
+                  if (hasUnreadChat || hasUnreadResNotif) {
+                    cardClasses += "border-[#FFD700] bg-[#FFF8E0] ring-1 ring-[#FFD700]/40";
+                  } else {
+                    cardClasses += "bg-white hover:bg-[#FFFDF8]";
+                  }
+
+                  const statusHelper = getStatusHelperText(r, "caregiver");
+
+                  const showCaregiverRating =
+                    r.caregiverRating != null && Number.isFinite(Number(r.caregiverRating));
+
+                  const showActions = r.status === "Pendente";
+
+                  return (
+                    <div key={r.id} className={cardClasses}>
+                      {(hasUnreadChat || hasUnreadResNotif) && (
+                        <div className="absolute top-3 right-3 flex items-center gap-2">
+                          <span
+                            className={`w-2.5 h-2.5 rounded-full ${hasUnreadChat ? "bg-blue-600" : "bg-red-600"
+                              }`}
+                            title={hasUnreadChat ? "Nova mensagem" : "Atualização"}
+                          />
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/70 border border-[#FFD700]/50 text-[#5A3A22]">
+                            {hasUnreadChat ? "CHAT" : "UPDATE"}
+                          </span>
+                        </div>
+                      )}
+
+                      <button
+                        onClick={() => openReservation(r.id, { scrollToChat: hasUnreadChat })}
+                        className="text-left w-full"
+                        type="button"
+                        title="Abrir detalhes da reserva"
+                      >
+                        <p>
+                          <b>Tutor:</b> {r.tutorName}
+                        </p>
+                        <p>
+                          <b>Período:</b> {formatDateBR(r.startDate)} até {formatDateBR(r.endDate)}
+                        </p>
+                        <p>
+                          <b>Total:</b> R$ {Number(r.total || 0).toFixed(2)}
+                        </p>
+                        <p>
+                          <b>Status:</b>{" "}
+                          <span className={`font-semibold ${getStatusColor(r.status)}`}>
+                            {r.status}
+                          </span>
+                        </p>
+
+                        {(hasUnreadChat || hasUnreadResNotif) && (
+                          <p className="mt-1 text-xs font-semibold text-[#B25B38]">
+                            {hasUnreadChat
+                              ? "Nova mensagem nesta reserva"
+                              : "Atualização nesta reserva"}
+                          </p>
+                        )}
+
+                        {statusHelper && (
+                          <p className="mt-1 text-xs text-[#5A3A22]">{statusHelper}</p>
+                        )}
+
+                        {r.status === "Cancelada" && r.cancelReason && (
+                          <p className="mt-2 text-xs text-[#5A3A22] bg-[#FFF8F0] border rounded-lg p-2">
+                            <b>Motivo do cancelamento:</b> {r.cancelReason}
+                          </p>
+                        )}
+                      </button>
+
+                      <div className="mt-2 flex items-center justify-between">
+                        {alreadyRated ? (
+                          <p className="text-xs text-[#5A3A22] opacity-80">
+                            {showCaregiverRating ? (
+                              <>
+                                Sua avaliação: <b>⭐ {Number(r.caregiverRating)}/5</b>
+                                {r.caregiverReview ? ` — "${r.caregiverReview}"` : ""}
+                              </>
+                            ) : (
+                              <>Você já avaliou esta reserva.</>
+                            )}
+                          </p>
+                        ) : (
+                          <p className="text-xs text-[#5A3A22] opacity-70">
+                            Após a reserva ser concluída, você poderá avaliar o tutor.
+                          </p>
+                        )}
+
+                        <div className="flex gap-2 items-center">
+                          {showActions && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleAcceptReservationFromList(r)}
+                                className="px-3 py-1 rounded-lg text-xs font-semibold bg-green-700 hover:bg-green-800 text-white shadow"
+                              >
+                                Aceitar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => openRejectModal(r)}
+                                className="px-3 py-1 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 text-white shadow"
+                              >
+                                Recusar
+                              </button>
+                            </>
+                          )}
+
+                          {canRate && (
+                            <button
+                              type="button"
+                              onClick={() => openRatingModal(r, "Avaliar tutor")}
+                              className="px-3 py-1 rounded-lg text-xs font-semibold bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22] shadow"
+                            >
+                              Avaliar tutor
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </>
+            )}
+          </section>
+        )}
+
+        {rejectModal.open && (
           <div className="fixed inset-0 z-[9999] flex items-end md:items-center justify-center bg-black/40 p-4">
             <div className="w-full max-w-[520px] bg-white rounded-2xl shadow-xl border-l-4 border-red-600 p-4">
-              <p className="text-sm font-semibold text-[#5A3A22]">Cancelar reserva</p>
+              <p className="text-sm font-semibold text-[#5A3A22]">Recusar pré-reserva</p>
               <p className="text-xs text-[#5A3A22] opacity-80 mt-1">
-                Escreva um motivo para o cuidador entender o cancelamento.{" "}
-                <b>(Obrigatório)</b>
+                (Opcional) Escreva um motivo para o tutor entender o porquê da recusa.
               </p>
 
               <textarea
-                value={cancelModal.text}
-                onChange={(e) =>
-                  setCancelModal((s) => ({ ...s, text: e.target.value }))
-                }
+                value={rejectModal.text}
+                onChange={(e) => setRejectModal((s) => ({ ...s, text: e.target.value }))}
                 rows={4}
-                placeholder="Ex.: Mudança de planos / Imprevisto / Encontrei outro cuidador..."
+                placeholder="Ex.: Não estarei disponível nesse dia / Já tenho outra reserva / Fora da minha área..."
                 className="mt-3 w-full border rounded-xl p-3 text-sm text-[#5A3A22] outline-none focus:ring-2 focus:ring-[#FFD700]/70"
               />
 
               <div className="flex justify-end gap-2 mt-4">
                 <button
                   type="button"
-                  onClick={closeCancelModal}
+                  onClick={closeRejectModal}
                   className="px-3 py-2 rounded-lg text-xs font-semibold bg-gray-200 hover:bg-gray-300 text-[#5A3A22]"
                 >
                   Voltar
                 </button>
                 <button
                   type="button"
-                  onClick={confirmCancelWithReason}
+                  onClick={confirmRejectWithReason}
                   className="px-3 py-2 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 text-white"
                 >
-                  Cancelar reserva
+                  Recusar
                 </button>
               </div>
             </div>
@@ -2126,426 +2615,18 @@ export default function Dashboard() {
           onSubmit={handleSubmitRating}
         />
       </div>
-    );
-  }
-
-  // ------------------ CUIDADOR ------------------
-  if (isCaregiver) {
-    const received = (reservations || [])
-      .filter((r) => String(r.caregiverId) === String(user.id))
-      .sort((a, b) => {
-        const idA = String(a.id);
-        const idB = String(b.id);
-
-        const attA = unreadChatIds.includes(idA) || unreadResIds.includes(idA) ? 1 : 0;
-        const attB = unreadChatIds.includes(idB) || unreadResIds.includes(idB) ? 1 : 0;
-
-        if (attA !== attB) return attB - attA;
-        return parseLocalKey(b.startDate) - parseLocalKey(a.startDate);
-      });
-
-    const todayKey = toLocalKey(today);
-
-    return (
-      <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] p-6">
-        <div className="max-w-[1400px] mx-auto mb-4 flex gap-3 justify-center">
-          <button
-            onClick={() => setTab("disponibilidade")}
-            className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${tab === "disponibilidade"
-              ? "bg-[#5A3A22] text-white"
-              : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
-              }`}
-            type="button"
-          >
-            Disponibilidade
-          </button>
-          <button
-            onClick={() => setTab("reservas")}
-            className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${tab === "reservas"
-              ? "bg-[#5A3A22] text-white"
-              : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
-              }`}
-            type="button"
-          >
-            Reservas Recebidas
-          </button>
-        </div>
-
-        <div className="max-w-[1400px] mx-auto mb-4 flex justify-end">
-          <Link
-            to={`/avaliacoes?mode=${activeRole}`}
-            className="px-4 py-2 rounded-2xl bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22] font-semibold shadow text-sm"
-          >
-            Ver minhas avaliações
-          </Link>
-        </div>
-
-        <div className="max-w-[1400px] mx-auto bg-white rounded-2xl shadow p-6 border-l-4 border-[#FFD700]/80">
-          {tab === "disponibilidade" && (
-            <section>
-              <div className="flex flex-wrap items-center gap-4 text-sm text-[#5A3A22] mb-4">
-                <span className="inline-flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full bg-[#D2A679] inline-block" /> Hoje
-                </span>
-                <span className="inline-flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full bg-green-700 inline-block" /> Salvo
-                </span>
-                <span className="inline-flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full bg-green-500 inline-block" /> Novo
-                </span>
-                <span className="inline-flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full bg-red-400 inline-block" /> Remover
-                </span>
-              </div>
-
-              {/* ✅ Capacidade diária */}
-              <div className="bg-[#F9F5F2] p-4 rounded-lg shadow-md mb-4">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                  <div>
-                    <h3 className="text-base font-semibold text-[#5A3A22]">
-                      Capacidade diária
-                    </h3>
-                    <p className="text-xs text-[#5A3A22] opacity-80 mt-1">
-                      Quantas reservas simultâneas você aceita por dia (máx. {capacityMax}).
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <select
-                      value={dailyCapacity}
-                      disabled={capacityLoading || capacitySaving}
-                      onChange={(e) => saveMyCapacityIfCaregiver(e.target.value)}
-                      className="border rounded-xl px-3 py-2 text-sm text-[#5A3A22] bg-white shadow-sm outline-none focus:ring-2 focus:ring-[#FFD700]/70"
-                    >
-                      {Array.from({ length: capacityMax - capacityMin + 1 }, (_, i) => capacityMin + i).map(
-                        (n) => (
-                          <option key={n} value={n}>
-                            {n} / dia
-                          </option>
-                        )
-                      )}
-                    </select>
-
-                    {(capacityLoading || capacitySaving) && (
-                      <span className="text-xs text-[#5A3A22] opacity-70">
-                        {capacityLoading ? "Carregando..." : "Salvando..."}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex justify-center">
-                <Calendar
-                  className="mx-auto"
-                  activeStartDate={currentMonth}
-                  onActiveStartDateChange={({ activeStartDate }) => setCurrentMonth(activeStartDate)}
-                  onClickDay={(date) => {
-                    if (date < today) return;
-
-                    const key = toLocalKey(date);
-                    setPendingDates((prev) =>
-                      prev.includes(key) ? prev.filter((d) => d !== key) : [...prev, key]
-                    );
-                    setUnsaved(true);
-                  }}
-                  tileDisabled={({ date }) => date < today}
-                  tileClassName={({ date }) => {
-                    const key = toLocalKey(date);
-
-                    const isSaved = availableDates.includes(key);
-                    const isPending = pendingDates.includes(key);
-                    const isPast = date < today;
-
-                    const cls = [];
-
-                    if (key === todayKey) cls.push("pc-cal-today");
-
-                    if (isSaved && isPending) cls.push("pc-cal-saved");
-                    if (isSaved && !isPending) cls.push("pc-cal-remove");
-                    if (isPending && !isSaved) cls.push("pc-cal-new");
-                    if (isPast) cls.push("pc-cal-past");
-
-                    return cls.join(" ");
-                  }}
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 mt-5">
-                <button
-                  onClick={discardAvailability}
-                  type="button"
-                  className="bg-gray-400 hover:bg-gray-500 text-white font-semibold px-5 py-2 rounded-lg shadow-md"
-                >
-                  ↩️ Descartar
-                </button>
-                <button
-                  onClick={saveAvailability}
-                  type="button"
-                  disabled={!unsaved}
-                  className={`font-semibold px-5 py-2 rounded-lg shadow-md ${unsaved
-                    ? "bg-green-700 hover:bg-green-800 text-white"
-                    : "bg-green-700/50 text-white/70 cursor-not-allowed"
-                    }`}
-                >
-                  💾 Salvar Alterações
-                </button>
-              </div>
-
-              <div className="bg-[#F9F5F2] p-4 rounded-lg shadow-md mt-6">
-                <h3 className="text-lg font-semibold text-[#5A3A22] mb-3">
-                  Datas disponíveis em{" "}
-                  {currentMonth.toLocaleString("pt-BR", { month: "long", year: "numeric" })}
-                </h3>
-
-                {pendingDates.length ? (
-                  <ul className="list-disc pl-5 text-sm text-[#5A3A22] space-y-1">
-                    {normalizeAvailKeys(pendingDates)
-                      .filter((key) => {
-                        const dt = parseLocalKey(key);
-                        return (
-                          dt.getMonth() === currentMonth.getMonth() &&
-                          dt.getFullYear() === currentMonth.getFullYear()
-                        );
-                      })
-                      .sort()
-                      .map((key) => {
-                        const dt = parseLocalKey(key);
-                        const isPast = dt < today;
-                        const wasSaved = availableDates.includes(key);
-                        const isNew = !wasSaved;
-
-                        return (
-                          <li
-                            key={key}
-                            className={isPast ? "line-through opacity-60" : ""}
-                            title={isPast ? "Data já passou" : isNew ? "Novo (ainda não salvo)" : "Salvo"}
-                          >
-                            {formatDateBR(key)}
-                            {isNew ? (
-                              <span className="ml-2 text-xs font-semibold text-green-600">(novo)</span>
-                            ) : null}
-                          </li>
-                        );
-                      })}
-                  </ul>
-                ) : (
-                  <p className="text-gray-600 text-sm">Nenhuma data disponível neste mês.</p>
-                )}
-
-                {unsaved && (
-                  <p className="mt-3 text-xs text-[#B25B38] font-semibold">
-                    Você tem alterações não salvas.
-                  </p>
-                )}
-              </div>
-            </section>
-          )}
-
-          {tab === "reservas" && (
-            <section>
-              {reservationsLoading ? (
-                <p className="text-center text-[#5A3A22]">Carregando reservas...</p>
-              ) : received.length === 0 ? (
-                <p className="text-center text-[#5A3A22]">Nenhuma reserva recebida.</p>
-              ) : (
-                <>
-                  <ReservationsPager />
-
-                  {received.map((r) => {
-                    const canRate = canRateReservation(r);
-
-                    const idStr = String(r.id);
-                    const hasUnreadChat = unreadChatIds.includes(idStr);
-                    const hasUnreadResNotif = unreadResIds.includes(idStr);
-
-                    const alreadyByMe = hasMyReviewForReservation(idStr);
-                    const alreadyFallback = hasAlreadyReviewedFallback(r, "caregiver");
-                    const alreadyRated = alreadyByMe || alreadyFallback;
-
-                    let cardClasses =
-                      "relative border rounded-lg p-4 mb-3 text-[#5A3A22] shadow-sm transition ";
-                    if (hasUnreadChat || hasUnreadResNotif) {
-                      cardClasses += "border-[#FFD700] bg-[#FFF8E0] ring-1 ring-[#FFD700]/40";
-                    } else {
-                      cardClasses += "bg-white hover:bg-[#FFFDF8]";
-                    }
-
-                    const statusHelper = getStatusHelperText(r, "caregiver");
-
-                    const showCaregiverRating =
-                      r.caregiverRating != null && Number.isFinite(Number(r.caregiverRating));
-
-                    const showActions = r.status === "Pendente";
-
-                    return (
-                      <div key={r.id} className={cardClasses}>
-                        {(hasUnreadChat || hasUnreadResNotif) && (
-                          <div className="absolute top-3 right-3 flex items-center gap-2">
-                            <span
-                              className={`w-2.5 h-2.5 rounded-full ${hasUnreadChat ? "bg-blue-600" : "bg-red-600"
-                                }`}
-                              title={hasUnreadChat ? "Nova mensagem" : "Atualização"}
-                            />
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/70 border border-[#FFD700]/50 text-[#5A3A22]">
-                              {hasUnreadChat ? "CHAT" : "UPDATE"}
-                            </span>
-                          </div>
-                        )}
-
-                        <button
-                          onClick={() => openReservation(r.id, { scrollToChat: hasUnreadChat })}
-                          className="text-left w-full"
-                          type="button"
-                          title="Abrir detalhes da reserva"
-                        >
-                          <p>
-                            <b>Tutor:</b> {r.tutorName}
-                          </p>
-                          <p>
-                            <b>Período:</b> {formatDateBR(r.startDate)} até {formatDateBR(r.endDate)}
-                          </p>
-                          <p>
-                            <b>Total:</b> R$ {Number(r.total || 0).toFixed(2)}
-                          </p>
-                          <p>
-                            <b>Status:</b>{" "}
-                            <span className={`font-semibold ${getStatusColor(r.status)}`}>
-                              {r.status}
-                            </span>
-                          </p>
-
-                          {(hasUnreadChat || hasUnreadResNotif) && (
-                            <p className="mt-1 text-xs font-semibold text-[#B25B38]">
-                              {hasUnreadChat
-                                ? "Nova mensagem nesta reserva"
-                                : "Atualização nesta reserva"}
-                            </p>
-                          )}
-
-                          {statusHelper && (
-                            <p className="mt-1 text-xs text-[#5A3A22]">{statusHelper}</p>
-                          )}
-
-                          {r.status === "Cancelada" && r.cancelReason && (
-                            <p className="mt-2 text-xs text-[#5A3A22] bg-[#FFF8F0] border rounded-lg p-2">
-                              <b>Motivo do cancelamento:</b> {r.cancelReason}
-                            </p>
-                          )}
-                        </button>
-
-                        <div className="mt-2 flex items-center justify-between">
-                          {alreadyRated ? (
-                            <p className="text-xs text-[#5A3A22] opacity-80">
-                              {showCaregiverRating ? (
-                                <>
-                                  Sua avaliação: <b>⭐ {Number(r.caregiverRating)}/5</b>
-                                  {r.caregiverReview ? ` — "${r.caregiverReview}"` : ""}
-                                </>
-                              ) : (
-                                <>Você já avaliou esta reserva.</>
-                              )}
-                            </p>
-                          ) : (
-                            <p className="text-xs text-[#5A3A22] opacity-70">
-                              Após a reserva ser concluída, você poderá avaliar o tutor.
-                            </p>
-                          )}
-
-                          <div className="flex gap-2 items-center">
-                            {showActions && (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => handleAcceptReservationFromList(r)}
-                                  className="px-3 py-1 rounded-lg text-xs font-semibold bg-green-700 hover:bg-green-800 text-white shadow"
-                                >
-                                  Aceitar
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => openRejectModal(r)}
-                                  className="px-3 py-1 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 text-white shadow"
-                                >
-                                  Recusar
-                                </button>
-                              </>
-                            )}
-
-                            {canRate && (
-                              <button
-                                type="button"
-                                onClick={() => openRatingModal(r, "Avaliar tutor")}
-                                className="px-3 py-1 rounded-lg text-xs font-semibold bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22] shadow"
-                              >
-                                Avaliar tutor
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </>
-              )}
-            </section>
-          )}
-
-          {rejectModal.open && (
-            <div className="fixed inset-0 z-[9999] flex items-end md:items-center justify-center bg-black/40 p-4">
-              <div className="w-full max-w-[520px] bg-white rounded-2xl shadow-xl border-l-4 border-red-600 p-4">
-                <p className="text-sm font-semibold text-[#5A3A22]">Recusar pré-reserva</p>
-                <p className="text-xs text-[#5A3A22] opacity-80 mt-1">
-                  (Opcional) Escreva um motivo para o tutor entender o porquê da recusa.
-                </p>
-
-                <textarea
-                  value={rejectModal.text}
-                  onChange={(e) => setRejectModal((s) => ({ ...s, text: e.target.value }))}
-                  rows={4}
-                  placeholder="Ex.: Não estarei disponível nesse dia / Já tenho outra reserva / Fora da minha área..."
-                  className="mt-3 w-full border rounded-xl p-3 text-sm text-[#5A3A22] outline-none focus:ring-2 focus:ring-[#FFD700]/70"
-                />
-
-                <div className="flex justify-end gap-2 mt-4">
-                  <button
-                    type="button"
-                    onClick={closeRejectModal}
-                    className="px-3 py-2 rounded-lg text-xs font-semibold bg-gray-200 hover:bg-gray-300 text-[#5A3A22]"
-                  >
-                    Voltar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={confirmRejectWithReason}
-                    className="px-3 py-2 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 text-white"
-                  >
-                    Recusar
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <RatingModal
-            isOpen={!!ratingReservation}
-            title={ratingTitle || "Avaliar"}
-            onClose={closeRatingModal}
-            onSubmit={handleSubmitRating}
-          />
-        </div>
-      </div>
-    );
-  }
-
-  // ------------------ Sem login ------------------
-  return (
-    <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] flex items-center justify-center">
-      <p className="text-lg font-semibold text-[#5A3A22]">
-        Faça login para acessar seu painel na{" "}
-        <span className="text-[#5A3A22]">Pelo</span>
-        <span className="text-yellow-400">Caramelo</span>.
-      </p>
     </div>
   );
+}
+
+// ------------------ Sem login ------------------
+return (
+  <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] flex items-center justify-center">
+    <p className="text-lg font-semibold text-[#5A3A22]">
+      Faça login para acessar seu painel na{" "}
+      <span className="text-[#5A3A22]">Pelo</span>
+      <span className="text-yellow-400">Caramelo</span>.
+    </p>
+  </div>
+);
 }
