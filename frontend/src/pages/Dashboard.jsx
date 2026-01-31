@@ -1880,7 +1880,7 @@ export default function Dashboard() {
       </div>
     </div>
   );
-}
+
 
 const openReservation = (reservationId, opts = {}) => {
   const rid = String(reservationId);
