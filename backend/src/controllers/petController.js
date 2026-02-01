@@ -1,13 +1,9 @@
 // backend/src/controllers/petController.js
 const Pet = require("../models/petModel");
 
-function ensureTutor(req, res) {
+function ensureAuth(req, res) {
   if (!req.user) {
     res.status(401).json({ error: "Não autenticado." });
-    return false;
-  }
-  if (req.user.role !== "tutor") {
-    res.status(403).json({ error: "Apenas tutores podem gerenciar pets." });
     return false;
   }
   return true;
@@ -33,9 +29,9 @@ function normalizeAgeToText(age) {
 module.exports = {
   async listMyPets(req, res) {
     try {
-      if (!ensureTutor(req, res)) return;
+      if (!ensureAuth(req, res)) return;
 
-      const tutorId = req.user.id;
+      const tutorId = req.user.id; // ✅ sempre pelo usuário logado
       const pets = await Pet.getAllByTutor(tutorId);
 
       res.json({ pets });
@@ -47,9 +43,9 @@ module.exports = {
 
   async createPet(req, res) {
     try {
-      if (!ensureTutor(req, res)) return;
+      if (!ensureAuth(req, res)) return;
 
-      const tutorId = req.user.id;
+      const tutorId = req.user.id; // ✅ sempre pelo usuário logado
       const { name, species, breed, size, age, temperament, notes, image } = req.body;
 
       if (!name || !name.trim()) {
@@ -63,8 +59,8 @@ module.exports = {
         species,
         breed,
         size,
-        age: ageText,                 // ✅ texto completo
-        temperament: temperament || [],// ✅ vem do front
+        age: ageText, // ✅ texto completo
+        temperament: temperament || [], // ✅ vem do front
         notes,
         image,
       });
@@ -78,7 +74,7 @@ module.exports = {
 
   async updatePet(req, res) {
     try {
-      if (!ensureTutor(req, res)) return;
+      if (!ensureAuth(req, res)) return;
 
       const tutorId = req.user.id;
       const petId = req.params.id;
@@ -91,6 +87,7 @@ module.exports = {
 
       const existing = await Pet.getById(petId);
       if (!existing || String(existing.tutor_id) !== String(tutorId)) {
+        // ✅ ownership check (segurança real)
         return res.status(404).json({ error: "Pet não encontrado." });
       }
 
@@ -101,7 +98,7 @@ module.exports = {
         species,
         breed,
         size,
-        age: ageText,                  // ✅ texto completo
+        age: ageText, // ✅ texto completo
         temperament: temperament || [], // ✅ salva no DB (se a coluna existir!)
         notes,
         image,
@@ -116,7 +113,7 @@ module.exports = {
 
   async deletePet(req, res) {
     try {
-      if (!ensureTutor(req, res)) return;
+      if (!ensureAuth(req, res)) return;
 
       const tutorId = req.user.id;
       const petId = req.params.id;
@@ -125,7 +122,7 @@ module.exports = {
         return res.status(404).json({ error: "Pet não encontrado." });
       }
 
-      const ok = await Pet.remove(petId, tutorId);
+      const ok = await Pet.remove(petId, tutorId); // ✅ ownership no model
       if (!ok) return res.status(404).json({ error: "Pet não encontrado." });
 
       res.json({ success: true });
