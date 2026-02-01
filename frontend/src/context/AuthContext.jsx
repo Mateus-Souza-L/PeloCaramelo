@@ -86,17 +86,22 @@ function normalizeRole(role) {
 }
 
 /**
- * ✅ Regra final do modo:
- * 1) Se role do usuário é "caregiver" => sempre caregiver
- * 2) Se preferCaregiver=true e existe caregiver_profile => caregiver
- * 3) Se savedMode=caregiver e existe caregiver_profile => caregiver
- * 4) Senão => tutor
+ * ✅ Regra final do modo (multi-perfil de verdade):
+ * 1) Se preferCaregiver=true e existe caregiver_profile => caregiver
+ * 2) Se savedMode=caregiver e existe caregiver_profile => caregiver
+ * 3) Senão => tutor
+ *
+ * OBS: role NÃO força modo.
+ * - role serve para permissões especiais (admin etc.)
+ * - para usuários comuns, o modo é uma escolha (activeMode)
  */
 function decideMode({ role, savedMode, hasCaregiverProfile, preferCaregiver = false }) {
-  const r = normalizeRole(role);
+  // role está aqui só por compatibilidade / futuras regras (admin etc.)
+  // mas não força "caregiver".
+  normalizeRole(role); // mantém “lido” (sem efeitos colaterais)
+
   const s = normalizeMode(savedMode);
 
-  if (r === "caregiver") return "caregiver";
   if (preferCaregiver && hasCaregiverProfile) return "caregiver";
   if (s === "caregiver" && hasCaregiverProfile) return "caregiver";
   return "tutor";
@@ -413,26 +418,15 @@ export function AuthProvider({ children }) {
   }
 
   /**
-   * ✅ troca de modo (só permite caregiver se tiver perfil)
-   * - Se o usuário for role caregiver, sempre força caregiver
+   * ✅ troca de modo:
+   * - caregiver só é permitido se tiver caregiver_profile
+   * - tutor sempre é permitido
+   * - role NÃO força modo (multi-perfil real)
    */
   function setMode(nextMode) {
     const saved = readSession();
-    const role = normalizeRole(user?.role ?? saved?.user?.role);
-
-    // role caregiver sempre caregiver
-    if (role === "caregiver") {
-      setActiveMode("caregiver");
-      persistSession({
-        user: saved?.user ?? user ?? null,
-        token: saved?.token ?? token ?? null,
-        hasCaregiverProfile: Boolean(saved?.hasCaregiverProfile ?? hasCaregiverProfile ?? false),
-        activeMode: "caregiver",
-      });
-      return;
-    }
-
     const desired = normalizeMode(nextMode);
+
     const finalMode = desired === "caregiver" && !hasCaregiverProfile ? "tutor" : desired;
 
     setActiveMode(finalMode);
@@ -693,7 +687,7 @@ export function AuthProvider({ children }) {
       // sem /me não sabemos se tem perfil
       setHasCaregiverProfile(false);
 
-      // se o loginUser já vier como caregiver, respeita
+      // se o loginUser já vier como caregiver, respeita (mas não força modo)
       const nextMode = decideMode({
         role: full?.role,
         savedMode: "tutor",
