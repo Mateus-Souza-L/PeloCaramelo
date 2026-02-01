@@ -243,8 +243,8 @@ function ConfirmCreateProfileModal({ open, mode = "caregiver", loading, onCancel
 
   const desc =
     mode === "caregiver"
-      ? "Ao confirmar, vamos criar seu perfil de cuidador(a). Você poderá alternar entre Tutor e Cuidador na Navbar."
-      : "Ao confirmar, vamos criar seu perfil de tutor(a). Você poderá alternar entre Tutor e Cuidador na Navbar.";
+      ? "Ao confirmar, vamos criar seu perfil de cuidador(a). Você poderá alternar entre Tutor e Cuidador no Painel."
+      : "Ao confirmar, vamos criar seu perfil de tutor(a). Você poderá alternar entre Tutor e Cuidador no Painel.";
 
   return (
     <div
