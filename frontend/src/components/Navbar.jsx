@@ -19,7 +19,7 @@ export default function Navbar() {
     activeMode,
     setMode,
 
-    // ✅ agora com confirmação no AuthContext
+    // ✅ novo (com confirmação no AuthContext)
     requestCreateCaregiverProfile,
     creatingProfile,
   } = useAuth();
@@ -51,42 +51,12 @@ export default function Navbar() {
   // ✅ helper: avisa a mesma aba (Dashboard já escuta)
   const emitRoleChanged = useCallback((nextRole) => {
     const next = nextRole === "caregiver" ? "caregiver" : "tutor";
-    window.dispatchEvent(
-      new CustomEvent("active-role-changed", { detail: { role: next } })
-    );
+    window.dispatchEvent(new CustomEvent("active-role-changed", { detail: { role: next } }));
   }, []);
 
-  /* ============================================================
-     ✅ FIX: modo inicial automático (evita cair em "tutor" por default)
-     - Se o usuário é caregiver no token/banco e activeMode ainda não existe,
-       define "caregiver" automaticamente.
-     ============================================================ */
-  useEffect(() => {
-    if (!user?.id) return;
-    if (isAdminLike) return;
-
-    const cur = String(activeMode || "").toLowerCase().trim();
-    const isValid = cur === "tutor" || cur === "caregiver";
-
-    if (isValid) return;
-
-    // prioridade 1: role do token (fonte de verdade do cadastro)
-    let preferred = role === "caregiver" ? "caregiver" : role === "tutor" ? "tutor" : "";
-
-    // fallback: se não vier role esperado, mas tem caregiver profile -> caregiver
-    if (!preferred) preferred = hasCaregiverProfile ? "caregiver" : "tutor";
-
-    setMode?.(preferred);
-    emitRoleChanged(preferred);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id, isAdminLike, activeMode, role, hasCaregiverProfile]);
-
-  // ✅ “mode efetivo” pro usuário comum (pra UI)
-  const effectiveMode = isAdminLike
-    ? "admin"
-    : role === "caregiver"
-      ? "caregiver"
-      : activeMode || "tutor";
+  // ✅ MODO EFETIVO: vem do activeMode (multi-perfil real)
+  // role NÃO trava mais a UI (exceto admin)
+  const effectiveMode = isAdminLike ? "admin" : activeMode || "tutor";
   const isTutor = effectiveMode === "tutor";
   const isCaregiver = effectiveMode === "caregiver";
 
@@ -151,9 +121,7 @@ export default function Navbar() {
 
     try {
       const data = await authRequest("/chat/unread", token);
-      const ids = Array.isArray(data?.reservationIds)
-        ? data.reservationIds.map(String)
-        : [];
+      const ids = Array.isArray(data?.reservationIds) ? data.reservationIds.map(String) : [];
 
       setChatUnreadIds(ids);
 
@@ -190,6 +158,7 @@ export default function Navbar() {
     resFetchGuardRef.current.lastAt = now;
 
     try {
+      // ✅ endpoint depende do activeMode (não do role)
       const endpoint = isCaregiver ? "/reservations/caregiver" : "/reservations/tutor";
 
       const data = await authRequest(endpoint, token);
@@ -201,8 +170,7 @@ export default function Navbar() {
         const idStr = String(r.id);
 
         const tutorRating = r.tutor_rating == null ? null : Number(r.tutor_rating);
-        const caregiverRating =
-          r.caregiver_rating == null ? null : Number(r.caregiver_rating);
+        const caregiverRating = r.caregiver_rating == null ? null : Number(r.caregiver_rating);
 
         currentMap[idStr] = {
           status: r.status ?? "Pendente",
@@ -211,6 +179,7 @@ export default function Navbar() {
         };
       }
 
+      // ✅ snapshot por MODO REAL (activeMode)
       const snapshotKey = `reservationsSnapshot_${effectiveMode}_${user.id}`;
       let prevMap = null;
 
@@ -339,7 +308,9 @@ export default function Navbar() {
       loadReservationNotifs(user.id);
       setReservationUnreadCount(getUnreadReservationNotifsCount(user.id));
     } catch (err) {
+      // ✅ se a Navbar tentar caregiver sem ter permissão, não “quebra” o painel
       console.error("Erro ao carregar notificações de reserva (Navbar):", err);
+
       if (user?.id) {
         loadReservationNotifs(user.id);
         setReservationUnreadCount(getUnreadReservationNotifsCount(user.id));
@@ -382,13 +353,10 @@ export default function Navbar() {
 
     return () => {
       window.removeEventListener("chat-unread-changed", handleChatUnreadChanged);
-      window.removeEventListener(
-        "reservation-notifications-changed",
-        handleReservationNotifChanged
-      );
+      window.removeEventListener("reservation-notifications-changed", handleReservationNotifChanged);
       window.removeEventListener("auth-changed", handleAuthChanged);
     };
-  }, [user?.id]);
+  }, [user?.id, loadReservationEventsFromServer]);
 
   /* ================= FETCH INIT ================= */
 
@@ -401,18 +369,10 @@ export default function Navbar() {
 
     loadUnreadChatFromServer();
     loadReservationEventsFromServer();
-  }, [
-    user?.id,
-    token,
-    isAdminLike,
-    loadUnreadChatFromServer,
-    loadReservationEventsFromServer,
-  ]);
+  }, [user?.id, token, isAdminLike, loadUnreadChatFromServer, loadReservationEventsFromServer]);
 
   /* ============================================================
-     ✅ FIX #1: Navbar atualiza unread SEM precisar entrar no painel
-     - Polling leve (chat + reservas)
-     - Atualiza ao focar a aba e ao voltar visibilidade (tab ativa)
+     ✅ Polling leve + foco/visibilidade
      ============================================================ */
 
   useEffect(() => {
@@ -424,10 +384,8 @@ export default function Navbar() {
       loadReservationEventsFromServer();
     };
 
-    // 1) polling
     const intervalId = setInterval(tick, 15000);
 
-    // 2) foco/visibilidade
     const onFocus = () => tick();
     const onVisibility = () => {
       if (document.visibilityState === "visible") tick();
@@ -488,21 +446,21 @@ export default function Navbar() {
   };
 
   const switchToCaregiver = () => {
-    setMode?.("caregiver");
-    emitRoleChanged("caregiver");
-    navigate("/dashboard?tab=reservas", { replace: false });
-    setPanelOpen(false);
-    closeMobile();
-  };
+    // se já tem perfil, alterna
+    if (hasCaregiverProfile) {
+      setMode?.("caregiver");
+      emitRoleChanged("caregiver");
+      navigate("/dashboard?tab=reservas", { replace: false });
+      setPanelOpen(false);
+      closeMobile();
+      return;
+    }
 
-  // ✅ “Ser cuidador” agora pede confirmação no AuthContext (não cria direto)
-  const createAndSwitchToCaregiver = () => {
-    if (creatingProfile) return;
-
+    // se não tem, pede confirmação (modal do AuthContext)
     try {
       requestCreateCaregiverProfile?.();
-    } catch (err) {
-      console.error("Falha ao solicitar criação do perfil cuidador:", err);
+    } catch (e) {
+      console.error("Falha ao solicitar criação de perfil cuidador:", e);
     } finally {
       setPanelOpen(false);
       closeMobile();
@@ -519,14 +477,8 @@ export default function Navbar() {
   const handleOtherAction = () => {
     if (isAdminLike) return;
 
-    if (isTutor) {
-      if (hasCaregiverProfile) return switchToCaregiver();
-      return createAndSwitchToCaregiver();
-    }
-
-    if (isCaregiver) {
-      return switchToTutor();
-    }
+    if (isTutor) return switchToCaregiver();
+    if (isCaregiver) return switchToTutor();
   };
 
   const PanelDropdown = user && !isAdminLike ? (
@@ -569,7 +521,7 @@ export default function Navbar() {
 
                 {isTutor && !hasCaregiverProfile && (
                   <span className="text-xs font-semibold text-[#95301F]">
-                    {creatingProfile ? "criando..." : "(criar perfil)"}
+                    {creatingProfile ? "aguarde..." : "(criar perfil)"}
                   </span>
                 )}
               </button>
@@ -636,7 +588,7 @@ export default function Navbar() {
 
       {!user ? (
         <Link to="/register" className="bg-[#95301F] px-4 py-2 rounded-lg font-semibold">
-          Entre/Cadastre-se
+          Cadastre-se
         </Link>
       ) : (
         <>
@@ -701,22 +653,8 @@ export default function Navbar() {
                   onClick={() => {
                     closeMobile();
 
-                    if (isTutor) {
-                      if (hasCaregiverProfile) {
-                        setMode("caregiver");
-                        emitRoleChanged("caregiver");
-                        navigate("/dashboard?tab=reservas");
-                        return;
-                      }
-                      createAndSwitchToCaregiver();
-                      return;
-                    }
-
-                    if (isCaregiver) {
-                      setMode("tutor");
-                      emitRoleChanged("tutor");
-                      navigate("/dashboard?tab=reservas");
-                    }
+                    if (isTutor) return switchToCaregiver();
+                    if (isCaregiver) return switchToTutor();
                   }}
                   disabled={creatingProfile}
                   className={[
@@ -773,7 +711,7 @@ export default function Navbar() {
                 className="bg-[#95301F] px-4 py-2 rounded-lg font-semibold text-center"
                 onClick={closeMobile}
               >
-                Entre/Cadastre-se
+                Cadastre-se
               </Link>
             ) : (
               <>
