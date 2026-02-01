@@ -223,6 +223,131 @@ function BlockedModal({ open, info, onClose }) {
 }
 
 /* ============================================================
+   Modal (confirm create profile)
+   ============================================================ */
+
+function ConfirmCreateProfileModal({ open, mode = "caregiver", loading, onCancel, onConfirm }) {
+  if (!open) return null;
+
+  const colors = {
+    brown: "#5A3A22",
+    yellow: "#FFD700",
+    beige: "#EBCBA9",
+    red: "#95301F",
+  };
+
+  const title =
+    mode === "caregiver"
+      ? "Criar perfil de cuidador(a)"
+      : "Criar perfil de tutor(a)";
+
+  const desc =
+    mode === "caregiver"
+      ? "Ao confirmar, vamos criar seu perfil de cuidador(a). Você poderá alternar entre Tutor e Cuidador na Navbar."
+      : "Ao confirmar, vamos criar seu perfil de tutor(a). Você poderá alternar entre Tutor e Cuidador na Navbar.";
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.55)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 999,
+        padding: 16,
+      }}
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onCancel?.();
+      }}
+    >
+      <div
+        style={{
+          width: "min(620px, 100%)",
+          background: "#fff",
+          borderRadius: 18,
+          overflow: "hidden",
+          boxShadow: "0 12px 30px rgba(0,0,0,0.22)",
+          border: "1px solid #eee",
+        }}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div style={{ padding: 18, borderBottom: "1px solid #eee", background: "#fff" }}>
+          <div style={{ fontSize: 18, fontWeight: 1000, color: colors.brown }}>
+            {title}
+          </div>
+          <div style={{ marginTop: 8, color: "#333", lineHeight: 1.4 }}>{desc}</div>
+        </div>
+
+        <div style={{ padding: 18, background: "#fafafa" }}>
+          <div
+            style={{
+              padding: 12,
+              borderRadius: 14,
+              border: "1px solid #f0e5d7",
+              background: colors.beige,
+              color: "#222",
+              fontSize: 13,
+              lineHeight: 1.4,
+            }}
+          >
+            Confirma a criação do novo perfil?
+          </div>
+        </div>
+
+        <div
+          style={{
+            padding: 18,
+            display: "flex",
+            gap: 10,
+            justifyContent: "flex-end",
+            background: "#fff",
+            borderTop: "1px solid #eee",
+          }}
+        >
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={loading}
+            style={{
+              padding: "10px 14px",
+              borderRadius: 12,
+              border: "1px solid #ddd",
+              background: "#fff",
+              color: "#333",
+              fontWeight: 900,
+              cursor: loading ? "not-allowed" : "pointer",
+              opacity: loading ? 0.7 : 1,
+            }}
+          >
+            Cancelar
+          </button>
+
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={loading}
+            style={{
+              padding: "10px 14px",
+              borderRadius: 12,
+              border: "1px solid transparent",
+              background: colors.yellow,
+              color: colors.brown,
+              fontWeight: 1000,
+              cursor: loading ? "not-allowed" : "pointer",
+              opacity: loading ? 0.8 : 1,
+            }}
+          >
+            {loading ? "Criando..." : "Confirmar"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
    Provider
    ============================================================ */
 
@@ -240,6 +365,11 @@ export function AuthProvider({ children }) {
   // modal de bloqueio
   const [blockedModalOpen, setBlockedModalOpen] = useState(false);
   const [blockedInfo, setBlockedInfo] = useState({ reason: null, blockedUntil: null });
+
+  // ✅ modal confirmação criação perfil
+  const [confirmCreateOpen, setConfirmCreateOpen] = useState(false);
+  const [confirmCreateTarget, setConfirmCreateTarget] = useState("caregiver"); // futuro: "tutor"
+  const [creatingProfile, setCreatingProfile] = useState(false);
 
   const showBlockedModal = (info) => {
     setBlockedInfo({
@@ -273,6 +403,8 @@ export function AuthProvider({ children }) {
     setToken(null);
     setHasCaregiverProfile(false);
     setActiveMode("tutor");
+    setConfirmCreateOpen(false);
+    setCreatingProfile(false);
     try {
       localStorage.removeItem(STORAGE_KEY);
     } catch {
@@ -356,7 +488,7 @@ export function AuthProvider({ children }) {
   }
 
   /**
-   * ✅ cria o outro perfil SEM logout (POST /caregivers/me)
+   * ✅ cria o outro perfil (POST /caregivers/me) — FUNÇÃO INTERNA
    * - após criar, preferimos caregiver (multi-perfil)
    */
   async function createCaregiverProfile() {
@@ -386,6 +518,40 @@ export function AuthProvider({ children }) {
     }
 
     return res;
+  }
+
+  /**
+   * ✅ API pública: pedir confirmação para criar perfil
+   * - se já tem, só alterna
+   */
+  function requestCreateCaregiverProfile() {
+    if (!token) throw new Error("Não autenticado.");
+
+    // se já existe, só alterna pro modo caregiver
+    if (hasCaregiverProfile) {
+      setMode("caregiver");
+      return;
+    }
+
+    setConfirmCreateTarget("caregiver");
+    setConfirmCreateOpen(true);
+  }
+
+  function cancelCreateCaregiverProfile() {
+    if (creatingProfile) return;
+    setConfirmCreateOpen(false);
+  }
+
+  async function confirmCreateCaregiverProfile() {
+    if (creatingProfile) return;
+
+    setCreatingProfile(true);
+    try {
+      await createCaregiverProfile();
+      setConfirmCreateOpen(false);
+    } finally {
+      setCreatingProfile(false);
+    }
   }
 
   /* ============================================================
@@ -562,7 +728,13 @@ export function AuthProvider({ children }) {
       hasCaregiverProfile,
       activeMode,
       setMode,
-      createCaregiverProfile,
+
+      // ✅ agora com confirmação
+      requestCreateCaregiverProfile,
+      confirmCreateCaregiverProfile,
+      cancelCreateCaregiverProfile,
+      creatingProfile,
+
       refreshMe,
 
       // bloqueio
@@ -571,13 +743,31 @@ export function AuthProvider({ children }) {
       blockedModalOpen,
       blockedInfo,
     }),
-    [user, token, loading, hasCaregiverProfile, activeMode, blockedModalOpen, blockedInfo]
+    [
+      user,
+      token,
+      loading,
+      hasCaregiverProfile,
+      activeMode,
+      blockedModalOpen,
+      blockedInfo,
+      creatingProfile,
+    ]
   );
 
   return (
     <AuthContext.Provider value={value}>
       {children}
+
       <BlockedModal open={blockedModalOpen} info={blockedInfo} onClose={hideBlockedModal} />
+
+      <ConfirmCreateProfileModal
+        open={confirmCreateOpen}
+        mode={confirmCreateTarget}
+        loading={creatingProfile}
+        onCancel={cancelCreateCaregiverProfile}
+        onConfirm={confirmCreateCaregiverProfile}
+      />
     </AuthContext.Provider>
   );
 }

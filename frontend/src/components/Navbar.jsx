@@ -18,7 +18,10 @@ export default function Navbar() {
     hasCaregiverProfile,
     activeMode,
     setMode,
-    createCaregiverProfile,
+
+    // ✅ agora com confirmação no AuthContext
+    requestCreateCaregiverProfile,
+    creatingProfile,
   } = useAuth();
 
   const navigate = useNavigate();
@@ -37,9 +40,6 @@ export default function Navbar() {
   // ✅ dropdown Painel (desktop)
   const [panelOpen, setPanelOpen] = useState(false);
   const panelWrapRef = useRef(null);
-
-  // ✅ criando perfil cuidador (UX)
-  const [creatingCaregiver, setCreatingCaregiver] = useState(false);
 
   const chatUnreadCount = chatUnreadIds.length;
   const totalUnread = chatUnreadCount + reservationUnreadCount;
@@ -495,19 +495,15 @@ export default function Navbar() {
     closeMobile();
   };
 
-  // ✅ “Ser cuidador” (cria perfil usando os MESMOS dados, sem duplicar user)
-  const createAndSwitchToCaregiver = async () => {
-    if (creatingCaregiver) return;
-    setCreatingCaregiver(true);
+  // ✅ “Ser cuidador” agora pede confirmação no AuthContext (não cria direto)
+  const createAndSwitchToCaregiver = () => {
+    if (creatingProfile) return;
+
     try {
-      await createCaregiverProfile?.(); // POST /caregivers/me + atualiza context
-      setMode?.("caregiver");
-      emitRoleChanged("caregiver");
-      navigate("/dashboard?tab=reservas", { replace: false });
+      requestCreateCaregiverProfile?.();
     } catch (err) {
-      console.error("Falha ao criar perfil cuidador:", err);
+      console.error("Falha ao solicitar criação do perfil cuidador:", err);
     } finally {
-      setCreatingCaregiver(false);
       setPanelOpen(false);
       closeMobile();
     }
@@ -562,10 +558,10 @@ export default function Navbar() {
               <button
                 type="button"
                 onClick={handleOtherAction}
-                disabled={creatingCaregiver}
+                disabled={creatingProfile}
                 className={[
                   "w-full px-4 py-3 text-left hover:bg-black/5 transition font-semibold flex items-center justify-between",
-                  creatingCaregiver ? "opacity-60 cursor-not-allowed" : "",
+                  creatingProfile ? "opacity-60 cursor-not-allowed" : "",
                 ].join(" ")}
                 role="menuitem"
               >
@@ -573,7 +569,7 @@ export default function Navbar() {
 
                 {isTutor && !hasCaregiverProfile && (
                   <span className="text-xs font-semibold text-[#95301F]">
-                    {creatingCaregiver ? "criando..." : "(criar perfil)"}
+                    {creatingProfile ? "criando..." : "(criar perfil)"}
                   </span>
                 )}
               </button>
@@ -722,10 +718,10 @@ export default function Navbar() {
                       navigate("/dashboard?tab=reservas");
                     }
                   }}
-                  disabled={creatingCaregiver}
+                  disabled={creatingProfile}
                   className={[
                     "w-full bg-white/10 hover:bg-white/15 border border-white/15 px-3 py-2 rounded-lg font-semibold text-center transition",
-                    creatingCaregiver ? "opacity-60 cursor-not-allowed" : "",
+                    creatingProfile ? "opacity-60 cursor-not-allowed" : "",
                   ].join(" ")}
                 >
                   {isTutor ? (hasCaregiverProfile ? "Cuidador" : "Ser cuidador") : "Tutor"}
