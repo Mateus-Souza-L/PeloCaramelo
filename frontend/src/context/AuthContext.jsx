@@ -15,18 +15,10 @@ function normalizeUser(u) {
   const blocked = Boolean(u.blocked ?? u.is_blocked ?? u.isBlocked ?? false);
 
   const blockedReason =
-    u.blockedReason ??
-    u.blocked_reason ??
-    u.block_reason ??
-    u.blockReason ??
-    null;
+    u.blockedReason ?? u.blocked_reason ?? u.block_reason ?? u.blockReason ?? null;
 
   const blockedUntil =
-    u.blockedUntil ??
-    u.blocked_until ??
-    u.block_until ??
-    u.blockedUntil ??
-    null;
+    u.blockedUntil ?? u.blocked_until ?? u.block_until ?? u.blockedUntil ?? null;
 
   return {
     ...u,
@@ -92,19 +84,31 @@ function normalizeRole(role) {
  * 3) Senão => tutor
  *
  * OBS: role NÃO força modo.
- * - role serve para permissões especiais (admin etc.)
- * - para usuários comuns, o modo é uma escolha (activeMode)
  */
 function decideMode({ role, savedMode, hasCaregiverProfile, preferCaregiver = false }) {
-  // role está aqui só por compatibilidade / futuras regras (admin etc.)
-  // mas não força "caregiver".
-  normalizeRole(role); // mantém “lido” (sem efeitos colaterais)
-
+  normalizeRole(role); // lido (sem forçar modo)
   const s = normalizeMode(savedMode);
 
   if (preferCaregiver && hasCaregiverProfile) return "caregiver";
   if (s === "caregiver" && hasCaregiverProfile) return "caregiver";
   return "tutor";
+}
+
+/* ============================================================
+   UI constants (create caregiver profile)
+   ============================================================ */
+
+const CAREGIVER_SERVICE_OPTIONS = [
+  "Hospedagem",
+  "Passeio",
+  "Creche",
+  "Visita em domicílio",
+  "Banho e tosa",
+  "Adestramento",
+];
+
+function uniqStrings(arr) {
+  return Array.from(new Set((arr || []).map((s) => String(s).trim()).filter(Boolean)));
 }
 
 /* ============================================================
@@ -151,9 +155,7 @@ function BlockedModal({ open, info, onClose }) {
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div style={{ padding: 18, borderBottom: "1px solid #eee", background: "#fff" }}>
-          <div style={{ fontSize: 18, fontWeight: 1000, color: colors.red }}>
-            Acesso bloqueado
-          </div>
+          <div style={{ fontSize: 18, fontWeight: 1000, color: colors.red }}>Acesso bloqueado</div>
           <div style={{ marginTop: 8, color: "#333", lineHeight: 1.4 }}>
             Seu acesso à plataforma foi bloqueado pelo administrador.
           </div>
@@ -169,9 +171,7 @@ function BlockedModal({ open, info, onClose }) {
                 background: colors.beige,
               }}
             >
-              <div style={{ fontWeight: 1000, color: colors.brown, fontSize: 13 }}>
-                Motivo
-              </div>
+              <div style={{ fontWeight: 1000, color: colors.brown, fontSize: 13 }}>Motivo</div>
               <div style={{ marginTop: 6, color: "#222" }}>
                 {info?.reason ? String(info.reason) : "Não informado"}
               </div>
@@ -185,9 +185,7 @@ function BlockedModal({ open, info, onClose }) {
                 background: "#fff",
               }}
             >
-              <div style={{ fontWeight: 1000, color: colors.brown, fontSize: 13 }}>
-                Até quando
-              </div>
+              <div style={{ fontWeight: 1000, color: colors.brown, fontSize: 13 }}>Até quando</div>
               <div style={{ marginTop: 6, color: "#222" }}>{untilTxt}</div>
             </div>
 
@@ -241,14 +239,11 @@ function ConfirmCreateProfileModal({ open, mode = "caregiver", loading, onCancel
     red: "#95301F",
   };
 
-  const title =
-    mode === "caregiver"
-      ? "Criar perfil de cuidador(a)"
-      : "Criar perfil de tutor(a)";
+  const title = mode === "caregiver" ? "Criar perfil de cuidador(a)" : "Criar perfil de tutor(a)";
 
   const desc =
     mode === "caregiver"
-      ? "Ao confirmar, vamos criar seu perfil de cuidador(a). Você poderá alternar entre Tutor e Cuidador no Painel."
+      ? "Ao confirmar, vamos criar seu perfil de cuidador(a). Em seguida você escolhe os serviços e quantas reservas por dia vai aceitar."
       : "Ao confirmar, vamos criar seu perfil de tutor(a). Você poderá alternar entre Tutor e Cuidador no Painel.";
 
   return (
@@ -279,9 +274,7 @@ function ConfirmCreateProfileModal({ open, mode = "caregiver", loading, onCancel
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div style={{ padding: 18, borderBottom: "1px solid #eee", background: "#fff" }}>
-          <div style={{ fontSize: 18, fontWeight: 1000, color: colors.brown }}>
-            {title}
-          </div>
+          <div style={{ fontSize: 18, fontWeight: 1000, color: colors.brown }}>{title}</div>
           <div style={{ marginTop: 8, color: "#333", lineHeight: 1.4 }}>{desc}</div>
         </div>
 
@@ -344,7 +337,218 @@ function ConfirmCreateProfileModal({ open, mode = "caregiver", loading, onCancel
               opacity: loading ? 0.8 : 1,
             }}
           >
-            {loading ? "Criando..." : "Confirmar"}
+            {loading ? "Continuando..." : "Confirmar"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   Modal (caregiver setup: services + daily capacity)
+   ============================================================ */
+
+function CaregiverSetupModal({
+  open,
+  loading,
+  services,
+  dailyCapacity,
+  error,
+  onToggleService,
+  onCapacityChange,
+  onCancel,
+  onConfirm,
+}) {
+  if (!open) return null;
+
+  const colors = {
+    brown: "#5A3A22",
+    yellow: "#FFD700",
+    beige: "#EBCBA9",
+    red: "#95301F",
+  };
+
+  const selectedCount = Array.isArray(services) ? services.length : 0;
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.55)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 999,
+        padding: 16,
+      }}
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onCancel?.();
+      }}
+    >
+      <div
+        style={{
+          width: "min(720px, 100%)",
+          background: "#fff",
+          borderRadius: 18,
+          overflow: "hidden",
+          boxShadow: "0 12px 30px rgba(0,0,0,0.22)",
+          border: "1px solid #eee",
+        }}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div style={{ padding: 18, borderBottom: "1px solid #eee", background: "#fff" }}>
+          <div style={{ fontSize: 18, fontWeight: 1000, color: colors.brown }}>
+            Configure seu perfil de cuidador(a)
+          </div>
+          <div style={{ marginTop: 8, color: "#333", lineHeight: 1.4 }}>
+            Selecione os serviços e defina quantas reservas por dia você aceita.
+          </div>
+        </div>
+
+        <div style={{ padding: 18, background: "#fafafa" }}>
+          <div style={{ display: "grid", gap: 14 }}>
+            <div
+              style={{
+                padding: 12,
+                borderRadius: 14,
+                border: "1px solid #f0e5d7",
+                background: colors.beige,
+              }}
+            >
+              <div style={{ fontWeight: 1000, color: colors.brown, fontSize: 13 }}>
+                Serviços (obrigatório) — {selectedCount} selecionado(s)
+              </div>
+
+              <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+                {CAREGIVER_SERVICE_OPTIONS.map((opt) => {
+                  const checked = services?.includes(opt);
+                  return (
+                    <label
+                      key={opt}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        cursor: loading ? "not-allowed" : "pointer",
+                        opacity: loading ? 0.75 : 1,
+                        userSelect: "none",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => onToggleService?.(opt)}
+                        disabled={loading}
+                        style={{ width: 18, height: 18 }}
+                      />
+                      <span style={{ fontWeight: 900, color: "#222" }}>{opt}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div
+              style={{
+                padding: 12,
+                borderRadius: 14,
+                border: "1px solid #f0e5d7",
+                background: "#fff",
+              }}
+            >
+              <div style={{ fontWeight: 1000, color: colors.brown, fontSize: 13 }}>
+                Reservas por dia (obrigatório)
+              </div>
+
+              <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 10 }}>
+                <input
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={dailyCapacity}
+                  onChange={(e) => onCapacityChange?.(e.target.value)}
+                  disabled={loading}
+                  style={{
+                    width: 120,
+                    padding: "10px 12px",
+                    borderRadius: 12,
+                    border: "1px solid #ddd",
+                    outline: "none",
+                    fontWeight: 900,
+                    color: "#222",
+                  }}
+                />
+                <span style={{ fontSize: 13, color: "#555" }}>
+                  Dica: você pode ajustar depois no painel.
+                </span>
+              </div>
+            </div>
+
+            {error ? (
+              <div
+                style={{
+                  padding: 12,
+                  borderRadius: 14,
+                  border: "1px solid rgba(149,48,31,0.25)",
+                  background: "rgba(149,48,31,0.08)",
+                  color: colors.red,
+                  fontWeight: 900,
+                  fontSize: 13,
+                  lineHeight: 1.4,
+                }}
+              >
+                {error}
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        <div
+          style={{
+            padding: 18,
+            display: "flex",
+            gap: 10,
+            justifyContent: "flex-end",
+            background: "#fff",
+            borderTop: "1px solid #eee",
+          }}
+        >
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={loading}
+            style={{
+              padding: "10px 14px",
+              borderRadius: 12,
+              border: "1px solid #ddd",
+              background: "#fff",
+              color: "#333",
+              fontWeight: 900,
+              cursor: loading ? "not-allowed" : "pointer",
+              opacity: loading ? 0.7 : 1,
+            }}
+          >
+            Voltar
+          </button>
+
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={loading}
+            style={{
+              padding: "10px 14px",
+              borderRadius: 12,
+              border: "1px solid transparent",
+              background: colors.yellow,
+              color: colors.brown,
+              fontWeight: 1000,
+              cursor: loading ? "not-allowed" : "pointer",
+              opacity: loading ? 0.85 : 1,
+            }}
+          >
+            {loading ? "Criando..." : "Criar perfil"}
           </button>
         </div>
       </div>
@@ -375,6 +579,12 @@ export function AuthProvider({ children }) {
   const [confirmCreateOpen, setConfirmCreateOpen] = useState(false);
   const [confirmCreateTarget, setConfirmCreateTarget] = useState("caregiver"); // futuro: "tutor"
   const [creatingProfile, setCreatingProfile] = useState(false);
+
+  // ✅ modal setup do cuidador (serviços + capacidade)
+  const [caregiverSetupOpen, setCaregiverSetupOpen] = useState(false);
+  const [caregiverServices, setCaregiverServices] = useState(["Hospedagem", "Passeio"]);
+  const [caregiverDailyCapacity, setCaregiverDailyCapacity] = useState(6);
+  const [caregiverSetupError, setCaregiverSetupError] = useState("");
 
   const showBlockedModal = (info) => {
     setBlockedInfo({
@@ -408,8 +618,13 @@ export function AuthProvider({ children }) {
     setToken(null);
     setHasCaregiverProfile(false);
     setActiveMode("tutor");
+
     setConfirmCreateOpen(false);
     setCreatingProfile(false);
+
+    setCaregiverSetupOpen(false);
+    setCaregiverSetupError("");
+
     try {
       localStorage.removeItem(STORAGE_KEY);
     } catch {
@@ -483,18 +698,30 @@ export function AuthProvider({ children }) {
 
   /**
    * ✅ cria o outro perfil (POST /caregivers/me) — FUNÇÃO INTERNA
-   * - após criar, preferimos caregiver (multi-perfil)
+   * Agora envia { services, dailyCapacity } no body.
    */
-  async function createCaregiverProfile() {
+  async function createCaregiverProfile(payload) {
     if (!token) throw new Error("Não autenticado.");
 
-    // UX: já vira caregiver no UI
-    setActiveMode("caregiver");
+    const services = uniqStrings(payload?.services);
+    const dailyCapacityNum = Number(payload?.dailyCapacity);
 
-    const res = await authRequest("/caregivers/me", token, { method: "POST" });
+    const body = {
+      services,
+      dailyCapacity: Number.isFinite(dailyCapacityNum) ? dailyCapacityNum : null,
+    };
+
+    const res = await authRequest("/caregivers/me", token, {
+      method: "POST",
+      body: JSON.stringify(body),
+      headers: { "Content-Type": "application/json" },
+    });
 
     // marca localmente como criado
     setHasCaregiverProfile(true);
+
+    // modo caregiver no UI
+    setActiveMode("caregiver");
 
     // persiste imediatamente
     persistSession({
@@ -536,13 +763,74 @@ export function AuthProvider({ children }) {
     setConfirmCreateOpen(false);
   }
 
+  // ✅ passo 1: confirmou que quer criar -> abre o setup
   async function confirmCreateCaregiverProfile() {
     if (creatingProfile) return;
 
+    // fecha confirmação e abre setup
+    setConfirmCreateOpen(false);
+    setCaregiverSetupError("");
+    setCaregiverSetupOpen(true);
+  }
+
+  function cancelCaregiverSetup() {
+    if (creatingProfile) return;
+    setCaregiverSetupOpen(false);
+    setCaregiverSetupError("");
+  }
+
+  function toggleCaregiverService(label) {
+    if (creatingProfile) return;
+
+    const opt = String(label || "").trim();
+    if (!opt) return;
+
+    setCaregiverServices((prev) => {
+      const cur = Array.isArray(prev) ? prev : [];
+      if (cur.includes(opt)) return cur.filter((x) => x !== opt);
+      return [...cur, opt];
+    });
+  }
+
+  function changeCaregiverCapacity(v) {
+    if (creatingProfile) return;
+    const n = Number(v);
+    if (!Number.isFinite(n)) {
+      setCaregiverDailyCapacity(v); // mantém o que digitou
+      return;
+    }
+    setCaregiverDailyCapacity(n);
+  }
+
+  async function confirmCaregiverSetupAndCreate() {
+    if (creatingProfile) return;
+
+    const services = uniqStrings(caregiverServices);
+    const cap = Number(caregiverDailyCapacity);
+
+    if (!services.length) {
+      setCaregiverSetupError("Selecione pelo menos 1 serviço para continuar.");
+      return;
+    }
+
+    if (!Number.isFinite(cap) || cap < 1 || cap > 50) {
+      setCaregiverSetupError("Informe uma capacidade válida (entre 1 e 50 reservas por dia).");
+      return;
+    }
+
+    setCaregiverSetupError("");
     setCreatingProfile(true);
+
     try {
-      await createCaregiverProfile();
-      setConfirmCreateOpen(false);
+      await createCaregiverProfile({ services, dailyCapacity: cap });
+      setCaregiverSetupOpen(false);
+    } catch (err) {
+      console.error("Falha ao criar perfil cuidador:", err);
+      setCaregiverSetupError(
+        err?.message
+          ? `Não foi possível criar seu perfil agora: ${String(err.message)}`
+          : "Não foi possível criar seu perfil agora. Tente novamente."
+      );
     } finally {
       setCreatingProfile(false);
     }
@@ -687,7 +975,6 @@ export function AuthProvider({ children }) {
       // sem /me não sabemos se tem perfil
       setHasCaregiverProfile(false);
 
-      // se o loginUser já vier como caregiver, respeita (mas não força modo)
       const nextMode = decideMode({
         role: full?.role,
         savedMode: "tutor",
@@ -723,7 +1010,7 @@ export function AuthProvider({ children }) {
       activeMode,
       setMode,
 
-      // ✅ agora com confirmação
+      // ✅ criação cuidador com 2 passos
       requestCreateCaregiverProfile,
       confirmCreateCaregiverProfile,
       cancelCreateCaregiverProfile,
@@ -761,6 +1048,18 @@ export function AuthProvider({ children }) {
         loading={creatingProfile}
         onCancel={cancelCreateCaregiverProfile}
         onConfirm={confirmCreateCaregiverProfile}
+      />
+
+      <CaregiverSetupModal
+        open={caregiverSetupOpen}
+        loading={creatingProfile}
+        services={caregiverServices}
+        dailyCapacity={caregiverDailyCapacity}
+        error={caregiverSetupError}
+        onToggleService={toggleCaregiverService}
+        onCapacityChange={changeCaregiverCapacity}
+        onCancel={cancelCaregiverSetup}
+        onConfirm={confirmCaregiverSetupAndCreate}
       />
     </AuthContext.Provider>
   );

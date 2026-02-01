@@ -11,22 +11,101 @@ const authMiddleware = require("../middleware/authMiddleware");
  *   para a mesma reserva + mesmo autor)
  */
 
-const BASE_FIELDS = `
-  u.id,
-  u.name,
-  u.email,
-  u.role,
-  u.image,
-  u.bio,
-  u.phone,
-  u.address,
-  u.neighborhood,
-  u.city,
-  u.cep,
-  u.services,
-  u.prices,
-  u.courses
-`;
+const DEFAULT_DAILY_CAPACITY = Number(process.env.DEFAULT_DAILY_CAPACITY || 15);
+
+/* ============================================================
+   ✅ Schema-tolerant: users.daily_capacity pode ou não existir
+   ============================================================ */
+
+let _usersColsChecked = false;
+let _hasDailyCapacityCol = false;
+
+async function detectUsersColumnsOnce() {
+  if (_usersColsChecked) return;
+  _usersColsChecked = true;
+
+  try {
+    const { rows } = await pool.query(
+      `
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'users'
+        AND column_name IN ('daily_capacity')
+      `
+    );
+
+    const set = new Set((rows || []).map((r) => String(r.column_name)));
+    _hasDailyCapacityCol = set.has("daily_capacity");
+  } catch {
+    _hasDailyCapacityCol = false;
+  }
+}
+
+function usersDailyCapacitySelectExpr() {
+  if (_hasDailyCapacityCol) return "COALESCE(u.daily_capacity, 15) AS daily_capacity";
+  return `${DEFAULT_DAILY_CAPACITY}::int AS daily_capacity`;
+}
+
+/* ============================================================
+   ✅ Helpers: normalização/validação do body
+   ============================================================ */
+
+function normalizeServices(input) {
+  // aceita array de strings, ou string única (ou null)
+  if (input == null) return null;
+
+  const arr = Array.isArray(input) ? input : [input];
+  const cleaned = arr
+    .map((v) => String(v || "").trim())
+    .filter(Boolean)
+    .slice(0, 30); // guarda de tamanho
+
+  // remove duplicados (case-insensitive)
+  const seen = new Set();
+  const unique = [];
+  for (const s of cleaned) {
+    const k = s.toLowerCase();
+    if (seen.has(k)) continue;
+    seen.add(k);
+    unique.push(s);
+  }
+  return unique;
+}
+
+function normalizeDailyCapacity(input) {
+  if (input == null || input === "") return null;
+  const n = Number(input);
+  if (!Number.isFinite(n)) return null;
+  const v = Math.floor(n);
+  if (v < 1) return null;
+  if (v > 1000) return 1000; // guarda
+  return v;
+}
+
+/* ============================================================
+   ✅ BASE FIELDS (com daily_capacity tolerante)
+   ============================================================ */
+
+function baseFieldsSql() {
+  return `
+    u.id,
+    u.name,
+    u.email,
+    u.role,
+    u.image,
+    u.bio,
+    u.phone,
+    u.address,
+    u.neighborhood,
+    u.city,
+    u.cep,
+    u.services,
+    u.prices,
+    u.courses,
+    ${usersDailyCapacitySelectExpr()}
+  `;
+}
 
 const RATING_LATERAL = `
 LEFT JOIN LATERAL (
@@ -70,7 +149,6 @@ LEFT JOIN LATERAL (
    ✅ Schema-tolerant: caregiver_profiles pode ter:
    - user_id
    - caregiver_id
-   (e em alguns casos id == users.id, mas aqui usamos linkCol)
    ============================================================ */
 
 let cachedLinkCol = null; // "user_id" | "caregiver_id" | null
@@ -130,7 +208,7 @@ async function hasCaregiverProfile(userId) {
       return rows?.length > 0;
     }
 
-    // fallback por tentativa/erro (não quebra o server)
+    // fallback por tentativa/erro
     try {
       const { rows } = await pool.query(
         `SELECT 1 FROM caregiver_profiles WHERE user_id::text = $1 LIMIT 1`,
@@ -154,16 +232,14 @@ async function hasCaregiverProfile(userId) {
 }
 
 function joinOnCaregiverProfiles(linkCol) {
-  // join padrão: cp.<linkCol> = u.id
   if (linkCol === "caregiver_id") return "cp.caregiver_id = u.id";
-  // default user_id (se existir)
   return "cp.user_id = u.id";
 }
 
 /* ============================================================
    ✅ POST /caregivers/me (idempotente)
    - cria perfil se não existe
-   - se já existir: 200 com hasCaregiverProfile true
+   - ✅ agora também salva services + daily_capacity (quando enviados)
    ============================================================ */
 router.post("/me", authMiddleware, async (req, res) => {
   const userId = req.user?.id;
@@ -173,34 +249,101 @@ router.post("/me", authMiddleware, async (req, res) => {
   }
 
   try {
+    await detectUsersColumnsOnce();
+
     const linkCol = (await detectLinkColumn()) || "user_id";
 
+    // ✅ lê body vindo do front
+    const body = req.body || {};
+    const servicesNorm = normalizeServices(body.services);
+    const dailyCapNorm = normalizeDailyCapacity(body.daily_capacity);
+
+    // ✅ validações: se mandou algo, precisa estar ok
+    if (body.services !== undefined) {
+      if (!servicesNorm || servicesNorm.length === 0) {
+        return res.status(400).json({
+          error: "Selecione pelo menos 1 serviço.",
+          code: "INVALID_SERVICES",
+        });
+      }
+    }
+
+    if (body.daily_capacity !== undefined) {
+      if (dailyCapNorm == null) {
+        return res.status(400).json({
+          error: "Quantidade de reservas por dia inválida (mínimo 1).",
+          code: "INVALID_DAILY_CAPACITY",
+        });
+      }
+    }
+
+    // ✅ cria caregiver_profile se necessário (idempotente)
     const already = await hasCaregiverProfile(userId);
-    if (already) {
-      return res.status(200).json({
-        ok: true,
-        created: false,
-        hasCaregiverProfile: true,
-      });
+    if (!already) {
+      if (linkCol === "caregiver_id") {
+        await pool.query(`INSERT INTO caregiver_profiles (caregiver_id) VALUES ($1)`, [userId]);
+      } else {
+        await pool.query(`INSERT INTO caregiver_profiles (user_id) VALUES ($1)`, [userId]);
+      }
     }
 
-    // tenta inserir usando a coluna existente
-    if (linkCol === "caregiver_id") {
-      await pool.query(`INSERT INTO caregiver_profiles (caregiver_id) VALUES ($1)`, [userId]);
-    } else {
-      // default user_id
-      await pool.query(`INSERT INTO caregiver_profiles (user_id) VALUES ($1)`, [userId]);
+    // ✅ salva campos no users (se vieram no body)
+    // services sempre existe (você já usa u.services nos SELECTs)
+    // daily_capacity só atualiza se a coluna existir
+    const updates = [];
+    const values = [];
+    let idx = 1;
+
+    if (servicesNorm != null) {
+      updates.push(`services = $${idx++}::jsonb`);
+      values.push(JSON.stringify(servicesNorm));
     }
 
-    return res.status(201).json({
+    if (_hasDailyCapacityCol && dailyCapNorm != null) {
+      updates.push(`daily_capacity = $${idx++}::int`);
+      values.push(dailyCapNorm);
+    }
+
+    if (updates.length) {
+      values.push(Number(userId));
+      await pool.query(
+        `
+        UPDATE users
+        SET ${updates.join(", ")}
+        WHERE id = $${idx}::int
+        `,
+        values
+      );
+    }
+
+    // devolve campos para a UI renderizar/confirmar
+    const { rows } = await pool.query(
+      `
+      SELECT
+        u.services,
+        ${usersDailyCapacitySelectExpr()}
+      FROM users u
+      WHERE u.id::text = $1::text
+      LIMIT 1
+      `,
+      [String(userId)]
+    );
+
+    const extra = rows?.[0] || {};
+    const services = extra.services ?? null;
+    const daily_capacity =
+      extra.daily_capacity != null ? Number(extra.daily_capacity) : DEFAULT_DAILY_CAPACITY;
+
+    return res.status(already ? 200 : 201).json({
       ok: true,
-      created: true,
+      created: !already,
       hasCaregiverProfile: true,
+      services,
+      daily_capacity,
     });
   } catch (err) {
     console.error("Erro em POST /caregivers/me:", err?.message || err);
 
-    // se deu corrida/duplicidade, trata como idempotente
     const msg = String(err?.message || "").toLowerCase();
     if (msg.includes("duplicate") || msg.includes("unique")) {
       return res.status(200).json({
@@ -217,15 +360,18 @@ router.post("/me", authMiddleware, async (req, res) => {
 /* ============================================================
    ✅ GET /caregivers
    Lista cuidadores via caregiver_profiles (multi-perfil)
+   ✅ inclui services + daily_capacity
    ============================================================ */
 router.get("/", async (req, res) => {
   try {
+    await detectUsersColumnsOnce();
+
     const linkCol = (await detectLinkColumn()) || "user_id";
     const joinExpr = joinOnCaregiverProfiles(linkCol);
 
     const query = `
       SELECT
-        ${BASE_FIELDS},
+        ${baseFieldsSql()},
         cp.created_at AS caregiver_profile_created_at,
         COALESCE(rs.rating_avg, 0)   AS rating_avg,
         COALESCE(rs.rating_count, 0) AS rating_count,
@@ -250,9 +396,12 @@ router.get("/", async (req, res) => {
 /* ============================================================
    ✅ GET /caregivers/:id
    Detalhe do cuidador via caregiver_profiles (multi-perfil)
+   ✅ inclui services + daily_capacity
    ============================================================ */
 router.get("/:id", async (req, res) => {
   try {
+    await detectUsersColumnsOnce();
+
     const caregiverId = Number(req.params.id);
     if (!Number.isFinite(caregiverId)) {
       return res.status(400).json({ error: "ID inválido." });
@@ -263,7 +412,7 @@ router.get("/:id", async (req, res) => {
 
     const query = `
       SELECT
-        ${BASE_FIELDS},
+        ${baseFieldsSql()},
         cp.created_at AS caregiver_profile_created_at,
         COALESCE(rs.rating_avg, 0)   AS rating_avg,
         COALESCE(rs.rating_count, 0) AS rating_count,

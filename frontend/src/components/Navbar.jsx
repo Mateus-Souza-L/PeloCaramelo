@@ -10,6 +10,281 @@ import {
   loadReservationNotifs,
 } from "../utils/reservationNotifs";
 
+/* ============================================================
+   Modal: Criar perfil de cuidador (com serviços + capacidade diária)
+   - Mantém estilo do app (cores)
+   - Valida obrigatórios
+   ============================================================ */
+
+const SERVICE_OPTIONS = [
+  { key: "hospedagem", label: "Hospedagem" },
+  { key: "creche", label: "Creche" },
+  { key: "passeio", label: "Passeio" },
+  { key: "visita", label: "Visita / Pet Sitter" },
+  { key: "banho", label: "Banho & Tosa" },
+];
+
+function CreateCaregiverProfileModal({
+  open,
+  loading,
+  onClose,
+  onConfirm,
+  initialServices = [],
+  initialDailyCapacity = 3,
+}) {
+  const [services, setServices] = useState(initialServices);
+  const [dailyCapacity, setDailyCapacity] = useState(initialDailyCapacity);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setServices(Array.isArray(initialServices) ? initialServices : []);
+    setDailyCapacity(
+      Number.isFinite(Number(initialDailyCapacity)) ? Number(initialDailyCapacity) : 3
+    );
+    setError(null);
+  }, [open, initialServices, initialDailyCapacity]);
+
+  if (!open) return null;
+
+  const colors = {
+    brown: "#5A3A22",
+    yellow: "#FFD700",
+    beige: "#EBCBA9",
+    red: "#95301F",
+  };
+
+  const toggleService = (label) => {
+    setServices((prev) => {
+      const set = new Set(prev || []);
+      if (set.has(label)) set.delete(label);
+      else set.add(label);
+      return Array.from(set);
+    });
+  };
+
+  const handleConfirm = () => {
+    const picked = (services || []).map((s) => String(s).trim()).filter(Boolean);
+    const cap = Number(dailyCapacity);
+
+    if (!picked.length) {
+      setError("Selecione pelo menos 1 serviço.");
+      return;
+    }
+    if (!Number.isFinite(cap) || cap < 1) {
+      setError("Informe a quantidade de reservas por dia (mínimo 1).");
+      return;
+    }
+
+    setError(null);
+    onConfirm?.({ services: picked, daily_capacity: Math.floor(cap) });
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.55)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 999,
+        padding: 16,
+      }}
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget && !loading) onClose?.();
+      }}
+    >
+      <div
+        style={{
+          width: "min(720px, 100%)",
+          background: "#fff",
+          borderRadius: 18,
+          overflow: "hidden",
+          boxShadow: "0 12px 30px rgba(0,0,0,0.22)",
+          border: "1px solid #eee",
+        }}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div style={{ padding: 18, borderBottom: "1px solid #eee", background: "#fff" }}>
+          <div style={{ fontSize: 18, fontWeight: 1000, color: colors.brown }}>
+            Criar perfil de cuidador(a)
+          </div>
+          <div style={{ marginTop: 8, color: "#333", lineHeight: 1.4, fontSize: 13 }}>
+            Antes de criar, escolha os <b>serviços</b> e a <b>capacidade diária</b>.
+          </div>
+        </div>
+
+        <div style={{ padding: 18, background: "#fafafa" }}>
+          <div style={{ display: "grid", gap: 14 }}>
+            {/* Serviços */}
+            <div
+              style={{
+                padding: 12,
+                borderRadius: 14,
+                border: "1px solid #f0e5d7",
+                background: "#fff",
+              }}
+            >
+              <div style={{ fontWeight: 1000, color: colors.brown, fontSize: 13 }}>
+                Serviços prestados <span style={{ color: colors.red }}>*</span>
+              </div>
+
+              <div
+                style={{
+                  marginTop: 10,
+                  display: "grid",
+                  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                  gap: 10,
+                }}
+              >
+                {SERVICE_OPTIONS.map((opt) => {
+                  const checked = (services || []).includes(opt.label);
+                  return (
+                    <label
+                      key={opt.key}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        padding: 10,
+                        borderRadius: 12,
+                        border: `1px solid ${checked ? "#e7c95a" : "#eee"}`,
+                        background: checked ? "#fff7cc" : "#fff",
+                        cursor: loading ? "not-allowed" : "pointer",
+                        opacity: loading ? 0.75 : 1,
+                        userSelect: "none",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={loading}
+                        onChange={() => toggleService(opt.label)}
+                        style={{ transform: "scale(1.05)" }}
+                      />
+                      <span style={{ fontWeight: 800, color: "#222", fontSize: 13 }}>
+                        {opt.label}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+
+              <div style={{ marginTop: 10, fontSize: 12, color: "#666" }}>
+                Você poderá editar isso depois no seu perfil de cuidador(a).
+              </div>
+            </div>
+
+            {/* Capacidade diária */}
+            <div
+              style={{
+                padding: 12,
+                borderRadius: 14,
+                border: "1px solid #f0e5d7",
+                background: colors.beige,
+              }}
+            >
+              <div style={{ fontWeight: 1000, color: colors.brown, fontSize: 13 }}>
+                Quantidade de reservas por dia <span style={{ color: colors.red }}>*</span>
+              </div>
+
+              <div style={{ marginTop: 10, display: "flex", gap: 10, alignItems: "center" }}>
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={dailyCapacity}
+                  disabled={loading}
+                  onChange={(e) => setDailyCapacity(e.target.value)}
+                  style={{
+                    width: 120,
+                    padding: "10px 12px",
+                    borderRadius: 12,
+                    border: "1px solid #e6d5bf",
+                    outline: "none",
+                    fontWeight: 900,
+                    color: "#222",
+                    background: "#fff",
+                  }}
+                />
+                <div style={{ fontSize: 12, color: "#333", lineHeight: 1.35 }}>
+                  Defina quantas reservas você aceita por dia (capacidade diária).
+                </div>
+              </div>
+            </div>
+
+            {/* Erro */}
+            {error && (
+              <div
+                style={{
+                  padding: 12,
+                  borderRadius: 14,
+                  border: "1px solid rgba(149,48,31,0.25)",
+                  background: "rgba(149,48,31,0.08)",
+                  color: colors.red,
+                  fontWeight: 900,
+                  fontSize: 13,
+                }}
+              >
+                {error}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div
+          style={{
+            padding: 18,
+            display: "flex",
+            gap: 10,
+            justifyContent: "flex-end",
+            background: "#fff",
+            borderTop: "1px solid #eee",
+          }}
+        >
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={loading}
+            style={{
+              padding: "10px 14px",
+              borderRadius: 12,
+              border: "1px solid #ddd",
+              background: "#fff",
+              color: "#333",
+              fontWeight: 900,
+              cursor: loading ? "not-allowed" : "pointer",
+              opacity: loading ? 0.7 : 1,
+            }}
+          >
+            Cancelar
+          </button>
+
+          <button
+            type="button"
+            onClick={handleConfirm}
+            disabled={loading}
+            style={{
+              padding: "10px 14px",
+              borderRadius: 12,
+              border: "1px solid transparent",
+              background: colors.yellow,
+              color: colors.brown,
+              fontWeight: 1000,
+              cursor: loading ? "not-allowed" : "pointer",
+              opacity: loading ? 0.85 : 1,
+            }}
+          >
+            {loading ? "Criando..." : "Criar perfil"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Navbar() {
   const {
     user,
@@ -19,9 +294,12 @@ export default function Navbar() {
     activeMode,
     setMode,
 
-    // ✅ novo (com confirmação no AuthContext)
-    requestCreateCaregiverProfile,
+    // ✅ ainda existe (mas agora a criação é via modal deste Navbar)
+    requestCreateCaregiverProfile, // mantido por compatibilidade (não usamos mais aqui)
     creatingProfile,
+
+    // ✅ importante para atualizar hasCaregiverProfile após criar
+    refreshMe,
   } = useAuth();
 
   const navigate = useNavigate();
@@ -40,6 +318,10 @@ export default function Navbar() {
   // ✅ dropdown Painel (desktop)
   const [panelOpen, setPanelOpen] = useState(false);
   const panelWrapRef = useRef(null);
+
+  // ✅ modal (novo): criar perfil cuidador com serviços + capacidade
+  const [createCareOpen, setCreateCareOpen] = useState(false);
+  const [createCareLoading, setCreateCareLoading] = useState(false);
 
   const chatUnreadCount = chatUnreadIds.length;
   const totalUnread = chatUnreadCount + reservationUnreadCount;
@@ -308,7 +590,6 @@ export default function Navbar() {
       loadReservationNotifs(user.id);
       setReservationUnreadCount(getUnreadReservationNotifsCount(user.id));
     } catch (err) {
-      // ✅ se a Navbar tentar caregiver sem ter permissão, não “quebra” o painel
       console.error("Erro ao carregar notificações de reserva (Navbar):", err);
 
       if (user?.id) {
@@ -445,8 +726,68 @@ export default function Navbar() {
     closeMobile();
   };
 
+  // ✅ criação com campos (serviços + capacidade) antes de criar o perfil
+  const openCreateCaregiverModal = () => {
+    setCreateCareOpen(true);
+  };
+
+  const closeCreateCaregiverModal = () => {
+    if (createCareLoading) return;
+    setCreateCareOpen(false);
+  };
+
+  const confirmCreateCaregiverWithDetails = async ({ services, daily_capacity }) => {
+    if (!token) return;
+
+    setCreateCareLoading(true);
+    try {
+      // cria perfil + salva dados
+      // (backend precisará aceitar body { services, daily_capacity })
+      await authRequest("/caregivers/me", token, {
+        method: "POST",
+        body: { services, daily_capacity },
+      });
+
+      // preferência: entra no modo cuidador após criar
+      setMode?.("caregiver");
+      emitRoleChanged("caregiver");
+
+      // sincroniza no contexto (pega hasCaregiverProfile atualizado)
+      try {
+        await refreshMe?.(token, { preferCaregiver: true });
+      } catch {
+        // best-effort
+      }
+
+      setCreateCareOpen(false);
+
+      // abre painel já no cuidador
+      navigate("/dashboard?tab=reservas", { replace: false });
+      setPanelOpen(false);
+      closeMobile();
+    } catch (err) {
+      console.error("Erro ao criar perfil cuidador com detalhes:", err);
+
+      // fallback: se backend ainda não aceita body, tenta o endpoint antigo (idempotente)
+      try {
+        await authRequest("/caregivers/me", token, { method: "POST" });
+        setMode?.("caregiver");
+        emitRoleChanged("caregiver");
+        try {
+          await refreshMe?.(token, { preferCaregiver: true });
+        } catch {}
+        setCreateCareOpen(false);
+        navigate("/dashboard?tab=reservas", { replace: false });
+      } catch (e2) {
+        console.error("Fallback também falhou:", e2);
+        // mantém modal aberto para o usuário tentar de novo / ajustar
+      }
+    } finally {
+      setCreateCareLoading(false);
+    }
+  };
+
   const switchToCaregiver = () => {
-    // se já tem perfil, alterna
     if (hasCaregiverProfile) {
       setMode?.("caregiver");
       emitRoleChanged("caregiver");
@@ -456,15 +797,10 @@ export default function Navbar() {
       return;
     }
 
-    // se não tem, pede confirmação (modal do AuthContext)
-    try {
-      requestCreateCaregiverProfile?.();
-    } catch (e) {
-      console.error("Falha ao solicitar criação de perfil cuidador:", e);
-    } finally {
-      setPanelOpen(false);
-      closeMobile();
-    }
+    // ✅ agora: abre modal com campos obrigatórios
+    openCreateCaregiverModal();
+    setPanelOpen(false);
+    closeMobile();
   };
 
   const otherActionLabel = useMemo(() => {
@@ -510,10 +846,10 @@ export default function Navbar() {
               <button
                 type="button"
                 onClick={handleOtherAction}
-                disabled={creatingProfile}
+                disabled={creatingProfile || createCareLoading}
                 className={[
                   "w-full px-4 py-3 text-left hover:bg-black/5 transition font-semibold flex items-center justify-between",
-                  creatingProfile ? "opacity-60 cursor-not-allowed" : "",
+                  creatingProfile || createCareLoading ? "opacity-60 cursor-not-allowed" : "",
                 ].join(" ")}
                 role="menuitem"
               >
@@ -521,7 +857,7 @@ export default function Navbar() {
 
                 {isTutor && !hasCaregiverProfile && (
                   <span className="text-xs font-semibold text-[#95301F]">
-                    {creatingProfile ? "aguarde..." : "(criar perfil)"}
+                    {createCareLoading ? "aguarde..." : "(criar perfil)"}
                   </span>
                 )}
               </button>
@@ -652,14 +988,13 @@ export default function Navbar() {
                   type="button"
                   onClick={() => {
                     closeMobile();
-
                     if (isTutor) return switchToCaregiver();
                     if (isCaregiver) return switchToTutor();
                   }}
-                  disabled={creatingProfile}
+                  disabled={creatingProfile || createCareLoading}
                   className={[
                     "w-full bg-white/10 hover:bg-white/15 border border-white/15 px-3 py-2 rounded-lg font-semibold text-center transition",
-                    creatingProfile ? "opacity-60 cursor-not-allowed" : "",
+                    creatingProfile || createCareLoading ? "opacity-60 cursor-not-allowed" : "",
                   ].join(" ")}
                 >
                   {isTutor ? (hasCaregiverProfile ? "Cuidador" : "Ser cuidador") : "Tutor"}
@@ -738,15 +1073,27 @@ export default function Navbar() {
   );
 
   return (
-    <nav className="relative flex justify-between items-center px-4 md:px-6 py-4 bg-[#5A3A22] text-white shadow-md">
-      <Link to="/" className="font-bold text-xl hover:opacity-90 transition">
-        <span className="text-white">Pelo</span>
-        <span className="text-yellow-400 drop-shadow-md">Caramelo</span>
-      </Link>
+    <>
+      <nav className="relative flex justify-between items-center px-4 md:px-6 py-4 bg-[#5A3A22] text-white shadow-md">
+        <Link to="/" className="font-bold text-xl hover:opacity-90 transition">
+          <span className="text-white">Pelo</span>
+          <span className="text-yellow-400 drop-shadow-md">Caramelo</span>
+        </Link>
 
-      {desktopLinks}
-      {desktopAuth}
-      {MobileMenu}
-    </nav>
+        {desktopLinks}
+        {desktopAuth}
+        {MobileMenu}
+      </nav>
+
+      {/* ✅ Novo modal de criação com campos obrigatórios */}
+      <CreateCaregiverProfileModal
+        open={createCareOpen}
+        loading={createCareLoading}
+        onClose={closeCreateCaregiverModal}
+        onConfirm={confirmCreateCaregiverWithDetails}
+        initialServices={[]}
+        initialDailyCapacity={3}
+      />
+    </>
   );
 }

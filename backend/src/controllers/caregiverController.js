@@ -1,6 +1,5 @@
 // backend/src/controllers/caregiverController.js
 const pool = require("../config/db");
-
 const { listAllCaregivers, getCaregiverById } = require("../models/caregiverModel");
 
 /**
@@ -49,7 +48,6 @@ async function hasCaregiverProfileForUserId(userId) {
   const idStr = String(id);
   const linkCol = await detectCaregiverProfilesLinkColumn();
 
-  // monta query só com o que existe
   try {
     if (linkCol === "user_id") {
       const { rows } = await pool.query(
@@ -77,7 +75,7 @@ async function hasCaregiverProfileForUserId(userId) {
       return rows?.length > 0;
     }
 
-    // se não detectou, tenta primeiro user_id e depois caregiver_id
+    // fallback por tentativa/erro
     try {
       const { rows } = await pool.query(
         `
@@ -181,7 +179,6 @@ async function createCaregiverProfileForUserId(userId) {
       return { created: true };
     } catch {
       // 3) último recurso: schema onde o vínculo é pelo id (id = users.id)
-      // (pode falhar se existir NOT NULL sem default; mas é o melhor fallback sem saber o schema)
       await pool.query(
         `
         INSERT INTO caregiver_profiles (id)
@@ -204,6 +201,7 @@ async function createCaregiverProfileForUserId(userId) {
 /**
  * GET /caregivers
  * Lista todos os cuidadores (definidos por caregiver_profiles) com dados seguros.
+ * ✅ Agora inclui daily_capacity no retorno (vem do caregiverModel)
  */
 async function listCaregiversController(req, res) {
   try {
@@ -224,6 +222,7 @@ async function listCaregiversController(req, res) {
 /**
  * GET /caregivers/:id
  * Detalhe de UM cuidador (definido por caregiver_profiles) com dados seguros.
+ * ✅ Agora inclui daily_capacity no retorno (vem do caregiverModel)
  */
 async function getCaregiverByIdController(req, res) {
   try {
@@ -253,6 +252,10 @@ async function getCaregiverByIdController(req, res) {
  * ✅ Cria perfil de cuidador para o usuário logado (idempotente).
  * - Se já existir, retorna ok sem duplicar.
  * - Se criar, retorna created=true.
+ *
+ * ✅ Importante: aqui a gente só cria o vínculo no caregiver_profiles.
+ * Os campos (services, daily_capacity etc.) ficam no users e serão preenchidos no front
+ * (ou via endpoint de update depois).
  */
 async function createMyCaregiverProfileController(req, res) {
   try {
