@@ -1,6 +1,6 @@
 // frontend/src/pages/Login.jsx
 import { useEffect, useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../components/ToastProvider";
 import { loginRequest } from "../services/api";
@@ -17,9 +17,10 @@ function pickBlockedPayload(err) {
 }
 
 export default function Login() {
-  const { login, showBlockedModal } = useAuth();
+  const { login, showBlockedModal, isAuthenticated, loading: authLoading, user } = useAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -28,6 +29,21 @@ export default function Login() {
   useEffect(() => {
     document.title = "PeloCaramelo | Login";
   }, []);
+
+  // ✅ FIX: se já estiver logado (ou logar e o state atualizar depois),
+  // não pode ficar "preso" no /login
+  useEffect(() => {
+    if (authLoading) return;
+    if (!isAuthenticated) return;
+
+    const from = location.state?.from;
+    const to =
+      (typeof from === "string" && from) ||
+      from?.pathname ||
+      (user?.role === "admin" ? "/admin" : "/dashboard");
+
+    navigate(to, { replace: true });
+  }, [authLoading, isAuthenticated, navigate, location.state, user?.role]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -46,27 +62,33 @@ export default function Login() {
     try {
       setLoading(true);
 
-      const { user, token } = await loginRequest({
+      const { user: loginUser, token } = await loginRequest({
         email: normalizedEmail,
         password: pTrim,
       });
 
       // ✅ bloqueio vindo no body (compat)
-      if (user?.blocked) {
+      if (loginUser?.blocked) {
         showBlockedModal?.({
-          reason: user?.blockedReason ?? null,
-          blockedUntil: user?.blockedUntil ?? null,
+          reason: loginUser?.blockedReason ?? null,
+          blockedUntil: loginUser?.blockedUntil ?? null,
         });
         return;
       }
 
-      // salva no AuthContext + localStorage (e já tenta /auth/me)
-      await login(user, token);
-
       showToast("Bem-vindo(a)! 🐾", "success");
 
-      if (user?.role === "admin") navigate("/admin", { replace: true });
-      else navigate("/dashboard", { replace: true });
+      // ✅ FIX PRINCIPAL:
+      // 1) navega IMEDIATAMENTE (não espera /auth/me)
+      // 2) dispara login em paralelo (hidrata contexto/localStorage)
+      const target = loginUser?.role === "admin" ? "/admin" : "/dashboard";
+      navigate(target, { replace: true });
+
+      // roda em background (sem bloquear o redirect)
+      // se falhar, AuthContext já tem fallback
+      Promise.resolve(login(loginUser, token)).catch((err) => {
+        console.error("login() falhou após redirect:", err);
+      });
     } catch (err) {
       console.error("Erro ao tentar logar:", err);
 
@@ -92,9 +114,7 @@ export default function Login() {
   return (
     <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] flex items-center justify-center py-10">
       <div className="max-w-[600px] w-full bg-white rounded-2xl shadow-lg p-8 border-l-4 border-[#FFD700]/80">
-        <h1 className="text-3xl font-bold text-[#5A3A22] mb-6 text-center">
-          Login
-        </h1>
+        <h1 className="text-3xl font-bold text-[#5A3A22] mb-6 text-center">Login</h1>
 
         <form onSubmit={handleSubmit} autoComplete="off" className="space-y-5">
           <div>
@@ -122,7 +142,6 @@ export default function Login() {
             />
           </div>
 
-          {/* ✅ Link "Esqueci minha senha" */}
           <div className="flex items-center justify-end">
             <Link
               to="/forgot-password"
@@ -136,9 +155,7 @@ export default function Login() {
             type="submit"
             disabled={loading}
             className={`w-full py-2 rounded-lg font-semibold text-white transition ${
-              loading
-                ? "bg-[#95301F]/70 cursor-not-allowed"
-                : "bg-[#95301F] hover:bg-[#B25B38]"
+              loading ? "bg-[#95301F]/70 cursor-not-allowed" : "bg-[#95301F] hover:bg-[#B25B38]"
             }`}
           >
             {loading ? "Entrando..." : "Entrar"}
@@ -147,10 +164,7 @@ export default function Login() {
 
         <p className="text-center text-sm mt-5 text-[#5A3A22]">
           Não tem conta?{" "}
-          <Link
-            to="/register"
-            className="text-[#95301F] underline hover:opacity-80"
-          >
+          <Link to="/register" className="text-[#95301F] underline hover:opacity-80">
             Cadastre-se
           </Link>
         </p>

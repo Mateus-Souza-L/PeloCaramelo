@@ -468,6 +468,39 @@ export default function Dashboard() {
     [rolesAvailable, activeRoleStorageKey]
   );
 
+  // ✅ FIX: sincroniza o Dashboard SEM depender de "storage" (que não dispara na mesma aba)
+  // e também cobre o caso do evento "active-role-changed" ter disparado antes do Dashboard montar.
+  useEffect(() => {
+    const m = String(activeMode || "").toLowerCase().trim();
+
+    // se a Navbar pediu caregiver mas o usuário não tem perfil caregiver, ignora
+    if (m === "caregiver" && !hasCaregiverProfile) return;
+
+    if (m === "tutor" || m === "caregiver") {
+      // só aplica se realmente mudou (evita re-render à toa)
+      if (m !== activeRole) {
+        setRoleSafe(m);
+      }
+      return;
+    }
+
+    // fallback: se por algum motivo o activeMode não veio, tenta ler do localStorage
+    try {
+      const saved = localStorage.getItem(activeRoleStorageKey);
+      if (saved === "tutor" || (saved === "caregiver" && hasCaregiverProfile)) {
+        if (saved !== activeRole) setRoleSafe(saved);
+      }
+    } catch {
+      // ignore
+    }
+  }, [
+    activeMode,
+    hasCaregiverProfile,
+    activeRole,
+    setRoleSafe,
+    activeRoleStorageKey,
+  ]);
+
   useEffect(() => {
     const onRoleChanged = (e) => {
       const next = e?.detail?.role;
