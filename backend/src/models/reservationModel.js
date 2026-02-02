@@ -9,6 +9,10 @@ const AVAIL_COL_AVAILABLE = process.env.AVAIL_COL_AVAILABLE || "is_available";
 // Status que bloqueiam capacidade (alinhado ao controller)
 const BLOCKING_STATUSES = ["Aceita", "Concluída", "Concluida"];
 
+/* ===========================================================
+   ✅ schema-tolerant (evita erro "column ... does not exist")
+   =========================================================== */
+
 function assertSafeIdentifier(name, label = "identifier") {
   if (typeof name !== "string" || !name.trim()) {
     throw new Error(`Invalid SQL ${label}: empty`);
@@ -29,6 +33,37 @@ const SAFE_AVAIL_COL_CAREGIVER = assertSafeIdentifier(AVAIL_COL_CAREGIVER, "colu
 const SAFE_AVAIL_COL_DATEKEY = assertSafeIdentifier(AVAIL_COL_DATEKEY, "column");
 const SAFE_AVAIL_COL_AVAILABLE = assertSafeIdentifier(AVAIL_COL_AVAILABLE, "column");
 
+// Detect columns in reservations once
+let _reservColsChecked = false;
+let _hasReservationsServiceName = false;
+
+async function detectReservationsColumnsOnce() {
+  if (_reservColsChecked) return;
+  _reservColsChecked = true;
+
+  try {
+    const { rows } = await pool.query(
+      `
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'reservations'
+      `
+    );
+
+    const set = new Set((rows || []).map((r) => String(r.column_name || "").toLowerCase()));
+    _hasReservationsServiceName = set.has("service_name");
+  } catch (e) {
+    // fail-safe: não quebra, só não usa coluna opcional
+    console.warn("[reservationModel] detectReservationsColumnsOnce failed:", e?.message || e);
+    _hasReservationsServiceName = false;
+  }
+}
+
+/* ===========================================================
+   HELPERS
+   =========================================================== */
+
 function toNum(v) {
   if (v == null || v === "") return null;
   const n = Number(v);
@@ -40,63 +75,9 @@ function toInt(v) {
   return Number.isFinite(n) && Number.isInteger(n) ? n : null;
 }
 
-function mapReservationRow(row) {
-  if (!row) return null;
-
-  const pricePerDay = toNum(row.price_per_day);
-  const total = toNum(row.total);
-
-  const obj = {
-    id: row.id,
-
-    tutor_id: row.tutor_id,
-    caregiver_id: row.caregiver_id,
-
-    tutor_name: row.tutor_name,
-    caregiver_name: row.caregiver_name,
-    city: row.city,
-    neighborhood: row.neighborhood,
-    service: row.service,
-    price_per_day: pricePerDay,
-    start_date: row.start_date,
-    end_date: row.end_date,
-    total: total,
-    status: row.status,
-
-    tutor_rating: row.tutor_rating,
-    tutor_review: row.tutor_review,
-    tutor_review_is_hidden: row.tutor_review_is_hidden,
-    tutor_review_hidden_reason: row.tutor_review_hidden_reason,
-    tutor_review_hidden_at: row.tutor_review_hidden_at,
-
-    caregiver_rating: row.caregiver_rating,
-    caregiver_review: row.caregiver_review,
-    caregiver_review_is_hidden: row.caregiver_review_is_hidden,
-    caregiver_review_hidden_reason: row.caregiver_review_hidden_reason,
-    caregiver_review_hidden_at: row.caregiver_review_hidden_at,
-
-    pets_ids: row.pets_ids,
-    pets_names: row.pets_names,
-    pets_snapshot: row.pets_snapshot,
-
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-
-    // ✅ motivos
-    reject_reason: row.reject_reason,
-    cancel_reason: row.cancel_reason,
-  };
-
-  // compat camel
-  obj.tutorId = row.tutor_id != null ? String(row.tutor_id) : null;
-  obj.caregiverId = row.caregiver_id != null ? String(row.caregiver_id) : null;
-  obj.startDate = row.start_date;
-  obj.endDate = row.end_date;
-
-  // ✅ compat camel p/ motivo de cancelamento
-  obj.cancelReason = row.cancel_reason ?? row.cancelReason ?? null;
-
-  return obj;
+function cleanText(v) {
+  const s = typeof v === "string" ? v.trim() : "";
+  return s ? s : null;
 }
 
 function toJsonbArray(value) {
@@ -134,11 +115,6 @@ function daysInclusive(startDate, endDate) {
   return diff >= 0 ? diff + 1 : null;
 }
 
-function cleanText(v) {
-  const s = typeof v === "string" ? v.trim() : "";
-  return s ? s : null;
-}
-
 async function getUserNameById(id) {
   const sql = `SELECT name FROM users WHERE id::text = $1::text LIMIT 1`;
   const { rows } = await pool.query(sql, [String(id)]);
@@ -168,6 +144,127 @@ async function getPetsSnapshotByIds(tutorId, petsIds) {
     image: p.image || "",
   }));
 }
+
+function mapReservationRow(row) {
+  if (!row) return null;
+
+  const pricePerDay = toNum(row.price_per_day);
+  const total = toNum(row.total);
+
+  // ✅ service: garante compat mesmo se alguém trouxe service_name no select
+  const service = row.service ?? row.service_name ?? null;
+
+  // ✅ normaliza pets_ids
+  const petsIds = Array.isArray(row.pets_ids) ? row.pets_ids : normalizePetsIds(row.pets_ids);
+
+  // ✅ snapshot: se vier string, tenta JSON.parse
+  let snap = row.pets_snapshot;
+  if (typeof snap === "string") {
+    try {
+      snap = JSON.parse(snap);
+    } catch {
+      // ignore
+    }
+  }
+  const petsSnapshot = Array.isArray(snap) ? snap : snap ? [snap] : [];
+
+  const obj = {
+    id: row.id,
+
+    tutor_id: row.tutor_id,
+    caregiver_id: row.caregiver_id,
+
+    tutor_name: row.tutor_name,
+    caregiver_name: row.caregiver_name,
+    city: row.city,
+    neighborhood: row.neighborhood,
+
+    // ✅ contatos (join em users)
+    tutor_email: row.tutor_email ?? null,
+    tutor_phone: row.tutor_phone ?? null,
+    caregiver_email: row.caregiver_email ?? null,
+    caregiver_phone: row.caregiver_phone ?? null,
+
+    // ✅ serviço (sempre seguro)
+    service: service,
+
+    // ✅ compat snake/camel (NÃO depende de existir coluna service_name no banco)
+    service_name: row.service_name ?? service ?? null,
+
+    price_per_day: pricePerDay,
+    start_date: row.start_date,
+    end_date: row.end_date,
+    total: total,
+    status: row.status,
+
+    tutor_rating: row.tutor_rating,
+    tutor_review: row.tutor_review,
+    tutor_review_is_hidden: row.tutor_review_is_hidden,
+    tutor_review_hidden_reason: row.tutor_review_hidden_reason,
+    tutor_review_hidden_at: row.tutor_review_hidden_at,
+
+    caregiver_rating: row.caregiver_rating,
+    caregiver_review: row.caregiver_review,
+    caregiver_review_is_hidden: row.caregiver_review_is_hidden,
+    caregiver_review_hidden_reason: row.caregiver_review_hidden_reason,
+    caregiver_review_hidden_at: row.caregiver_review_hidden_at,
+
+    pets_ids: petsIds,
+    pets_names: row.pets_names ?? null,
+    pets_snapshot: petsSnapshot,
+
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+
+    // ✅ motivos
+    reject_reason: row.reject_reason,
+    cancel_reason: row.cancel_reason,
+  };
+
+  // ✅ compat camel
+  obj.tutorId = row.tutor_id != null ? String(row.tutor_id) : null;
+  obj.caregiverId = row.caregiver_id != null ? String(row.caregiver_id) : null;
+  obj.startDate = row.start_date;
+  obj.endDate = row.end_date;
+
+  obj.pricePerDay = pricePerDay;
+  obj.serviceName = service;
+
+  // ✅ contatos camel
+  obj.tutorEmail = obj.tutor_email ?? null;
+  obj.tutorPhone = obj.tutor_phone ?? null;
+  obj.caregiverEmail = obj.caregiver_email ?? null;
+  obj.caregiverPhone = obj.caregiver_phone ?? null;
+
+  // ✅ pets camel
+  obj.petsIds = petsIds;
+  obj.petsNames = obj.pets_names ?? null;
+  obj.petsSnapshot = petsSnapshot;
+
+  // ✅ compat camel p/ motivo de cancelamento
+  obj.cancelReason = row.cancel_reason ?? row.cancelReason ?? null;
+
+  // ✅ IMPORTANTE: devolve também objetos aninhados (muitos fronts esperam isso)
+  obj.tutor = {
+    id: obj.tutorId,
+    name: obj.tutor_name ?? null,
+    email: obj.tutorEmail,
+    phone: obj.tutorPhone,
+  };
+
+  obj.caregiver = {
+    id: obj.caregiverId,
+    name: obj.caregiver_name ?? null,
+    email: obj.caregiverEmail,
+    phone: obj.caregiverPhone,
+  };
+
+  return obj;
+}
+
+/* ===========================================================
+   CAPACIDADE
+   =========================================================== */
 
 /**
  * DEFAULT_DAILY_CAPACITY:
@@ -205,6 +302,10 @@ async function getCaregiverCapacity(caregiverId) {
   return finalCap;
 }
 
+/* ===========================================================
+   CREATE
+   =========================================================== */
+
 async function createReservation({
   tutorId,
   caregiverId,
@@ -224,6 +325,7 @@ async function createReservation({
 }) {
   const tutorIdStr = String(tutorId ?? "").trim();
   const caregiverIdStr = String(caregiverId ?? "").trim();
+
   if (!tutorIdStr) {
     const err = new Error("Tutor inválido.");
     err.code = "INVALID_TUTOR";
@@ -334,7 +436,13 @@ async function createReservation({
   return mapReservationRow(result.rows[0]);
 }
 
-function selectReservationWithReviewJoins(whereSql) {
+/* ===========================================================
+   SELECT BASE (com joins de reviews + users p/ contato)
+   =========================================================== */
+
+function selectReservationWithReviewJoins(whereSql, { includeServiceNameColumn = false } = {}) {
+  const serviceNameSelect = includeServiceNameColumn ? ", r.service_name" : "";
+
   return `
     SELECT
       r.id,
@@ -343,9 +451,19 @@ function selectReservationWithReviewJoins(whereSql) {
 
       r.tutor_name,
       r.caregiver_name,
+
+      -- ✅ contatos do tutor
+      ut.email AS tutor_email,
+      ut.phone AS tutor_phone,
+
+      -- ✅ contatos do cuidador
+      uc.email AS caregiver_email,
+      uc.phone AS caregiver_phone,
+
       r.city,
       r.neighborhood,
-      r.service,
+      r.service
+      ${serviceNameSelect},
       r.price_per_day,
       r.start_date,
       r.end_date,
@@ -371,11 +489,14 @@ function selectReservationWithReviewJoins(whereSql) {
       r.created_at,
       r.updated_at,
 
-      -- ✅ motivos
       r.reject_reason,
       r.cancel_reason
 
     FROM reservations r
+
+    -- ✅ joins de usuários (para contato)
+    LEFT JOIN users ut ON ut.id::text = r.tutor_id::text
+    LEFT JOIN users uc ON uc.id::text = r.caregiver_id::text
 
     LEFT JOIN reviews rv_tc
       ON rv_tc.reservation_id = r.id
@@ -391,55 +512,79 @@ function selectReservationWithReviewJoins(whereSql) {
   `;
 }
 
+/* ===========================================================
+   LIST (não paginado)
+   =========================================================== */
+
 async function listTutorReservations(tutorId) {
-  const sql = selectReservationWithReviewJoins(`
+  await detectReservationsColumnsOnce();
+
+  const sql = selectReservationWithReviewJoins(
+    `
     WHERE r.tutor_id::text = $1
     ORDER BY r.updated_at DESC NULLS LAST, r.created_at DESC
-  `);
+  `,
+    { includeServiceNameColumn: _hasReservationsServiceName }
+  );
 
   const result = await pool.query(sql, [String(tutorId)]);
   return result.rows.map(mapReservationRow);
 }
 
 async function listCaregiverReservations(caregiverId) {
-  const sql = selectReservationWithReviewJoins(`
+  await detectReservationsColumnsOnce();
+
+  const sql = selectReservationWithReviewJoins(
+    `
     WHERE r.caregiver_id::text = $1
     ORDER BY r.updated_at DESC NULLS LAST, r.created_at DESC
-  `);
+  `,
+    { includeServiceNameColumn: _hasReservationsServiceName }
+  );
 
   const result = await pool.query(sql, [String(caregiverId)]);
   return result.rows.map(mapReservationRow);
 }
 
 async function listAllReservations(limit = 500) {
+  await detectReservationsColumnsOnce();
+
   const lim = Number.isFinite(Number(limit)) ? Math.trunc(Number(limit)) : 500;
   const safeLimit = Math.max(1, Math.min(lim, 2000));
 
-  const sql = selectReservationWithReviewJoins(`
+  const sql = selectReservationWithReviewJoins(
+    `
     ORDER BY r.updated_at DESC NULLS LAST, r.created_at DESC, r.id DESC
     LIMIT ${safeLimit}
-  `);
+  `,
+    { includeServiceNameColumn: _hasReservationsServiceName }
+  );
 
   const result = await pool.query(sql);
   return result.rows.map(mapReservationRow);
 }
 
 /* ===========================================================
-   ✅ PAGINATION (NOVO)
+   ✅ PAGINATION
    =========================================================== */
 
 async function listTutorReservationsPaged(tutorId, { limit, offset } = {}) {
+  await detectReservationsColumnsOnce();
+
   const lim = Number.isFinite(Number(limit)) ? Math.trunc(Number(limit)) : 6;
   const off = Number.isFinite(Number(offset)) ? Math.trunc(Number(offset)) : 0;
 
   const safeLimit = Math.max(1, Math.min(lim, 50));
   const safeOffset = Math.max(0, off);
 
-  const sql = selectReservationWithReviewJoins(`
+  const sql = selectReservationWithReviewJoins(
+    `
     WHERE r.tutor_id::text = $1
     ORDER BY r.updated_at DESC NULLS LAST, r.created_at DESC, r.id DESC
     LIMIT $2 OFFSET $3
-  `);
+  `,
+    { includeServiceNameColumn: _hasReservationsServiceName }
+  );
 
   const result = await pool.query(sql, [String(tutorId), safeLimit, safeOffset]);
   return result.rows.map(mapReservationRow);
@@ -452,17 +597,22 @@ async function countTutorReservations(tutorId) {
 }
 
 async function listCaregiverReservationsPaged(caregiverId, { limit, offset } = {}) {
+  await detectReservationsColumnsOnce();
+
   const lim = Number.isFinite(Number(limit)) ? Math.trunc(Number(limit)) : 6;
   const off = Number.isFinite(Number(offset)) ? Math.trunc(Number(offset)) : 0;
 
   const safeLimit = Math.max(1, Math.min(lim, 50));
   const safeOffset = Math.max(0, off);
 
-  const sql = selectReservationWithReviewJoins(`
+  const sql = selectReservationWithReviewJoins(
+    `
     WHERE r.caregiver_id::text = $1
     ORDER BY r.updated_at DESC NULLS LAST, r.created_at DESC, r.id DESC
     LIMIT $2 OFFSET $3
-  `);
+  `,
+    { includeServiceNameColumn: _hasReservationsServiceName }
+  );
 
   const result = await pool.query(sql, [String(caregiverId), safeLimit, safeOffset]);
   return result.rows.map(mapReservationRow);
@@ -475,16 +625,21 @@ async function countCaregiverReservations(caregiverId) {
 }
 
 async function listAllReservationsPaged({ limit, offset } = {}) {
+  await detectReservationsColumnsOnce();
+
   const lim = Number.isFinite(Number(limit)) ? Math.trunc(Number(limit)) : 6;
   const off = Number.isFinite(Number(offset)) ? Math.trunc(Number(offset)) : 0;
 
   const safeLimit = Math.max(1, Math.min(lim, 50));
   const safeOffset = Math.max(0, off);
 
-  const sql = selectReservationWithReviewJoins(`
+  const sql = selectReservationWithReviewJoins(
+    `
     ORDER BY r.updated_at DESC NULLS LAST, r.created_at DESC, r.id DESC
     LIMIT $1 OFFSET $2
-  `);
+  `,
+    { includeServiceNameColumn: _hasReservationsServiceName }
+  );
 
   const result = await pool.query(sql, [safeLimit, safeOffset]);
   return result.rows.map(mapReservationRow);
@@ -501,10 +656,16 @@ async function countAllReservations() {
    =========================================================== */
 
 async function getReservationById(id) {
-  const sql = selectReservationWithReviewJoins(`
+  await detectReservationsColumnsOnce();
+
+  const sql = selectReservationWithReviewJoins(
+    `
     WHERE r.id = $1
     LIMIT 1
-  `);
+  `,
+    { includeServiceNameColumn: _hasReservationsServiceName }
+  );
+
   const result = await pool.query(sql, [id]);
   return mapReservationRow(result.rows[0]);
 }
@@ -646,7 +807,7 @@ module.exports = {
   listCaregiverReservations,
   listAllReservations,
 
-  // ✅ paginado (novo)
+  // ✅ paginado
   listTutorReservationsPaged,
   countTutorReservations,
   listCaregiverReservationsPaged,

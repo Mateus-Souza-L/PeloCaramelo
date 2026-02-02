@@ -43,11 +43,14 @@ const normalizeReservationFromApi = (r) => {
       petsIds = [];
     }
   }
+
   if (!Array.isArray(petsIds)) petsIds = [petsIds];
   petsIds = petsIds.map((x) => String(x)).filter(Boolean);
 
   const startRaw = obj.start_date ?? obj.startDate ?? obj.start ?? "";
   const endRaw = obj.end_date ?? obj.endDate ?? obj.end ?? "";
+
+  const petsSnapshotRaw = obj.pets_snapshot ?? obj.petsSnapshot ?? [];
 
   return {
     id: String(obj.id ?? obj.reservation_id ?? obj.reservationId ?? ""),
@@ -56,8 +59,8 @@ const normalizeReservationFromApi = (r) => {
       obj.tutor_id != null
         ? String(obj.tutor_id)
         : obj.tutorId != null
-          ? String(obj.tutorId)
-          : "",
+        ? String(obj.tutorId)
+        : "",
 
     tutorName: obj.tutor_name ?? obj.tutorName ?? "",
 
@@ -65,14 +68,13 @@ const normalizeReservationFromApi = (r) => {
       obj.caregiver_id != null
         ? String(obj.caregiver_id)
         : obj.caregiverId != null
-          ? String(obj.caregiverId)
-          : "",
+        ? String(obj.caregiverId)
+        : "",
 
     caregiverName: obj.caregiver_name ?? obj.caregiverName ?? "",
 
     city: obj.city ?? "",
     neighborhood: obj.neighborhood ?? "",
-
     service: obj.service ?? "",
 
     pricePerDay: Number(obj.price_per_day ?? obj.pricePerDay ?? 0),
@@ -103,6 +105,7 @@ const normalizeReservationFromApi = (r) => {
 
     petsIds,
     petsNames: obj.pets_names ?? obj.petsNames ?? "",
+    petsSnapshot: Array.isArray(petsSnapshotRaw) ? petsSnapshotRaw : [],
 
     rejectReason: obj.reject_reason ?? obj.rejectReason ?? null,
     cancelReason: obj.cancel_reason ?? obj.cancelReason ?? null,
@@ -139,6 +142,7 @@ function normalizeReservationFromLocal(r) {
       petsIds = [];
     }
   }
+
   if (!Array.isArray(petsIds)) petsIds = [petsIds];
   petsIds = petsIds.map((x) => String(x)).filter(Boolean);
 
@@ -148,23 +152,29 @@ function normalizeReservationFromLocal(r) {
   const tutorReview = r.tutorReview ?? r.tutor_review ?? null;
   const caregiverReview = r.caregiverReview ?? r.caregiver_review ?? null;
 
+  const petsSnapshotRaw = r.petsSnapshot ?? r.pets_snapshot ?? [];
+
   return {
     ...r,
     id: String(id),
+
     tutorId:
       r.tutorId != null
         ? String(r.tutorId)
         : r.tutor_id != null
-          ? String(r.tutor_id)
-          : "",
+        ? String(r.tutor_id)
+        : "",
+
     caregiverId:
       r.caregiverId != null
         ? String(r.caregiverId)
         : r.caregiver_id != null
-          ? String(r.caregiver_id)
-          : "",
+        ? String(r.caregiver_id)
+        : "",
+
     startDate: startDate ? String(startDate).slice(0, 10) : "",
     endDate: endDate ? String(endDate).slice(0, 10) : "",
+
     total: Number(r.total || 0),
     pricePerDay: Number(r.pricePerDay ?? r.price_per_day ?? 0),
     status: r.status || "Pendente",
@@ -178,6 +188,8 @@ function normalizeReservationFromLocal(r) {
     __hasCaregiverReview: r.__hasCaregiverReview ?? r.has_caregiver_review ?? false,
 
     petsIds,
+    petsSnapshot: Array.isArray(petsSnapshotRaw) ? petsSnapshotRaw : [],
+
     cancelReason: r.cancelReason ?? r.cancel_reason ?? null,
   };
 }

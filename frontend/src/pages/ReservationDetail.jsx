@@ -117,9 +117,9 @@ const normalizePetObject = (p) => {
     ? adjectivesRaw.filter(Boolean).map(String)
     : typeof adjectivesRaw === "string"
       ? adjectivesRaw
-          .split(/[,•|]/g)
-          .map((s) => s.trim())
-          .filter(Boolean)
+        .split(/[,•|]/g)
+        .map((s) => s.trim())
+        .filter(Boolean)
       : [];
 
   const image = pickPetImage(p);
@@ -235,6 +235,15 @@ const normalizeReservationFromApi = (r) => {
     tutorName: r.tutor_name ?? r.tutorName,
     caregiverId: toStr(r.caregiver_id ?? r.caregiverId),
     caregiverName: r.caregiver_name ?? r.caregiverName,
+    // ✅ NOVO: contatos vindos do backend (snake_case e/ou camelCase)
+    tutorEmail: r.tutor_email ?? r.tutorEmail ?? r?.tutor?.email ?? null,
+    tutorPhone: r.tutor_phone ?? r.tutorPhone ?? r?.tutor?.phone ?? null,
+    caregiverEmail: r.caregiver_email ?? r.caregiverEmail ?? r?.caregiver?.email ?? null,
+    caregiverPhone: r.caregiver_phone ?? r.caregiverPhone ?? r?.caregiver?.phone ?? null,
+
+    // ✅ NOVO: objetos aninhados se vierem do backend
+    tutorObj: r?.tutor ?? null,
+    caregiverObj: r?.caregiver ?? null,
     city: r.city || "",
     neighborhood: r.neighborhood || "",
     service,
@@ -398,6 +407,13 @@ export default function ReservationDetail() {
   const tutorIdRef = useRef(null);
 
   const didWarnNoPetsRef = useRef(false);
+
+  // ✅ cleanup de segurança: evita lock preso ao sair da tela
+  useEffect(() => {
+    return () => {
+      cancelFlowLockRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     reservationIdRef.current = reservation?.id ? String(reservation.id) : null;
@@ -582,16 +598,37 @@ export default function ReservationDetail() {
         const users = safeJsonParse(safeGetLocalStorage("users") || "[]");
         const usersList = Array.isArray(users) ? users : [];
 
-        const currentCaregiver =
+        const currentCaregiverFromUsers =
           finalReservation &&
           (usersList.find((u) => String(u?.id) === String(finalReservation.caregiverId)) || null);
 
-        const currentTutor =
+        const currentTutorFromUsers =
           finalReservation &&
           (usersList.find((u) => String(u?.id) === String(finalReservation.tutorId)) || null);
 
-        setCaregiver(currentCaregiver);
-        setTutor(currentTutor);
+        // ✅ fallback: se não achar no users, usa dados que vieram na reserva
+        const fallbackCaregiver =
+          finalReservation
+            ? {
+              id: finalReservation.caregiverId,
+              name: finalReservation.caregiverName,
+              email: finalReservation.caregiverEmail ?? finalReservation?.caregiverObj?.email ?? null,
+              phone: finalReservation.caregiverPhone ?? finalReservation?.caregiverObj?.phone ?? null,
+            }
+            : null;
+
+        const fallbackTutor =
+          finalReservation
+            ? {
+              id: finalReservation.tutorId,
+              name: finalReservation.tutorName,
+              email: finalReservation.tutorEmail ?? finalReservation?.tutorObj?.email ?? null,
+              phone: finalReservation.tutorPhone ?? finalReservation?.tutorObj?.phone ?? null,
+            }
+            : null;
+
+        setCaregiver(currentCaregiverFromUsers || fallbackCaregiver);
+        setTutor(currentTutorFromUsers || fallbackTutor);
 
         if (finalReservation?.tutorId) {
           const tid = String(finalReservation.tutorId);
@@ -946,7 +983,7 @@ export default function ReservationDetail() {
       console.error("Erro ao sincronizar status no servidor:", err);
       showToast(
         err?.message ||
-          "Não foi possível sincronizar o status com o servidor. Ele foi atualizado apenas localmente por enquanto.",
+        "Não foi possível sincronizar o status com o servidor. Ele foi atualizado apenas localmente por enquanto.",
         "error"
       );
       return false;
@@ -1209,7 +1246,11 @@ export default function ReservationDetail() {
   const headerTitle = isTutor ? "Detalhe da sua reserva" : isCaregiver ? "Reserva recebida" : "Detalhe da reserva";
   const effectiveToken = token || user?.token || null;
 
-  const otherUserName = isTutor ? caregiver?.name : isCaregiver ? tutor?.name : "";
+  const otherUserName = isTutor
+    ? caregiver?.name || reservation?.caregiverName || ""
+    : isCaregiver
+      ? tutor?.name || reservation?.tutorName || ""
+      : "";
 
   return (
     <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] py-8 px-6">
@@ -1383,15 +1424,14 @@ export default function ReservationDetail() {
           <div className="pc-card pc-card-accent">
             <h2 className="font-semibold mb-2">Tutor</h2>
             <p>
-              <b>Nome:</b> {tutor?.name || "—"}
+              <b>Nome:</b> {tutor?.name || reservation?.tutorName || "—"}
             </p>
             <p>
-              <b>Email:</b> {tutor?.email || "—"}
+              <b>Email:</b> {tutor?.email || reservation?.tutorEmail || "—"}
             </p>
             <p>
-              <b>Telefone:</b> {maskPhone(tutor?.phone)}
+              <b>Telefone:</b> {maskPhone(tutor?.phone || reservation?.tutorPhone)}
             </p>
-
             {canCaregiverSeeTutorAddress && (
               <>
                 <p>
@@ -1410,15 +1450,14 @@ export default function ReservationDetail() {
           <div className="pc-card pc-card-accent">
             <h2 className="font-semibold mb-2">Cuidador</h2>
             <p>
-              <b>Nome:</b> {caregiver?.name || "—"}
+              <b>Nome:</b> {caregiver?.name || reservation?.caregiverName || "—"}
             </p>
             <p>
-              <b>Email:</b> {caregiver?.email || "—"}
+              <b>Email:</b> {caregiver?.email || reservation?.caregiverEmail || "—"}
             </p>
             <p>
-              <b>Telefone:</b> {maskPhone(caregiver?.phone)}
+              <b>Telefone:</b> {maskPhone(caregiver?.phone || reservation?.caregiverPhone)}
             </p>
-
             {canTutorSeeCaregiverAddress && (
               <>
                 <p>

@@ -108,6 +108,85 @@ function applyPaginationDefaults({ defaultLimit = 6, maxLimit = 50 } = {}) {
 }
 
 /**
+ * ✅ Validação de atualização de status (server-side)
+ * Regra crítica: ao cancelar, motivo é obrigatório.
+ * Compatível com o front: { status, cancelReason }
+ */
+function validateStatusUpdate() {
+  // status aceitos (mantém compatibilidade com o que você usa no front/back)
+  const allowed = new Set([
+    "Pendente",
+    "Aceita",
+    "Recusada",
+    "Cancelada",
+    "Concluida",
+    "Concluída",
+    "Finalizada",
+  ]);
+
+  const toStr = (v) => (v == null ? "" : String(v));
+
+  return (req, res, next) => {
+    const rawStatus = req.body?.status;
+    const status = toStr(rawStatus).trim();
+
+    if (!status) {
+      return res.status(400).json({
+        error: "Campo 'status' é obrigatório.",
+        code: "STATUS_REQUIRED",
+      });
+    }
+
+    if (!allowed.has(status)) {
+      return res.status(400).json({
+        error: "Status inválido.",
+        code: "STATUS_INVALID",
+        status,
+        allowed: Array.from(allowed),
+      });
+    }
+
+    // Normaliza body (evita undefined/null surpresa no controller)
+    req.body = req.body && typeof req.body === "object" ? req.body : {};
+    req.body.status = status;
+
+    // ✅ Cancelamento: motivo obrigatório
+    if (status === "Cancelada") {
+      const reason = toStr(req.body.cancelReason ?? req.body.cancel_reason).trim();
+
+      if (!reason) {
+        return res.status(400).json({
+          error: "Para cancelar a reserva, informe o motivo do cancelamento.",
+          code: "CANCEL_REASON_REQUIRED",
+        });
+      }
+
+      if (reason.length < 3) {
+        return res.status(400).json({
+          error: "O motivo do cancelamento precisa ter pelo menos 3 caracteres.",
+          code: "CANCEL_REASON_TOO_SHORT",
+        });
+      }
+
+      // escreve de volta no formato que o controller provavelmente usa
+      req.body.cancelReason = reason;
+      req.body.cancel_reason = reason;
+    }
+
+    // ✅ Recusa: motivo opcional (mas se vier, normaliza)
+    if (status === "Recusada") {
+      const reason = toStr(req.body.rejectReason ?? req.body.reject_reason).trim();
+      if (reason) {
+        req.body.rejectReason = reason;
+        req.body.reject_reason = reason;
+      }
+    }
+
+    return next();
+  };
+}
+
+/**
  * Fail-closed: se o middleware de ownership ainda não existir,
  * bloqueia rotas sensíveis ao invés de deixar inseguro.
  */
@@ -171,7 +250,6 @@ router.post(
 // GET /reservations/tutor
 // ✅ Aqui NÃO deve depender do role do token em multi-perfil.
 // O controller já lista por user.id. Então basta estar logado.
-// (Admin continua funcionando, pois também está logado.)
 // ✅ Suporta paginação: ?page=1&limit=6
 router.get(
   "/tutor",
@@ -192,7 +270,6 @@ router.get(
 
 // GET /reservations/my-evaluations
 // ✅ Também não deve depender do role do token (multi-perfil).
-// O endpoint já usa req.user.id, e aplica filtro de isAdmin internamente.
 router.get(
   "/my-evaluations",
   requireAnyLoggedUserOrAdmin(),
@@ -208,15 +285,18 @@ router.get(
 );
 
 // PATCH/PUT /reservations/:id/status
+// ✅ Agora com validação server-side (motivo obrigatório no cancelamento)
 router.patch(
   "/:id/status",
   mustBeReservationParticipant,
+  validateStatusUpdate(),
   pickHandler("updateReservationStatusController")
 );
 
 router.put(
   "/:id/status",
   mustBeReservationParticipant,
+  validateStatusUpdate(),
   pickHandler("updateReservationStatusController")
 );
 

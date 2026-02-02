@@ -329,15 +329,15 @@ function canAccessReservation(user, reservation) {
 function getStartEndSafe(obj, fallbackReservation) {
   const start = toDateKey(
     obj?.startDate ??
-      obj?.start_date ??
-      fallbackReservation?.startDate ??
-      fallbackReservation?.start_date
+    obj?.start_date ??
+    fallbackReservation?.startDate ??
+    fallbackReservation?.start_date
   );
   const end = toDateKey(
     obj?.endDate ??
-      obj?.end_date ??
-      fallbackReservation?.endDate ??
-      fallbackReservation?.end_date
+    obj?.end_date ??
+    fallbackReservation?.endDate ??
+    fallbackReservation?.end_date
   );
   return { start, end };
 }
@@ -371,13 +371,48 @@ function normalizeReservationResponse(reservation) {
     reservation?.price_per_day != null
       ? Number(reservation.price_per_day)
       : reservation?.pricePerDay != null
-      ? Number(reservation.pricePerDay)
-      : null;
+        ? Number(reservation.pricePerDay)
+        : null;
 
   const total = reservation?.total != null ? Number(reservation.total) : null;
 
   const startDate = toDateKey(reservation?.start_date ?? reservation?.startDate) || null;
   const endDate = toDateKey(reservation?.end_date ?? reservation?.endDate) || null;
+
+  // ✅ serviço (compat: serviceName/service_name)
+  const service =
+    reservation?.service ??
+    reservation?.service_name ??
+    reservation?.serviceName ??
+    null;
+
+  // ✅ pets ids
+  const petsIds = normalizeIntIds(
+    reservation?.pets_ids ??
+    reservation?.petsIds ??
+    null
+  );
+
+  // ✅ pets names
+  const petsNames =
+    cleanNonEmptyString(reservation?.pets_names) ||
+    cleanNonEmptyString(reservation?.petsNames) ||
+    null;
+
+  // ✅ pets snapshot: pode vir jsonb (obj/array) ou string
+  let petsSnapshot =
+    reservation?.pets_snapshot ??
+    reservation?.petsSnapshot ??
+    null;
+
+  if (typeof petsSnapshot === "string") {
+    const parsed = safeJsonParse(petsSnapshot);
+    petsSnapshot = parsed != null ? parsed : null;
+  }
+
+  if (!Array.isArray(petsSnapshot)) {
+    petsSnapshot = petsSnapshot ? [petsSnapshot] : [];
+  }
 
   return {
     ...reservation,
@@ -388,10 +423,23 @@ function normalizeReservationResponse(reservation) {
     end_date: endDate,
     total,
 
+    service,
+    service_name: service,
+
+    pets_ids: petsIds,
+    pets_names: petsNames,
+    pets_snapshot: petsSnapshot,
+
     // camel
     pricePerDay: ppd,
     startDate,
     endDate,
+
+    serviceName: service,
+
+    petsIds,
+    petsNames,
+    petsSnapshot,
   };
 }
 
@@ -885,7 +933,7 @@ async function createReservationController(req, res) {
       if (!base) {
         console.warn(
           "[createReservation] FRONTEND_URL/origin ausente. Configure FRONTEND_URL. " +
-            "E-mail de nova reserva não será enviado para evitar link quebrado."
+          "E-mail de nova reserva não será enviado para evitar link quebrado."
         );
       } else {
         const caregiverUser = await getUserBasicById(caregiverIdStr);
@@ -1115,8 +1163,19 @@ async function getReservationDetailController(req, res) {
 
     const { id } = req.params;
 
-    let reservation = req.reservation || null;
-    if (!reservation) reservation = await reservationModel.getReservationById(id);
+    // ✅ ownership middleware pode colocar req.reservation "parcial" (sem service/pets/preço)
+    // então usamos ele só para checar permissão e depois buscamos a reserva completa.
+    const partial = req.reservation || null;
+
+    if (partial && !canAccessReservation(user, partial)) {
+      return res.status(403).json({
+        error: "Sem permissão para acessar esta reserva.",
+        code: "FORBIDDEN_OWNERSHIP",
+      });
+    }
+
+    // sempre buscar completo para responder corretamente (service/pets/preço etc.)
+    let reservation = await reservationModel.getReservationById(id);
 
     if (!reservation) {
       return res.status(404).json({
@@ -1170,6 +1229,14 @@ async function updateReservationStatusController(req, res) {
 
     if (!nextStatus) {
       return res.status(400).json({ error: "Status é obrigatório.", code: "MISSING_STATUS" });
+    }
+
+    // ✅ regra server-side: ao cancelar, motivo é obrigatório
+    if (nextStatus === "Cancelada" && !cancelReason) {
+      return res.status(400).json({
+        error: "Para cancelar a reserva, informe o motivo do cancelamento.",
+        code: "CANCEL_REASON_REQUIRED",
+      });
     }
 
     let reservation = req.reservation || null;
@@ -1381,7 +1448,7 @@ async function updateReservationStatusController(req, res) {
           if (!base) {
             console.warn(
               "[updateStatus] FRONTEND_URL/origin ausente. Configure FRONTEND_URL. " +
-                "E-mail de reserva aceita não será enviado para evitar link quebrado."
+              "E-mail de reserva aceita não será enviado para evitar link quebrado."
             );
           } else {
             const tutorUser = await getUserBasicById(tutorId);
@@ -1702,8 +1769,8 @@ async function listMyEvaluationsController(req, res) {
       mode === "tutor"
         ? "AND r.tutor_id::text = $1"
         : mode === "caregiver"
-        ? "AND r.caregiver_id::text = $1"
-        : "";
+          ? "AND r.caregiver_id::text = $1"
+          : "";
 
     const sql = `
       SELECT
