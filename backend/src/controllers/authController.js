@@ -64,6 +64,12 @@ function pickBlockInfo(user) {
   };
 }
 
+// ✅ senha forte: min 8, pelo menos 1 letra e 1 número
+function isStrongPassword(pw) {
+  const s = String(pw || "");
+  return /^(?=.*[A-Za-z])(?=.*\d).{8,}$/.test(s);
+}
+
 /* ============================================================
    ✅ Multi-perfil (tolerante ao schema) — FAIL-SAFE
    - NÃO referencia caregiver_id se a coluna não existir
@@ -269,6 +275,14 @@ async function register(req, res) {
       return res.status(400).json({ error: "Nome, e-mail e senha são obrigatórios." });
     }
 
+    // ✅ senha forte no backend
+    if (!isStrongPassword(password)) {
+      return res.status(400).json({
+        error: "Senha fraca. Use no mínimo 8 caracteres, com letras e números.",
+        code: "WEAK_PASSWORD",
+      });
+    }
+
     const normalizedEmail = trimLower(email);
     const existing = await findUserByEmail(normalizedEmail);
     if (existing) {
@@ -408,7 +422,7 @@ async function forgotPassword(req, res) {
     if (!base) {
       console.warn(
         "[forgotPassword] FRONTEND_URL/origin ausente. Configure FRONTEND_URL no Render. " +
-        "E-mail não será enviado para evitar link quebrado."
+          "E-mail não será enviado para evitar link quebrado."
       );
       return res.json(safeResponse);
     }
@@ -420,7 +434,6 @@ async function forgotPassword(req, res) {
       minutes: safeMinutes,
       brandName: "PeloCaramelo",
     });
-
 
     try {
       await sendEmail({
@@ -448,10 +461,18 @@ async function resetPassword(req, res) {
     const body = readBody(req);
 
     const token = String(body?.token || "").trim();
-    const newPassword = String(body?.newPassword || body?.password || "").trim();
+    const newPassword = String(body?.newPassword || body?.password || "");
 
-    if (!token || !newPassword || newPassword.length < 6) {
-      return res.status(400).json({ error: "Token inválido ou senha muito curta." });
+    if (!token || !newPassword) {
+      return res.status(400).json({ error: "Token inválido ou senha ausente." });
+    }
+
+    // ✅ senha forte também no reset (não deixa “furar”)
+    if (!isStrongPassword(newPassword)) {
+      return res.status(400).json({
+        error: "Senha fraca. Use no mínimo 8 caracteres, com letras e números.",
+        code: "WEAK_PASSWORD",
+      });
     }
 
     const reset = await findValidPasswordResetByToken(token);
@@ -459,7 +480,7 @@ async function resetPassword(req, res) {
       return res.status(400).json({ error: "Token inválido ou expirado." });
     }
 
-    const passwordHash = await bcrypt.hash(newPassword, 10);
+    const passwordHash = await bcrypt.hash(String(newPassword), 10);
     await updateUserPassword(reset.user_id, passwordHash);
 
     await markPasswordResetUsed(reset.id);

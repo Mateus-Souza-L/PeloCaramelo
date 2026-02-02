@@ -11,6 +11,12 @@ function useQuery() {
   return useMemo(() => new URLSearchParams(search), [search]);
 }
 
+// ✅ senha forte: min 8, pelo menos 1 letra e 1 número
+function isStrongPassword(pw) {
+  const s = String(pw || "");
+  return /^(?=.*[A-Za-z])(?=.*\d).{8,}$/.test(s);
+}
+
 export default function Register() {
   const { login } = useAuth();
   const { showToast } = useToast();
@@ -71,16 +77,27 @@ export default function Register() {
 
     const n = form.name.trim();
     const em = form.email.trim().toLowerCase();
-    const pw = form.password.trim();
-    const cf = form.confirm.trim();
+    const pw = form.password; // (não trim) — usuário pode querer espaço, mas regra já cobre
+    const cf = form.confirm;
 
     if (!role) return showToast("Escolha um perfil para continuar.", "error");
     if (!n || !em || !pw || !cf)
       return showToast("Preencha todos os campos obrigatórios.", "error");
+
     if (!isValidEmail(em)) {
       emailRef.current?.focus();
       return showToast("E-mail inválido.", "error");
     }
+
+    // ✅ validação de senha forte
+    if (!isStrongPassword(pw)) {
+      showToast(
+        "A senha deve ter no mínimo 8 caracteres, contendo letras e números.",
+        "error"
+      );
+      return;
+    }
+
     if (pw !== cf) return showToast("As senhas não coincidem.", "error");
 
     try {
@@ -109,6 +126,13 @@ export default function Register() {
       if (err.status === 409) {
         showToast("Este e-mail já está cadastrado.", "error");
         emailRef.current?.focus();
+        return;
+      }
+
+      // (opcional) se backend devolver mensagem específica, respeita
+      const msg = err?.message || err?.data?.message || null;
+      if (msg) {
+        showToast(msg, "error");
         return;
       }
 
@@ -251,6 +275,12 @@ export default function Register() {
               />
             </div>
 
+            {/* ✅ dica de senha forte */}
+            <p className="text-xs text-[#5A3A22] mt-3 opacity-80">
+              🔐 A senha deve ter <b>no mínimo 8 caracteres</b>, contendo <b>letras</b> e{" "}
+              <b>números</b>.
+            </p>
+
             {role === "caregiver" && (
               <p className="text-sm text-[#5A3A22] mt-3">
                 <b>Dica:</b> você poderá configurar seus <b>serviços, preços e disponibilidade</b> no
@@ -259,7 +289,8 @@ export default function Register() {
             )}
 
             <p className="text-sm text-[#5A3A22] mt-3 opacity-80">
-              🔒 Por segurança, o <b>endereço completo</b> só será exibido após a <b>reserva confirmada</b>.
+              🔒 Por segurança, o <b>endereço completo</b> só será exibido após a{" "}
+              <b>reserva confirmada</b>.
             </p>
 
             <div className="flex justify-end gap-3 mt-6">
