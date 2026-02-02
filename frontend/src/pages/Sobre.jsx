@@ -389,20 +389,6 @@ export default function Sobre() {
               ))}
             </div>
 
-            <div className="mt-6 flex justify-center">
-              <a
-                href="/buscar"
-                className="
-                  inline-flex items-center justify-center
-                  px-6 py-3 rounded-xl font-semibold
-                  bg-[#95301F] hover:brightness-110 text-white
-                  shadow-md transition
-                  focus:outline-none focus:ring-2 focus:ring-[#95301F]/40
-                "
-              >
-                Ir para a busca
-              </a>
-            </div>
           </motion.section>
         </div>
       </div>
