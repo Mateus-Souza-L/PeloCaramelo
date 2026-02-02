@@ -177,6 +177,90 @@ export default function ReviewHistory() {
     };
   }, [token, isTutor, isCaregiver, isAdmin, effectiveMode]);
 
+  // ===========================================================
+  // 📄 Paginação de avaliações — 6 por página (client-side)
+  // ===========================================================
+  const REVIEWS_PAGE_SIZE = 6;
+  const [revPage, setRevPage] = useState(1);
+
+  // lista para exibir: admin vê tudo; usuário comum não vê ocultas
+  const displayList = useMemo(() => {
+    return isAdmin ? evaluations : evaluations.filter((e) => !e.__isHidden);
+  }, [evaluations, isAdmin]);
+
+  const revTotal = displayList.length;
+
+  const revTotalPages = useMemo(() => {
+    return Math.max(1, Math.ceil(revTotal / REVIEWS_PAGE_SIZE));
+  }, [revTotal]);
+
+  // ao trocar perfil/lista, volta pra página 1 e garante página válida
+  useEffect(() => {
+    setRevPage(1);
+  }, [effectiveMode]);
+
+  useEffect(() => {
+    setRevPage((p) => {
+      const cur = Math.max(1, Number(p || 1));
+      return Math.min(cur, revTotalPages);
+    });
+  }, [revTotalPages]);
+
+  const paginated = useMemo(() => {
+    const cur = Math.max(1, Number(revPage || 1));
+    const start = (cur - 1) * REVIEWS_PAGE_SIZE;
+    return displayList.slice(start, start + REVIEWS_PAGE_SIZE);
+  }, [displayList, revPage]);
+
+  function ReviewsPager() {
+    const totalPages = Number(revTotalPages || 1);
+    const curPage = Math.max(1, Number(revPage || 1));
+
+    const canPrev = curPage > 1;
+    const canNext = curPage < totalPages;
+
+    if (!canPrev && !canNext) return null;
+
+    return (
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+        <p className="text-xs text-[#5A3A22] opacity-80">
+          Página <b>{curPage}</b> de <b>{totalPages}</b> — <b>{revTotal}</b>{" "}
+          avaliação{revTotal === 1 ? "" : "s"}
+        </p>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setRevPage((p) => Math.max(1, Number(p || 1) - 1))}
+            disabled={!canPrev}
+            className={`px-3 py-2 rounded-lg text-xs font-semibold shadow ${
+              canPrev
+                ? "bg-[#D2A679] hover:bg-[#B25B38] text-[#5A3A22]"
+                : "bg-gray-200 text-[#5A3A22]/50 cursor-not-allowed"
+            }`}
+          >
+            ← Anterior
+          </button>
+
+          <button
+            type="button"
+            onClick={() =>
+              setRevPage((p) => Math.min(totalPages, Number(p || 1) + 1))
+            }
+            disabled={!canNext}
+            className={`px-3 py-2 rounded-lg text-xs font-semibold shadow ${
+              canNext
+                ? "bg-[#D2A679] hover:bg-[#B25B38] text-[#5A3A22]"
+                : "bg-gray-200 text-[#5A3A22]/50 cursor-not-allowed"
+            }`}
+          >
+            Próxima →
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // média/contagem: só considera avaliações visíveis (não ocultas), exceto admin
   const summary = useMemo(() => {
     const list = isAdmin ? evaluations : evaluations.filter((e) => !e.__isHidden);
@@ -186,7 +270,9 @@ export default function ReviewHistory() {
   }, [evaluations, isAdmin]);
 
   const profileTitle =
-    effectiveMode === "caregiver" ? "Suas avaliações como Cuidador" : "Suas avaliações como Tutor";
+    effectiveMode === "caregiver"
+      ? "Suas avaliações como Cuidador"
+      : "Suas avaliações como Tutor";
 
   function getDateLabel(ev) {
     const d =
@@ -202,6 +288,10 @@ export default function ReviewHistory() {
     return key ? formatDateBR(key) : "";
   }
 
+  const emptyText = isAdmin
+    ? "Ainda não há avaliações."
+    : "Você ainda não recebeu avaliações neste perfil.";
+
   return (
     <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] py-8 px-6">
       <div className="max-w-[1400px] mx-auto bg-white rounded-2xl shadow p-6 border-l-4 border-[#FFD700]/80">
@@ -214,13 +304,13 @@ export default function ReviewHistory() {
 
         {loading ? (
           <p className="text-[#5A3A22] opacity-80">Carregando avaliações…</p>
-        ) : evaluations.length === 0 ? (
-          <p className="text-[#5A3A22] opacity-80">
-            Você ainda não recebeu avaliações neste perfil.
-          </p>
+        ) : displayList.length === 0 ? (
+          <p className="text-[#5A3A22] opacity-80">{emptyText}</p>
         ) : (
           <div className="mt-2">
-            {evaluations.map((ev) => {
+            <ReviewsPager />
+
+            {paginated.map((ev) => {
               const key =
                 ev.reservation_id ??
                 `${ev.from_user_id || "u"}_${ev.from_user_name || "name"}_${ev.start_date || ""}_${
@@ -229,63 +319,27 @@ export default function ReviewHistory() {
 
               const dateLabel = getDateLabel(ev);
 
-              // Card "oculto" para usuário comum
-              if (!isAdmin && ev.__isHidden) {
-                return (
-                  <div
-                    key={key}
-                    className="border rounded-lg p-4 mb-3 text-[#5A3A22] shadow-sm bg-[#FFF7D6]"
-                  >
-                    <p className="text-sm text-[#5A3A22]/80">
-                      <b>{ev.from_user_name || "Usuário"}</b>
-                      {dateLabel ? ` — ${dateLabel}` : ""}
-                    </p>
-
-                    <p className="mt-2 font-semibold text-[#95301F]">
-                      Esta avaliação foi ocultada pela moderação.
-                    </p>
-
-                    <p className="mt-1 text-sm text-[#5A3A22]/90">
-                      {ev.__hiddenReason ? (
-                        <>
-                          <b>Motivo:</b> {ev.__hiddenReason}
-                        </>
-                      ) : (
-                        <>Motivo não informado.</>
-                      )}
-                    </p>
-
-                    {ev.__hiddenAt ? (
-                      <p className="mt-1 text-xs opacity-70">
-                        Ocultada em: {formatDateBR(ev.__hiddenAt)}
-                      </p>
-                    ) : null}
-
-                    {ev.service ? (
-                      <p className="mt-2 text-xs opacity-70">Serviço: {ev.service}</p>
-                    ) : null}
-
-                    {ev.reservation_id ? (
-                      <p className="mt-1 text-xs opacity-70">Reserva: #{ev.reservation_id}</p>
-                    ) : null}
-                  </div>
-                );
-              }
-
               // Card normal (visível) ou admin
               return (
                 <div
                   key={key}
-                  className="border rounded-lg p-4 mb-3 text-[#5A3A22] shadow-sm bg-white"
+                  className={`border rounded-lg p-4 mb-3 text-[#5A3A22] shadow-sm ${
+                    isAdmin && ev.__isHidden ? "bg-[#FFF7D6]" : "bg-white"
+                  }`}
                 >
                   <p className="text-sm text-[#5A3A22]/80">
-                    <b>{ev.from_user_name}</b> — ⭐ {ev.rating}/5 — {dateLabel}
+                    <b>{ev.from_user_name || "Usuário"}</b> — ⭐ {ev.rating}/5
+                    {dateLabel ? ` — ${dateLabel}` : ""}
                   </p>
 
                   {ev.review ? <p className="mt-1">{ev.review}</p> : null}
 
                   {ev.service ? (
                     <p className="mt-1 text-xs opacity-70">Serviço: {ev.service}</p>
+                  ) : null}
+
+                  {ev.reservation_id ? (
+                    <p className="mt-1 text-xs opacity-70">Reserva: #{ev.reservation_id}</p>
                   ) : null}
 
                   {isAdmin && ev.__isHidden ? (
