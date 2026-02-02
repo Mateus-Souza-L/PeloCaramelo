@@ -191,9 +191,43 @@ const normalizeReservationFromApi = (r) => {
   const petsIds = extractPetsIds(r);
 
   const snapshot =
-    r.pets_snapshot || r.petsSnapshot || r.pets_details || r.petsDetails || r.pets || null;
+    r.pets_snapshot ||
+    r.petsSnapshot ||
+    r.pets_details ||
+    r.petsDetails ||
+    r.pets ||
+    null;
 
   const petsSnapshot = normalizeSnapshotArray(snapshot, petsIds);
+
+  // ✅ CORREÇÃO: serviço / preço / total (snake_case do backend)
+  const service =
+    r.service ??
+    r.service_name ??
+    r.serviceName ??
+    r.tipo_servico ??
+    r.tipoServico ??
+    "";
+
+  const pricePerDay = toNumSafe(
+    r.price_per_day ?? // 👈 principal (backend)
+    r.pricePerDay ??
+    r.daily_price ??
+    r.dailyPrice ??
+    r.price_day ??
+    r.priceDay ??
+    r.price ??
+    null
+  );
+
+  const total = toNumSafe(
+    r.total ??
+    r.total_price ??
+    r.totalPrice ??
+    r.total_value ??
+    r.totalValue ??
+    null
+  );
 
   return {
     id: toStr(r.id),
@@ -203,10 +237,10 @@ const normalizeReservationFromApi = (r) => {
     caregiverName: r.caregiver_name ?? r.caregiverName,
     city: r.city || "",
     neighborhood: r.neighborhood || "",
-    service: r.service,
+    service,
 
-    pricePerDay: toNumSafe(r.price_per_day ?? r.pricePerDay ?? r.price),
-    total: toNumSafe(r.total),
+    pricePerDay,
+    total,
 
     startDate: r.start_date
       ? String(r.start_date).slice(0, 10)
@@ -1275,7 +1309,7 @@ export default function ReservationDetail() {
               <b>Período:</b> {formatDateBR(reservation.startDate)} até {formatDateBR(reservation.endDate)}
             </p>
             <p>
-              <b>Serviço:</b> {reservation.service}
+              <b>Serviço:</b> {reservation.service || "—"}
             </p>
 
             <p>
@@ -1454,7 +1488,9 @@ export default function ReservationDetail() {
               })}
             </div>
           ) : (
-            <p className="text-sm md:text-base opacity-80 bg-[#FFF8F0] rounded-xl p-3">Pets desta reserva não informados.</p>
+            <p className="text-sm md:text-base opacity-80 bg-[#FFF8F0] rounded-xl p-3">
+              Pets desta reserva não informados.
+            </p>
           )}
         </div>
 
@@ -1518,7 +1554,7 @@ export default function ReservationDetail() {
                   currentUserId={myUserId}
                   otherUserName={otherUserName}
                   canChat={true}
-                  reservationStatus={reservation.status} // ✅ novo: ChatBox também aplica a regra
+                  reservationStatus={reservation.status}
                 />
               </ChatErrorBoundary>
             ) : (

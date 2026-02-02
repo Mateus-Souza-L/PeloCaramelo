@@ -225,10 +225,7 @@ export default function ChatBox({
     [getMsgTimeMs, sameContentNear, pickBetter]
   );
 
-  // merge “safe”: preserva status local e remove duplicatas por:
-  // 1) id igual
-  // 2) clientId igual
-  // 3) conteúdo+tempo (squash)
+  // merge “safe”
   const mergeSafe = useCallback(
     (prevList, incomingList) => {
       const prev = Array.isArray(prevList) ? prevList : [];
@@ -240,7 +237,6 @@ export default function ChatBox({
         if (cid) return `c:${String(cid)}`;
         const id = m?.id ?? m?.message_id ?? null;
         if (id != null) return `i:${String(id)}`;
-        // sem ids → joga num key único e o squash resolve
         return `u:${Math.random().toString(16).slice(2)}`;
       };
 
@@ -274,9 +270,7 @@ export default function ChatBox({
 
       try {
         const ids = await getUnreadChats(token);
-        window.dispatchEvent(
-          new CustomEvent("chat-unread-changed", { detail: { list: ids } })
-        );
+        window.dispatchEvent(new CustomEvent("chat-unread-changed", { detail: { list: ids } }));
       } catch {
         // silencioso
       }
@@ -313,7 +307,7 @@ export default function ChatBox({
   const markReadServer = useCallback(
     async ({ force = false } = {}) => {
       if (!reservationId || !token) return;
-      if (!effectiveCanChat) return; // ✅ se chat não pode, não fica marcando read
+      if (!effectiveCanChat) return;
 
       if (!force && document.visibilityState !== "visible") return;
       if (!force && !isAtBottomRef.current) return;
@@ -364,7 +358,6 @@ export default function ChatBox({
     }
   };
 
-  // chat visível na viewport
   useEffect(() => {
     const el = rootRef.current;
     if (!el) return;
@@ -382,7 +375,6 @@ export default function ChatBox({
     return () => obs.disconnect();
   }, []);
 
-  // evento: scroll bottom
   useEffect(() => {
     const onScrollBottom = (e) => {
       const rid = e?.detail?.reservationId;
@@ -419,21 +411,13 @@ export default function ChatBox({
 
   const normalizeList = useCallback(
     (data) => {
-      const list = Array.isArray(data)
-        ? data
-        : Array.isArray(data?.messages)
-        ? data.messages
-        : [];
-
+      const list = Array.isArray(data) ? data : Array.isArray(data?.messages) ? data.messages : [];
       list.sort((a, b) => getMsgTimeMs(a) - getMsgTimeMs(b));
       return list;
     },
     [getMsgTimeMs]
   );
 
-  // --------------------------------------------
-  // Socket.IO: conecta e entra na sala da reserva
-  // --------------------------------------------
   const canUseSocket = useMemo(() => {
     return !!(token && reservationId && effectiveCanChat);
   }, [token, reservationId, effectiveCanChat]);
@@ -519,8 +503,6 @@ export default function ChatBox({
       const fromMe = isMineMsg(msg);
 
       setMessages((prev) => {
-        // ✅ CASO CRÍTICO: eco da minha msg via socket
-        // Em vez de adicionar, tenta "colar" em uma otimista recente com mesmo texto.
         if (fromMe) {
           const incomingText = getMsgText(msg);
           const incomingTime = getMsgTimeMs(msg) || Date.now();
@@ -547,18 +529,13 @@ export default function ChatBox({
             };
           });
 
-          // se substituiu, só squash pra garantir
           if (replaced) return mergeSafe(next, []);
-
-          // se não achou otimista, faz merge normal (e squash remove duplicatas próximas)
           return mergeSafe(prev, [msg]);
         }
 
-        // msg do outro usuário: merge normal
         return mergeSafe(prev, [msg]);
       });
 
-      // ✅ ACK delivered
       if (!fromMe && joinedRef.current) {
         const msgId = msg?.id;
         if (msgId != null) {
@@ -578,9 +555,7 @@ export default function ChatBox({
         onNewMessage?.({ reservationId });
       } catch {}
 
-      window.dispatchEvent(
-        new CustomEvent("chat-new-message", { detail: { reservationId } })
-      );
+      window.dispatchEvent(new CustomEvent("chat-new-message", { detail: { reservationId } }));
 
       const isVisibleTab = document.visibilityState === "visible";
       const chatOnScreen = isInViewportRef.current;
@@ -674,9 +649,6 @@ export default function ChatBox({
     mergeSafe,
   ]);
 
-  // --------------------------------------------
-  // Carregar mensagens + polling (fallback)
-  // --------------------------------------------
   useEffect(() => {
     if (!effectiveCanChat || !reservationId || !token || !currentUserId) return;
 
@@ -699,7 +671,6 @@ export default function ChatBox({
         const list = normalizeList(data);
 
         setMessages((prev) => {
-          // ✅ merge + squash (não substitui seco)
           return mergeSafe(prev, list);
         });
 
@@ -778,7 +749,6 @@ export default function ChatBox({
       setSending(true);
       const saved = await sendChatMessage(reservationId, text, token);
 
-      // ✅ Em vez de “inserir mais uma fonte”, só melhora a otimista
       setMessages((prev) => {
         const incomingTime = getMsgTimeMs(saved) || Date.now();
         const incomingText = getMsgText(saved);
@@ -805,7 +775,6 @@ export default function ChatBox({
           };
         });
 
-        // se por algum motivo não achou a otimista, faz merge normal
         return updated ? mergeSafe(next, []) : mergeSafe(prev, [saved]);
       });
 
@@ -943,19 +912,35 @@ export default function ChatBox({
       {/* Input */}
       <form
         onSubmit={handleSend}
-        className="px-4 py-3 border-t border-[#EBCBA9] bg-white rounded-b-2xl flex gap-2"
+        className="
+          px-4 py-3 border-t border-[#EBCBA9] bg-white rounded-b-2xl
+          flex items-center gap-2
+          flex-wrap sm:flex-nowrap
+        "
       >
         <input
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Digite uma mensagem..."
-          className="flex-1 rounded-full border border-[#D2A679] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FFD700]/70"
+          className="
+            flex-1 min-w-0
+            rounded-full border border-[#D2A679]
+            px-3 py-2 text-sm
+            focus:outline-none focus:ring-2 focus:ring-[#FFD700]/70
+          "
         />
+
         <button
           type="submit"
           disabled={sending || !input.trim()}
-          className="px-4 py-2 rounded-full text-sm font-semibold bg-[#5A3A22] text-white hover:bg-[#4A2F1A] disabled:opacity-60 disabled:cursor-not-allowed transition"
+          className="
+            shrink-0
+            px-3 py-2 sm:px-4
+            rounded-full text-sm font-semibold
+            bg-[#5A3A22] text-white hover:bg-[#4A2F1A]
+            disabled:opacity-60 disabled:cursor-not-allowed transition
+          "
         >
           {sending ? "Enviando..." : "Enviar"}
         </button>
