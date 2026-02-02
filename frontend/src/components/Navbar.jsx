@@ -294,11 +294,9 @@ export default function Navbar() {
     activeMode,
     setMode,
 
-    // ✅ ainda existe (mas agora a criação é via modal deste Navbar)
     requestCreateCaregiverProfile, // mantido por compatibilidade (não usamos mais aqui)
     creatingProfile,
 
-    // ✅ importante para atualizar hasCaregiverProfile após criar
     refreshMe,
   } = useAuth();
 
@@ -326,32 +324,26 @@ export default function Navbar() {
   const chatUnreadCount = chatUnreadIds.length;
   const totalUnread = chatUnreadCount + reservationUnreadCount;
 
-  // ✅ guardas de fetch (evita spam/duplicidade)
   const chatFetchGuardRef = useRef({ inFlight: false, lastAt: 0 });
   const resFetchGuardRef = useRef({ inFlight: false, lastAt: 0 });
 
-  // ✅ helper: avisa a mesma aba (Dashboard já escuta)
   const emitRoleChanged = useCallback((nextRole) => {
     const next = nextRole === "caregiver" ? "caregiver" : "tutor";
     window.dispatchEvent(new CustomEvent("active-role-changed", { detail: { role: next } }));
   }, []);
 
-  // ✅ MODO EFETIVO: vem do activeMode (multi-perfil real)
-  // role NÃO trava mais a UI (exceto admin)
   const effectiveMode = isAdminLike ? "admin" : activeMode || "tutor";
   const isTutor = effectiveMode === "tutor";
   const isCaregiver = effectiveMode === "caregiver";
 
   const canUseBell = !isAdminLike && (isTutor || isCaregiver);
 
-  // Fecha menu ao trocar rota
   useEffect(() => {
     closeMobile();
     setPanelOpen(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname, location.search]);
 
-  // Fecha dropdown ao clicar fora / ESC
   useEffect(() => {
     if (!panelOpen) return;
 
@@ -386,13 +378,6 @@ export default function Navbar() {
     }
   };
 
-  /* ============================================================
-     ✅ FIX PROBLEMA 1:
-     Ao trocar perfil fora do Dashboard, garante que:
-     - setMode roda primeiro
-     - evento é emitido
-     - navegação acontece no próximo tick (evita Dashboard montar com modo antigo)
-     ============================================================ */
   const navigateDashboardAfterMode = useCallback(
     (nextMode) => {
       const m = nextMode === "caregiver" ? "caregiver" : "tutor";
@@ -400,11 +385,9 @@ export default function Navbar() {
       setMode?.(m);
       emitRoleChanged(m);
 
-      // fecha UI imediatamente (pra não ficar “aberto” durante o tick)
       setPanelOpen(false);
       closeMobile();
 
-      // ✅ garante que o estado/context tenha chance de atualizar antes do mount do Dashboard
       try {
         requestAnimationFrame(() => {
           setTimeout(() => {
@@ -412,7 +395,6 @@ export default function Navbar() {
           }, 0);
         });
       } catch {
-        // fallback
         setTimeout(() => {
           navigate("/dashboard?tab=reservas", { replace: false });
         }, 0);
@@ -420,8 +402,6 @@ export default function Navbar() {
     },
     [setMode, emitRoleChanged, navigate]
   );
-
-  /* ================= CHAT (backend-driven) ================= */
 
   const loadUnreadChatFromServer = useCallback(async () => {
     if (!user || !token || isAdminLike) {
@@ -454,8 +434,6 @@ export default function Navbar() {
     }
   }, [user, token, isAdminLike]);
 
-  /* ================= RESERVAS (snapshot + local notifs) ================= */
-
   const loadReservationEventsFromServer = useCallback(async () => {
     if (!user || !token || isAdminLike) {
       setReservationUnreadCount(0);
@@ -475,7 +453,6 @@ export default function Navbar() {
     resFetchGuardRef.current.lastAt = now;
 
     try {
-      // ✅ endpoint depende do activeMode (não do role)
       const endpoint = isCaregiver ? "/reservations/caregiver" : "/reservations/tutor";
 
       const data = await authRequest(endpoint, token);
@@ -496,7 +473,6 @@ export default function Navbar() {
         };
       }
 
-      // ✅ snapshot por MODO REAL (activeMode)
       const snapshotKey = `reservationsSnapshot_${effectiveMode}_${user.id}`;
       let prevMap = null;
 
@@ -553,7 +529,6 @@ export default function Navbar() {
         return c ? c.caregiverRating ?? null : null;
       };
 
-      // -------- eventos por MODE --------
       if (isCaregiver) {
         for (const r of apiRes) {
           const idStr = String(r.id);
@@ -638,8 +613,6 @@ export default function Navbar() {
     }
   }, [user, token, isAdminLike, isTutor, isCaregiver, effectiveMode]);
 
-  /* ================= LISTENERS ================= */
-
   useEffect(() => {
     const handleChatUnreadChanged = (e) => {
       const list = e.detail?.list;
@@ -674,8 +647,6 @@ export default function Navbar() {
     };
   }, [user?.id, loadReservationEventsFromServer]);
 
-  /* ================= FETCH INIT ================= */
-
   useEffect(() => {
     if (!user || !token || isAdminLike) {
       setChatUnreadIds([]);
@@ -686,10 +657,6 @@ export default function Navbar() {
     loadUnreadChatFromServer();
     loadReservationEventsFromServer();
   }, [user?.id, token, isAdminLike, loadUnreadChatFromServer, loadReservationEventsFromServer]);
-
-  /* ============================================================
-     ✅ Polling leve + foco/visibilidade
-     ============================================================ */
 
   useEffect(() => {
     if (!user || !token || isAdminLike) return;
@@ -757,7 +724,6 @@ export default function Navbar() {
     navigateDashboardAfterMode("tutor");
   };
 
-  // ✅ criação com campos (serviços + capacidade) antes de criar o perfil
   const openCreateCaregiverModal = () => {
     setCreateCareOpen(true);
   };
@@ -772,32 +738,24 @@ export default function Navbar() {
 
     setCreateCareLoading(true);
     try {
-      // cria perfil + salva dados
-      // (backend precisará aceitar body { services, daily_capacity })
       await authRequest("/caregivers/me", token, {
         method: "POST",
         body: { services, daily_capacity },
       });
 
-      // preferência: entra no modo cuidador após criar
       setMode?.("caregiver");
       emitRoleChanged("caregiver");
 
-      // sincroniza no contexto (pega hasCaregiverProfile atualizado)
       try {
         await refreshMe?.(token, { preferCaregiver: true });
-      } catch {
-        // best-effort
-      }
+      } catch {}
 
       setCreateCareOpen(false);
 
-      // ✅ navega no próximo tick (mesma lógica do FIX)
       navigateDashboardAfterMode("caregiver");
     } catch (err) {
       console.error("Erro ao criar perfil cuidador com detalhes:", err);
 
-      // fallback: se backend ainda não aceita body, tenta o endpoint antigo (idempotente)
       try {
         await authRequest("/caregivers/me", token, { method: "POST" });
         setMode?.("caregiver");
@@ -809,7 +767,6 @@ export default function Navbar() {
         navigateDashboardAfterMode("caregiver");
       } catch (e2) {
         console.error("Fallback também falhou:", e2);
-        // mantém modal aberto para o usuário tentar de novo / ajustar
       }
     } finally {
       setCreateCareLoading(false);
@@ -822,7 +779,6 @@ export default function Navbar() {
       return;
     }
 
-    // ✅ agora: abre modal com campos obrigatórios
     openCreateCaregiverModal();
     setPanelOpen(false);
     closeMobile();
@@ -971,8 +927,38 @@ export default function Navbar() {
     </div>
   );
 
+  // ✅ MOBILE MENU (somente mobile): sininho ao lado do sanduíche + remove item "Notificações" do dropdown
   const MobileMenu = (
-    <div className="md:hidden">
+    <div className="md:hidden flex items-center gap-2">
+      {/* ✅ Botão de notificações ao lado do menu sanduíche (SOMENTE MOBILE) */}
+      {user && canUseBell && (
+        <button
+          onClick={handleBellClick}
+          className="relative w-10 h-10 rounded-lg bg-[#D2A679] text-[#5A3A22] flex items-center justify-center"
+          title={title}
+          type="button"
+          aria-label="Abrir notificações"
+        >
+          <Bell className="w-5 h-5" />
+
+          {totalUnread > 0 && (
+            <span
+              className="
+                absolute -top-1 -right-1
+                min-w-[1.25rem] h-5 px-1
+                text-[10px] font-bold
+                rounded-full bg-red-600 text-white
+                flex items-center justify-center
+              "
+              aria-label={`${totalUnread} notificações`}
+            >
+              {totalUnread}
+            </span>
+          )}
+        </button>
+      )}
+
+      {/* ✅ Botão sanduíche */}
       <button
         type="button"
         onClick={() => setMobileOpen((v) => !v)}
@@ -1048,22 +1034,7 @@ export default function Navbar() {
               </Link>
             )}
 
-            {user && (
-              <button
-                onClick={handleBellClick}
-                className="relative w-full rounded-lg bg-[#D2A679] text-[#5A3A22] py-2 font-semibold flex items-center justify-center gap-2"
-                title={title}
-                type="button"
-              >
-                <Bell className="w-5 h-5" />
-                Notificações
-                {canUseBell && totalUnread > 0 && (
-                  <span className="ml-2 min-w-[1.5rem] h-5 px-2 text-[11px] font-bold rounded-full bg-red-600 text-white flex items-center justify-center">
-                    {totalUnread}
-                  </span>
-                )}
-              </button>
-            )}
+            {/* ✅ REMOVIDO: botão "Notificações" de dentro do menu (fica somente ao lado do sanduíche) */}
 
             {!user ? (
               <Link
@@ -1110,7 +1081,6 @@ export default function Navbar() {
         {MobileMenu}
       </nav>
 
-      {/* ✅ Novo modal de criação com campos obrigatórios */}
       <CreateCaregiverProfileModal
         open={createCareOpen}
         loading={createCareLoading}
