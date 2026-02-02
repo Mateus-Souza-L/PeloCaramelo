@@ -6,7 +6,10 @@ import { Instagram, Mail } from "lucide-react";
 import { useToast } from "../components/ToastProvider";
 import { trackEvent } from "../utils/analytics";
 
-const API_BASE_URL = (import.meta.env.VITE_API_URL || "http://localhost:4000").replace(/\/+$/, "");
+const API_BASE_URL = (import.meta.env.VITE_API_URL || "http://localhost:4000").replace(
+  /\/+$/,
+  ""
+);
 
 const BRAND_UTM = "utm_source=pelocaramelo&utm_medium=cta&utm_campaign=comportamento";
 const WHATSAPP_NUMBER = "5531994009734"; // ✅ troque aqui depois
@@ -59,6 +62,33 @@ export default function ComportamentoAnimal() {
 
   const [sendingLead, setSendingLead] = useState(false);
 
+  // ✅ Opção C (profissional): formulário controlado por state
+  const initialLeadForm = useMemo(
+    () => ({
+      nome: "",
+      email: "",
+      empresa: "",
+      cidade: "",
+      publico: "",
+      tamanho: "",
+      formato: "Presencial",
+      duracao: "",
+      tema: "",
+      mensagem: "",
+    }),
+    []
+  );
+
+  const [leadForm, setLeadForm] = useState(initialLeadForm);
+
+  function updateLeadField(name, value) {
+    setLeadForm((prev) => ({ ...prev, [name]: value }));
+  }
+
+  function resetLeadForm() {
+    setLeadForm(initialLeadForm);
+  }
+
   // ✅ SEO (title já existia) + description + canonical
   useEffect(() => {
     document.title = "PeloCaramelo | Comportamento Animal";
@@ -99,7 +129,12 @@ export default function ComportamentoAnimal() {
           "@type": "BreadcrumbList",
           itemListElement: [
             { "@type": "ListItem", position: 1, name: "Início", item: `${origin}/` },
-            { "@type": "ListItem", position: 2, name: "Comportamento Animal", item: `${origin}/comportamento` },
+            {
+              "@type": "ListItem",
+              position: 2,
+              name: "Comportamento Animal",
+              item: `${origin}/comportamento`,
+            },
           ],
         },
         {
@@ -128,7 +163,11 @@ export default function ComportamentoAnimal() {
       if (hash) {
         const el = document.getElementById(hash);
         if (el) {
-          const top = el.getBoundingClientRect().top + window.scrollY - NAVBAR_OFFSET + EXTRA_SCROLL;
+          const top =
+            el.getBoundingClientRect().top +
+            window.scrollY -
+            NAVBAR_OFFSET +
+            EXTRA_SCROLL;
           window.scrollTo({ top: Math.max(top, 0), behavior: "smooth" });
           return;
         }
@@ -179,31 +218,40 @@ export default function ComportamentoAnimal() {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
   }
 
-  // ✅ Envia pro backend (sem mailto)
+  // ✅ Envia pro backend (sem mailto) — agora usando leadForm (state)
   const handleSubmitLead = async (e) => {
     e.preventDefault();
     if (sendingLead) return;
 
-    const data = new FormData(e.currentTarget);
-
     const payload = {
-      nome: String(data.get("nome") || "").trim(),
-      email: String(data.get("email") || "").trim(),
-      empresa: String(data.get("empresa") || "").trim(),
-      cidade: String(data.get("cidade") || "").trim(),
-      publico: String(data.get("publico") || "").trim(),
-      tamanho: String(data.get("tamanho") || "").trim(),
-      formato: String(data.get("formato") || "Presencial").trim(),
-      duracao: String(data.get("duracao") || "").trim(),
-      tema: String(data.get("tema") || "").trim(),
-      mensagem: String(data.get("mensagem") || "").trim(),
+      nome: String(leadForm.nome || "").trim(),
+      email: String(leadForm.email || "").trim(),
+      empresa: String(leadForm.empresa || "").trim(),
+      cidade: String(leadForm.cidade || "").trim(),
+      publico: String(leadForm.publico || "").trim(),
+      tamanho: String(leadForm.tamanho || "").trim(),
+      formato: String(leadForm.formato || "Presencial").trim(),
+      duracao: String(leadForm.duracao || "").trim(),
+      tema: String(leadForm.tema || "").trim(),
+      mensagem: String(leadForm.mensagem || "").trim(),
       page: "comportamento",
       utm: BRAND_UTM,
       createdAt: new Date().toISOString(),
     };
 
     // ✅ todos obrigatórios
-    const requiredKeys = ["nome", "email", "empresa", "cidade", "publico", "tamanho", "formato", "duracao", "tema", "mensagem"];
+    const requiredKeys = [
+      "nome",
+      "email",
+      "empresa",
+      "cidade",
+      "publico",
+      "tamanho",
+      "formato",
+      "duracao",
+      "tema",
+      "mensagem",
+    ];
     const missing = requiredKeys.filter((k) => !String(payload[k] || "").trim());
 
     if (missing.length) {
@@ -220,7 +268,10 @@ export default function ComportamentoAnimal() {
     try {
       const lead = { id: Date.now(), ...payload };
       const leads = safeJsonParse(localStorage.getItem("leads_palestras") || "[]", []);
-      localStorage.setItem("leads_palestras", JSON.stringify([...(Array.isArray(leads) ? leads : []), lead]));
+      localStorage.setItem(
+        "leads_palestras",
+        JSON.stringify([...(Array.isArray(leads) ? leads : []), lead])
+      );
     } catch {
       // ignore
     }
@@ -237,19 +288,22 @@ export default function ComportamentoAnimal() {
       });
 
       if (!resp.ok) {
+        // backend pode responder { error } ou { message }
         let msg = "Não foi possível enviar agora. Tente novamente.";
         try {
           const j = await resp.json();
           if (j?.message) msg = String(j.message);
+          if (j?.error) msg = String(j.error);
         } catch {
           // ignore
         }
         throw new Error(msg);
       }
 
+      // ✅ sucesso: limpa formulário via state (sem reset em DOM)
+      resetLeadForm();
       setOpenPalestra(false);
       showToast("Pedido de orçamento enviado com sucesso! ✅", "success");
-      e.currentTarget.reset();
     } catch (err) {
       console.error("Erro ao enviar lead de palestra:", err);
       showToast(err?.message || "Erro ao enviar pedido. Tente novamente.", "error");
@@ -261,11 +315,18 @@ export default function ComportamentoAnimal() {
   return (
     <div className="bg-[#EBCBA9] min-h-screen text-[#5A3A22]">
       {/* ✅ SEO Structured Data */}
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schemaJsonLd) }} />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(schemaJsonLd) }}
+      />
 
       {/* HERO */}
       <section className="relative text-white text-center overflow-hidden">
-        <img src="/images/hero-comportamento.jpg" alt="Tutor acariciando um cachorro" className="w-full h-[82vh] object-cover" />
+        <img
+          src="/images/hero-comportamento.jpg"
+          alt="Tutor acariciando um cachorro"
+          className="w-full h-[82vh] object-cover"
+        />
         <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-black/25 to-transparent" />
 
         <div className="absolute inset-0 flex flex-col justify-center items-center px-4">
@@ -419,9 +480,7 @@ export default function ComportamentoAnimal() {
               })}
               target="_blank"
               rel="noreferrer"
-              onClick={() =>
-                trackEvent("click_specialist_whatsapp", { page: "comportamento", position: "perfil" })
-              }
+              onClick={() => trackEvent("click_specialist_whatsapp", { page: "comportamento", position: "perfil" })}
               className="
                 inline-flex items-center justify-center gap-2
                 bg-[#25D366] hover:brightness-105 text-[#0b2a14]
@@ -470,7 +529,9 @@ export default function ComportamentoAnimal() {
           className="max-w-[1400px] mx-auto bg-white rounded-2xl shadow p-6 md:p-8 border-l-4 border-[#D2A679] grid md:grid-cols-2 gap-6"
         >
           <div>
-            <h4 className="text-lg font-semibold mb-2 flex items-center gap-2">Quando procurar uma consulta comportamental? 🐾</h4>
+            <h4 className="text-lg font-semibold mb-2 flex items-center gap-2">
+              Quando procurar uma consulta comportamental? 🐾
+            </h4>
             <ul className="list-disc pl-5 space-y-1 text-sm md:text-base leading-relaxed">
               <li>Medo excessivo, insegurança ou dificuldade de adaptação.</li>
               <li>Latidos, destruição ou agitação fora do normal.</li>
@@ -480,7 +541,9 @@ export default function ComportamentoAnimal() {
           </div>
 
           <div>
-            <h4 className="text-lg font-semibold mb-2 flex items-center gap-2">O que você pode esperar do atendimento 💬</h4>
+            <h4 className="text-lg font-semibold mb-2 flex items-center gap-2">
+              O que você pode esperar do atendimento 💬
+            </h4>
             <ul className="list-disc pl-5 space-y-1 text-sm md:text-base leading-relaxed">
               <li>Escuta atenta da história do pet e da família.</li>
               <li>Explicações claras sobre o comportamento observado.</li>
@@ -543,7 +606,9 @@ export default function ComportamentoAnimal() {
         <div className="max-w-[1400px] mx-auto rounded-2xl bg-[#5A3A22] text-white p-6 md:p-8 shadow-lg flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <p className="text-lg md:text-xl font-extrabold">Quer ajuda com o comportamento do seu pet?</p>
-            <p className="text-sm text-white/85 mt-1">Clique e fale com a especialista no WhatsApp. Mensagem pronta e rastreável.</p>
+            <p className="text-sm text-white/85 mt-1">
+              Clique e fale com a especialista no WhatsApp. Mensagem pronta e rastreável.
+            </p>
           </div>
 
           <a
@@ -614,24 +679,87 @@ export default function ComportamentoAnimal() {
               </div>
 
               <form onSubmit={handleSubmitLead} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <input name="nome" placeholder="Nome completo *" className="input" required />
-                <input name="email" type="email" placeholder="E-mail *" className="input" required />
+                <input
+                  name="nome"
+                  placeholder="Nome completo *"
+                  className="input"
+                  required
+                  value={leadForm.nome}
+                  onChange={(e) => updateLeadField("nome", e.target.value)}
+                />
+                <input
+                  name="email"
+                  type="email"
+                  placeholder="E-mail *"
+                  className="input"
+                  required
+                  value={leadForm.email}
+                  onChange={(e) => updateLeadField("email", e.target.value)}
+                />
 
-                <input name="empresa" placeholder="Empresa / Instituição *" className="input" required />
-                <input name="cidade" placeholder="Cidade / Estado *" className="input" required />
+                <input
+                  name="empresa"
+                  placeholder="Empresa / Instituição *"
+                  className="input"
+                  required
+                  value={leadForm.empresa}
+                  onChange={(e) => updateLeadField("empresa", e.target.value)}
+                />
+                <input
+                  name="cidade"
+                  placeholder="Cidade / Estado *"
+                  className="input"
+                  required
+                  value={leadForm.cidade}
+                  onChange={(e) => updateLeadField("cidade", e.target.value)}
+                />
 
-                <input name="publico" placeholder="Público-alvo *" className="input sm:col-span-2" required />
+                <input
+                  name="publico"
+                  placeholder="Público-alvo *"
+                  className="input sm:col-span-2"
+                  required
+                  value={leadForm.publico}
+                  onChange={(e) => updateLeadField("publico", e.target.value)}
+                />
 
-                <input name="tamanho" placeholder="Tamanho do público *" className="input" required />
-                <input name="duracao" placeholder="Duração desejada *" className="input" required />
+                <input
+                  name="tamanho"
+                  placeholder="Tamanho do público *"
+                  className="input"
+                  required
+                  value={leadForm.tamanho}
+                  onChange={(e) => updateLeadField("tamanho", e.target.value)}
+                />
+                <input
+                  name="duracao"
+                  placeholder="Duração desejada *"
+                  className="input"
+                  required
+                  value={leadForm.duracao}
+                  onChange={(e) => updateLeadField("duracao", e.target.value)}
+                />
 
-                <select name="formato" className="input" required defaultValue="Presencial">
+                <select
+                  name="formato"
+                  className="input"
+                  required
+                  value={leadForm.formato}
+                  onChange={(e) => updateLeadField("formato", e.target.value)}
+                >
                   <option value="Presencial">Presencial</option>
                   <option value="Online">Online</option>
                   <option value="Híbrido">Híbrido</option>
                 </select>
 
-                <input name="tema" placeholder="Tema principal *" className="input sm:col-span-2" required />
+                <input
+                  name="tema"
+                  placeholder="Tema principal *"
+                  className="input sm:col-span-2"
+                  required
+                  value={leadForm.tema}
+                  onChange={(e) => updateLeadField("tema", e.target.value)}
+                />
 
                 <textarea
                   name="mensagem"
@@ -639,6 +767,8 @@ export default function ComportamentoAnimal() {
                   placeholder="Observações / mensagem *"
                   className="textarea sm:col-span-2"
                   required
+                  value={leadForm.mensagem}
+                  onChange={(e) => updateLeadField("mensagem", e.target.value)}
                 />
 
                 <div className="sm:col-span-2 flex flex-col sm:flex-row sm:justify-end gap-3 mt-2">
@@ -675,9 +805,9 @@ export default function ComportamentoAnimal() {
                 </div>
               </form>
 
+              {/* ✅ Texto atualizado (Opção 2) */}
               <p className="mt-4 text-[12px] text-[#5A3A22]/70 leading-relaxed">
-                Ao enviar, vamos disparar seu pedido para <span className="font-semibold">contato@pelocaramelo.com.br</span>.
-                Também salvamos uma cópia local em <span className="font-semibold">localStorage</span> (leads_palestras).
+                Nossa equipe analisará sua solicitação e retornará com a proposta de orçamento o mais breve possível.
               </p>
             </motion.div>
           </motion.div>
