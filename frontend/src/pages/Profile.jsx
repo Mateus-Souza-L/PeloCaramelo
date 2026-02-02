@@ -6,6 +6,7 @@ import { useToast } from "../components/ToastProvider";
 import { authRequest } from "../services/api";
 
 const DEFAULT_IMG = "/paw.png";
+const DEFAULT_DAILY_CAPACITY = 15;
 
 const EMPTY_SERVICES = {
   hospedagem: false,
@@ -29,19 +30,28 @@ const SERVICE_LABELS = {
   passeios: "Passeios",
 };
 
-const DEFAULT_DAILY_CAPACITY = 15;
-
 const maskCep = (raw) => {
-  const d = String(raw || "")
-    .replace(/\D/g, "")
-    .slice(0, 8);
+  const d = String(raw || "").replace(/\D/g, "").slice(0, 8);
   if (d.length <= 5) return d;
   return `${d.slice(0, 5)}-${d.slice(5)}`;
 };
 
-function safeNumberOr(v, fallback) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : fallback;
+// aceita "10,50" e "10.50" e retorna string normalizada "10.50"
+function normalizeMoneyString(v) {
+  if (v == null) return "";
+  const s = String(v).trim();
+  if (!s) return "";
+  // remove tudo exceto dígitos, vírgula, ponto
+  const cleaned = s.replace(/[^\d.,]/g, "");
+  if (!cleaned) return "";
+  // se tiver vírgula e ponto, assume ponto como milhar e vírgula decimal: "1.234,56"
+  if (cleaned.includes(",") && cleaned.includes(".")) {
+    const noThousands = cleaned.replace(/\./g, "");
+    return noThousands.replace(",", ".");
+  }
+  // se só vírgula: "10,5"
+  if (cleaned.includes(",")) return cleaned.replace(",", ".");
+  return cleaned;
 }
 
 const buildFormFromUser = (user) => {
@@ -59,9 +69,9 @@ const buildFormFromUser = (user) => {
       newPassword: "",
       services: { ...EMPTY_SERVICES },
       prices: { ...EMPTY_PRICES },
+      daily_capacity: DEFAULT_DAILY_CAPACITY,
       courses: [],
       newCourse: "",
-      dailyCapacity: DEFAULT_DAILY_CAPACITY,
     };
   }
 
@@ -70,16 +80,12 @@ const buildFormFromUser = (user) => {
   const rawPrices = user.prices;
 
   const safeServices =
-    rawServices && !Array.isArray(rawServices) && typeof rawServices === "object"
-      ? rawServices
-      : {};
+    rawServices && !Array.isArray(rawServices) && typeof rawServices === "object" ? rawServices : {};
 
   const safePrices =
     rawPrices && !Array.isArray(rawPrices) && typeof rawPrices === "object" ? rawPrices : {};
 
-  // daily_capacity pode vir como daily_capacity, dailyCapacity etc.
-  const rawDaily =
-    user.daily_capacity ?? user.dailyCapacity ?? user.dailyCapacityPerDay ?? user.daily_capacity_per_day;
+  const capNum = Number(user.daily_capacity ?? user.dailyCapacity ?? DEFAULT_DAILY_CAPACITY);
 
   return {
     name: user.name ?? "",
@@ -94,19 +100,17 @@ const buildFormFromUser = (user) => {
     newPassword: "",
     services: { ...EMPTY_SERVICES, ...safeServices },
     prices: { ...EMPTY_PRICES, ...safePrices },
+    daily_capacity: Number.isFinite(capNum) && capNum > 0 ? capNum : DEFAULT_DAILY_CAPACITY,
     courses: Array.isArray(user.courses) ? user.courses : [],
     newCourse: "",
-    dailyCapacity: safeNumberOr(rawDaily, DEFAULT_DAILY_CAPACITY),
   };
 };
 
-// média de reputação para o usuário logado (agora pelo MODO ativo)
-const getAvgRating = (user, reservations, mode) => {
+// média de reputação para o usuário logado
+const getAvgRating = (mode, user, reservations) => {
   if (!user || !reservations.length) return null;
 
-  const effectiveMode = String(mode || "").toLowerCase() === "caregiver" ? "caregiver" : "tutor";
-
-  if (effectiveMode === "tutor") {
+  if (mode === "tutor") {
     const ratings = reservations
       .filter((r) => String(r.tutorId) === String(user.id) && typeof r.caregiverRating === "number")
       .map((r) => r.caregiverRating);
@@ -114,7 +118,7 @@ const getAvgRating = (user, reservations, mode) => {
     return (ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1);
   }
 
-  if (effectiveMode === "caregiver") {
+  if (mode === "caregiver") {
     const ratings = reservations
       .filter((r) => String(r.caregiverId) === String(user.id) && typeof r.tutorRating === "number")
       .map((r) => r.tutorRating);
@@ -189,11 +193,12 @@ export default function Profile() {
   const [reservations, setReservations] = useState([]);
 
   const roleLower = String(user?.role || "").toLowerCase().trim();
-  const isAdminLike = roleLower === "admin" || roleLower === "admin_master";
-  const canEditName = roleLower === "admin_master"; // ✅ só admin_master pode editar nome
+  const isAdminMaster = roleLower === "admin_master";
+  const canEditName = isAdminMaster;
 
-  // ✅ modo cuidador REAL (multi-perfil): activeMode + hasCaregiverProfile
-  const isCaregiverMode = !isAdminLike && activeMode === "caregiver" && hasCaregiverProfile === true;
+  // ✅ multi-perfil: cuidador é pelo MODO, não pelo role
+  const isCaregiver = activeMode === "caregiver" && Boolean(hasCaregiverProfile);
+  const modeForAvg = isCaregiver ? "caregiver" : "tutor";
 
   // ao ter token, sempre buscar /users/me para trazer o usuário COMPLETO do backend
   useEffect(() => {
@@ -238,8 +243,8 @@ export default function Profile() {
   }, []);
 
   const avgRating = useMemo(
-    () => getAvgRating(user, reservations, isCaregiverMode ? "caregiver" : "tutor"),
-    [user, reservations, isCaregiverMode]
+    () => getAvgRating(modeForAvg, user, reservations),
+    [modeForAvg, user, reservations]
   );
 
   const handleChange = (field, value) => setForm((f) => ({ ...f, [field]: value }));
@@ -256,6 +261,8 @@ export default function Profile() {
     setForm((f) => ({
       ...f,
       services: { ...f.services, [key]: !f.services[key] },
+      // se desmarcar, limpa o preço também (opcional, mas ajuda)
+      prices: f.services?.[key] ? { ...f.prices, [key]: "" } : { ...f.prices },
     }));
 
   const addCourse = () => {
@@ -326,10 +333,6 @@ export default function Profile() {
     setShowConfirmModal(true);
   };
 
-  function countSelectedServices(sv = {}) {
-    return Object.keys(EMPTY_SERVICES).filter((k) => Boolean(sv?.[k])).length;
-  }
-
   // Salvar perfil (backend + fallback localStorage)
   const confirmSave = async () => {
     if (!user) return;
@@ -339,21 +342,6 @@ export default function Profile() {
       if (passwordConfirm !== user.password) {
         showToast("Senha incorreta. Alterações não salvas.", "error");
         setPasswordConfirm("");
-        return;
-      }
-    }
-
-    // validações do modo cuidador (multi-perfil real)
-    if (isCaregiverMode) {
-      const selected = countSelectedServices(form.services);
-      if (selected <= 0) {
-        showToast("Selecione pelo menos 1 serviço para o perfil de cuidador.", "error");
-        return;
-      }
-
-      const cap = safeNumberOr(form.dailyCapacity, DEFAULT_DAILY_CAPACITY);
-      if (!Number.isFinite(cap) || cap <= 0) {
-        showToast("Capacidade diária inválida. Use um número maior que 0.", "error");
         return;
       }
     }
@@ -378,8 +366,8 @@ export default function Profile() {
         payload.name = String(restForm.name || "").trim() || null;
       }
 
-      // ✅ Agora: usa o MODO ATIVO + hasCaregiverProfile (não user.role)
-      if (isCaregiverMode) {
+      // ✅ multi-perfil: se o modo ativo é cuidador, envia campos de cuidador
+      if (isCaregiver) {
         // 🔹 Sanitiza services: só serviços TRUE
         const cleanServices = {};
         for (const key of Object.keys(restForm.services || {})) {
@@ -389,20 +377,21 @@ export default function Profile() {
         // 🔹 Sanitiza prices: só valores preenchidos e numéricos
         const cleanPrices = {};
         for (const key of Object.keys(restForm.prices || {})) {
-          const val = restForm.prices[key];
-          const str = val == null ? "" : String(val).trim();
-          if (!str) continue;
+          const raw = restForm.prices[key];
+          const norm = normalizeMoneyString(raw);
+          if (!norm) continue;
 
-          const num = Number(str.replace(",", "."));
-          if (!Number.isFinite(num)) continue;
-
-          cleanPrices[key] = String(str).replace(",", ".");
+          const n = Number(norm);
+          if (Number.isFinite(n) && n >= 0) cleanPrices[key] = String(norm);
         }
+
+        const cap = Number(restForm.daily_capacity);
+        payload.daily_capacity =
+          Number.isFinite(cap) && cap > 0 ? Math.floor(cap) : DEFAULT_DAILY_CAPACITY;
 
         payload.services = cleanServices;
         payload.prices = cleanPrices;
         payload.courses = Array.isArray(restForm.courses) ? restForm.courses : [];
-        payload.daily_capacity = safeNumberOr(restForm.dailyCapacity, DEFAULT_DAILY_CAPACITY);
       }
 
       try {
@@ -416,7 +405,9 @@ export default function Profile() {
           : {
               ...user,
               ...restForm,
+              // ✅ garante email
               email: user.email,
+              // ✅ garante nome se não for admin_master
               name: canEditName ? restForm.name : user.name,
             };
 
@@ -513,7 +504,7 @@ export default function Profile() {
         {/* VISUALIZAÇÃO */}
         {!editing ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-[#5A3A22]">
-            {/* Coluna esquerda: avatar + nome + média + bio */}
+            {/* Coluna esquerda */}
             <div className="md:col-span-1 flex flex-col items-center gap-2">
               <img
                 src={form.image || DEFAULT_IMG}
@@ -522,9 +513,7 @@ export default function Profile() {
               />
               <p className="text-lg font-semibold flex items-center gap-2">
                 <span>{form.name}</span>
-                {avgRating && (
-                  <span className="text-sm font-normal text-[#5A3A22]">⭐ {avgRating}</span>
-                )}
+                {avgRating && <span className="text-sm font-normal text-[#5A3A22]">⭐ {avgRating}</span>}
               </p>
               <p className="text-sm opacity-90">{form.email}</p>
               {form.bio && <p className="text-sm mt-2 text-center whitespace-pre-line">{form.bio}</p>}
@@ -536,14 +525,14 @@ export default function Profile() {
               </button>
             </div>
 
-            {/* Coluna meio: localização + cursos (se cuidador MODE) */}
+            {/* Coluna meio */}
             <div className="md:col-span-1 space-y-2">
               <h3 className="font-semibold">Localização</h3>
               {form.neighborhood && <p>Bairro: {form.neighborhood}</p>}
               {form.city && <p>Cidade: {form.city}</p>}
               <p className="text-sm opacity-75">(Endereço completo só é exibido após reserva confirmada.)</p>
 
-              {isCaregiverMode && (
+              {isCaregiver && (
                 <>
                   <h3 className="font-semibold mt-4">Cursos</h3>
                   {form.courses.length ? (
@@ -555,19 +544,19 @@ export default function Profile() {
                   ) : (
                     <p className="text-sm">Nenhum curso cadastrado.</p>
                   )}
+
+                  <h3 className="font-semibold mt-4">Capacidade diária</h3>
+                  <p className="text-sm">
+                    {Number(form.daily_capacity) || DEFAULT_DAILY_CAPACITY} reserva(s) por dia
+                  </p>
                 </>
               )}
             </div>
 
-            {/* Coluna direita: serviços (se cuidador MODE) */}
-            {isCaregiverMode && (
+            {/* Coluna direita */}
+            {isCaregiver && (
               <div className="md:col-span-1">
                 <h3 className="font-semibold">Serviços</h3>
-
-                <p className="text-sm opacity-80 mb-2">
-                  Capacidade diária: <span className="font-semibold">{safeNumberOr(form.dailyCapacity, DEFAULT_DAILY_CAPACITY)}</span>
-                </p>
-
                 <ul className="list-disc pl-5 text-sm">
                   {Object.keys(EMPTY_SERVICES).filter((k) => form.services[k]).length ? (
                     Object.keys(EMPTY_SERVICES)
@@ -575,11 +564,8 @@ export default function Profile() {
                       .map((k) => (
                         <li key={k}>
                           {SERVICE_LABELS[k] || k} —{" "}
-                          {form.prices[k] !== "" &&
-                          form.prices[k] !== null &&
-                          form.prices[k] !== undefined &&
-                          !Number.isNaN(Number(String(form.prices[k]).replace(",", ".")))
-                            ? `R$ ${Number(String(form.prices[k]).replace(",", ".")).toFixed(2)}`
+                          {form.prices[k] !== "" && form.prices[k] != null
+                            ? `R$ ${Number(normalizeMoneyString(form.prices[k]) || 0).toFixed(2)}`
                             : "sem preço"}
                         </li>
                       ))
@@ -593,9 +579,8 @@ export default function Profile() {
         ) : (
           // EDIÇÃO
           <div className="space-y-6 text-[#5A3A22]">
-            {/* Avatar + campos básicos */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {/* BLOCO DA FOTO MAIS DESTACADO */}
+              {/* FOTO */}
               <div className="flex flex-col items-center gap-3 bg-[#FFF8F0] rounded-2xl p-4 shadow-sm">
                 <label htmlFor="img" className="cursor-pointer">
                   <div className="w-32 h-32 md:w-40 md:h-40 rounded-full overflow-hidden border-4 border-[#FFD700] shadow">
@@ -618,9 +603,8 @@ export default function Profile() {
                 </label>
               </div>
 
-              {/* CAMPOS TEXTO */}
+              {/* CAMPOS */}
               <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-3">
-                {/* Nome (admin_master pode editar) */}
                 <div>
                   <input
                     value={form.name}
@@ -633,13 +617,10 @@ export default function Profile() {
                     aria-readonly={!canEditName ? "true" : "false"}
                   />
                   <p className="text-xs text-gray-500 mt-1">
-                    {canEditName
-                      ? "Você é admin master: pode alterar o nome para diferenciar admins criados."
-                      : "Apenas o admin master pode alterar o nome."}
+                    {canEditName ? "Você é admin master: pode alterar o nome." : "Apenas o admin master pode alterar o nome."}
                   </p>
                 </div>
 
-                {/* E-mail (somente leitura) */}
                 <div>
                   <input
                     value={form.email}
@@ -651,7 +632,6 @@ export default function Profile() {
                   <p className="text-xs text-gray-500 mt-1">O e-mail de acesso não pode ser alterado aqui.</p>
                 </div>
 
-                {/* Telefone */}
                 <input
                   value={form.phone}
                   onChange={(e) => handleChange("phone", e.target.value)}
@@ -659,7 +639,6 @@ export default function Profile() {
                   className="w-full border p-2 rounded-lg"
                 />
 
-                {/* CEP + botão */}
                 <div className="flex gap-2">
                   <input
                     value={maskCep(form.cep)}
@@ -711,57 +690,58 @@ export default function Profile() {
               </div>
             </div>
 
-            {/* Serviços + cursos + capacidade (cuidador MODE) */}
-            {isCaregiverMode && (
+            {/* Serviços + cursos (cuidador) */}
+            {isCaregiver && (
               <>
                 <div className="border rounded-lg p-4 bg-[#FFF6CC]/50">
                   <h3 className="font-semibold mb-2 text-[#5A3A22]">Serviços, Preços e Capacidade</h3>
 
-                  {/* capacidade diária */}
                   <div className="mb-4">
-                    <label className="block font-semibold mb-1">Quantas reservas por dia você aceita?</label>
+                    <label className="block font-semibold mb-1">
+                      Quantas reservas por dia você aceita?
+                    </label>
                     <input
                       type="number"
                       min="1"
                       step="1"
-                      value={String(form.dailyCapacity ?? "")}
+                      value={form.daily_capacity}
                       onChange={(e) => {
-                        const v = e.target.value;
-                        setForm((f) => ({
-                          ...f,
-                          dailyCapacity: v === "" ? "" : Number(v),
-                        }));
+                        const v = Number(e.target.value);
+                        handleChange(
+                          "daily_capacity",
+                          Number.isFinite(v) && v > 0 ? Math.floor(v) : DEFAULT_DAILY_CAPACITY
+                        );
                       }}
-                      className="w-full md:w-[240px] border rounded-lg p-2"
-                      placeholder="Ex: 10"
-                      inputMode="numeric"
+                      className="w-full max-w-[280px] border p-2 rounded-lg"
                     />
                     <p className="text-xs text-[#5A3A22]/70 mt-1">
                       Isso ajuda a limitar sua agenda automaticamente.
                     </p>
                   </div>
 
-                  {/* serviços e preços */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {Object.keys(EMPTY_SERVICES).map((key) => (
                       <div key={key} className="flex items-center gap-2">
-                        <input type="checkbox" checked={form.services[key]} onChange={() => toggleService(key)} />
+                        <input
+                          type="checkbox"
+                          checked={Boolean(form.services?.[key])}
+                          onChange={() => toggleService(key)}
+                        />
                         <span className="capitalize">{SERVICE_LABELS[key] || key}</span>
-                        {form.services[key] && (
+
+                        {form.services?.[key] && (
                           <input
-                            type="number"
-                            min="0"
-                            step="0.01"
+                            type="text"
+                            inputMode="decimal"
                             placeholder="Preço (R$)"
-                            value={form.prices[key]}
+                            value={form.prices?.[key] ?? ""}
                             onChange={(e) =>
                               setForm((f) => ({
                                 ...f,
-                                prices: { ...f.prices, [key]: e.target.value },
+                                prices: { ...(f.prices || {}), [key]: e.target.value },
                               }))
                             }
-                            className="ml-auto border rounded p-1 w-32"
-                            inputMode="decimal"
+                            className="ml-auto border rounded p-2 w-40"
                           />
                         )}
                       </div>
