@@ -386,6 +386,41 @@ export default function Navbar() {
     }
   };
 
+  /* ============================================================
+     ✅ FIX PROBLEMA 1:
+     Ao trocar perfil fora do Dashboard, garante que:
+     - setMode roda primeiro
+     - evento é emitido
+     - navegação acontece no próximo tick (evita Dashboard montar com modo antigo)
+     ============================================================ */
+  const navigateDashboardAfterMode = useCallback(
+    (nextMode) => {
+      const m = nextMode === "caregiver" ? "caregiver" : "tutor";
+
+      setMode?.(m);
+      emitRoleChanged(m);
+
+      // fecha UI imediatamente (pra não ficar “aberto” durante o tick)
+      setPanelOpen(false);
+      closeMobile();
+
+      // ✅ garante que o estado/context tenha chance de atualizar antes do mount do Dashboard
+      try {
+        requestAnimationFrame(() => {
+          setTimeout(() => {
+            navigate("/dashboard?tab=reservas", { replace: false });
+          }, 0);
+        });
+      } catch {
+        // fallback
+        setTimeout(() => {
+          navigate("/dashboard?tab=reservas", { replace: false });
+        }, 0);
+      }
+    },
+    [setMode, emitRoleChanged, navigate]
+  );
+
   /* ================= CHAT (backend-driven) ================= */
 
   const loadUnreadChatFromServer = useCallback(async () => {
@@ -719,11 +754,7 @@ export default function Navbar() {
   };
 
   const switchToTutor = () => {
-    setMode?.("tutor");
-    emitRoleChanged("tutor");
-    navigate("/dashboard?tab=reservas", { replace: false });
-    setPanelOpen(false);
-    closeMobile();
+    navigateDashboardAfterMode("tutor");
   };
 
   // ✅ criação com campos (serviços + capacidade) antes de criar o perfil
@@ -761,10 +792,8 @@ export default function Navbar() {
 
       setCreateCareOpen(false);
 
-      // abre painel já no cuidador
-      navigate("/dashboard?tab=reservas", { replace: false });
-      setPanelOpen(false);
-      closeMobile();
+      // ✅ navega no próximo tick (mesma lógica do FIX)
+      navigateDashboardAfterMode("caregiver");
     } catch (err) {
       console.error("Erro ao criar perfil cuidador com detalhes:", err);
 
@@ -777,7 +806,7 @@ export default function Navbar() {
           await refreshMe?.(token, { preferCaregiver: true });
         } catch {}
         setCreateCareOpen(false);
-        navigate("/dashboard?tab=reservas", { replace: false });
+        navigateDashboardAfterMode("caregiver");
       } catch (e2) {
         console.error("Fallback também falhou:", e2);
         // mantém modal aberto para o usuário tentar de novo / ajustar
@@ -789,11 +818,7 @@ export default function Navbar() {
 
   const switchToCaregiver = () => {
     if (hasCaregiverProfile) {
-      setMode?.("caregiver");
-      emitRoleChanged("caregiver");
-      navigate("/dashboard?tab=reservas", { replace: false });
-      setPanelOpen(false);
-      closeMobile();
+      navigateDashboardAfterMode("caregiver");
       return;
     }
 
