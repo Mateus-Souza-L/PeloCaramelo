@@ -11,7 +11,7 @@ function useQuery() {
   return useMemo(() => new URLSearchParams(search), [search]);
 }
 
-// ✅ senha forte: min 8, pelo menos 1 letra e 1 número
+// ✅ senha forte: min 8, letras + números
 function isStrongPassword(pw) {
   const s = String(pw || "");
   return /^(?=.*[A-Za-z])(?=.*\d).{8,}$/.test(s);
@@ -33,7 +33,8 @@ export default function Register() {
     name: "",
     email: "",
     phone: "",
-    city: "",
+    city: "", // ✅ obrigatório
+    neighborhood: "", // ✅ obrigatório
     address: "",
     password: "",
     confirm: "",
@@ -46,6 +47,8 @@ export default function Register() {
 
   const nameRef = useRef(null);
   const emailRef = useRef(null);
+  const cityRef = useRef(null);
+  const neighborhoodRef = useRef(null);
   const hasFocusedOnce = useRef(false);
 
   useEffect(() => {
@@ -77,41 +80,58 @@ export default function Register() {
 
     const n = form.name.trim();
     const em = form.email.trim().toLowerCase();
-    const pw = form.password; // (não trim) — usuário pode querer espaço, mas regra já cobre
-    const cf = form.confirm;
+    const pw = form.password.trim();
+    const cf = form.confirm.trim();
+
+    const city = form.city.trim();
+    const neighborhood = form.neighborhood.trim();
 
     if (!role) return showToast("Escolha um perfil para continuar.", "error");
-    if (!n || !em || !pw || !cf)
+
+    // ✅ obrigatórios (agora inclui city + neighborhood)
+    if (!n || !em || !pw || !cf || !city || !neighborhood) {
+      // foca no primeiro faltante
+      if (!n) nameRef.current?.focus?.();
+      else if (!em) emailRef.current?.focus?.();
+      else if (!city) cityRef.current?.focus?.();
+      else if (!neighborhood) neighborhoodRef.current?.focus?.();
+
       return showToast("Preencha todos os campos obrigatórios.", "error");
+    }
 
     if (!isValidEmail(em)) {
-      emailRef.current?.focus();
+      emailRef.current?.focus?.();
       return showToast("E-mail inválido.", "error");
     }
 
-    // ✅ validação de senha forte
+    // ✅ senha forte no front
     if (!isStrongPassword(pw)) {
-      showToast(
-        "A senha deve ter no mínimo 8 caracteres, contendo letras e números.",
+      return showToast(
+        "Senha fraca: mínimo 8 caracteres, com letras e números.",
         "error"
       );
-      return;
     }
 
-    if (pw !== cf) return showToast("As senhas não coincidem.", "error");
+    if (pw !== cf) {
+      return showToast("As senhas não coincidem.", "error");
+    }
 
     try {
       setLoading(true);
 
-      // 🔥 Chamada REAL para o backend
       const { user, token } = await registerRequest({
         name: n,
         email: em,
         password: pw,
         role,
-        city: form.city || null,
-        phone: form.phone || null,
-        address: form.address || null,
+
+        // ✅ obrigatórios
+        city,
+        neighborhood,
+
+        // opcionais
+        phone: form.phone?.trim() || null,
+        address: form.address?.trim() || null,
       });
 
       login(user, token);
@@ -123,20 +143,29 @@ export default function Register() {
     } catch (err) {
       console.error("Erro ao registrar:", err);
 
-      if (err.status === 409) {
+      // ✅ backend pode retornar códigos
+      if (err?.code === "WEAK_PASSWORD") {
+        showToast("Senha fraca: mínimo 8 caracteres, com letras e números.", "error");
+        return;
+      }
+      if (err?.code === "CITY_REQUIRED") {
+        cityRef.current?.focus?.();
+        showToast("Cidade é obrigatória.", "error");
+        return;
+      }
+      if (err?.code === "NEIGHBORHOOD_REQUIRED") {
+        neighborhoodRef.current?.focus?.();
+        showToast("Bairro é obrigatório.", "error");
+        return;
+      }
+
+      if (err?.status === 409) {
         showToast("Este e-mail já está cadastrado.", "error");
-        emailRef.current?.focus();
+        emailRef.current?.focus?.();
         return;
       }
 
-      // (opcional) se backend devolver mensagem específica, respeita
-      const msg = err?.message || err?.data?.message || null;
-      if (msg) {
-        showToast(msg, "error");
-        return;
-      }
-
-      showToast("Erro ao criar conta.", "error");
+      showToast(err?.message || "Erro ao criar conta.", "error");
     } finally {
       setLoading(false);
     }
@@ -159,6 +188,7 @@ export default function Register() {
               <button
                 onClick={() => proceedRole("tutor")}
                 className="border rounded-2xl p-5 text-left hover:shadow-md transition bg-[#FFF7E0]"
+                type="button"
               >
                 <h2 className="text-xl font-semibold text-[#5A3A22] mb-2">Ser Tutor</h2>
                 <p className="text-[#5A3A22]/90 text-sm">
@@ -169,6 +199,7 @@ export default function Register() {
               <button
                 onClick={() => proceedRole("caregiver")}
                 className="border rounded-2xl p-5 text-left hover:shadow-md transition bg-[#F4F0FF]"
+                type="button"
               >
                 <h2 className="text-xl font-semibold text-[#5A3A22] mb-2">Ser Cuidador</h2>
                 <p className="text-[#5A3A22]/90 text-sm">
@@ -237,12 +268,25 @@ export default function Register() {
               />
 
               <input
+                ref={cityRef}
                 type="text"
                 name="city"
                 value={form.city}
                 onChange={handleChange}
-                placeholder="Cidade"
+                placeholder="Cidade *"
                 className="w-full border rounded-lg p-2"
+                required
+              />
+
+              <input
+                ref={neighborhoodRef}
+                type="text"
+                name="neighborhood"
+                value={form.neighborhood}
+                onChange={handleChange}
+                placeholder="Bairro *"
+                className="w-full border rounded-lg p-2"
+                required
               />
 
               <input
@@ -256,9 +300,7 @@ export default function Register() {
 
               <PasswordField
                 value={form.password}
-                onChange={(e) =>
-                  setForm((prev) => ({ ...prev, password: e.target.value }))
-                }
+                onChange={(e) => setForm((prev) => ({ ...prev, password: e.target.value }))}
                 placeholder="Senha *"
                 autoComplete="new-password"
                 required
@@ -266,19 +308,16 @@ export default function Register() {
 
               <PasswordField
                 value={form.confirm}
-                onChange={(e) =>
-                  setForm((prev) => ({ ...prev, confirm: e.target.value }))
-                }
+                onChange={(e) => setForm((prev) => ({ ...prev, confirm: e.target.value }))}
                 placeholder="Confirmar senha *"
                 autoComplete="new-password"
                 required
               />
             </div>
 
-            {/* ✅ dica de senha forte */}
-            <p className="text-xs text-[#5A3A22] mt-3 opacity-80">
-              🔐 A senha deve ter <b>no mínimo 8 caracteres</b>, contendo <b>letras</b> e{" "}
-              <b>números</b>.
+            {/* ✅ dica de senha (sem mexer no layout) */}
+            <p className="text-xs text-[#5A3A22]/80 mt-2">
+              Sua senha deve ter <b>no mínimo 8 caracteres</b> e conter <b>letras e números</b>.
             </p>
 
             {role === "caregiver" && (

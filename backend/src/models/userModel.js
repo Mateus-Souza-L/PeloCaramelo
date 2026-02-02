@@ -73,21 +73,24 @@ async function createUser({
       NOW(),
       NOW()
     )
-    RETURNING id, name, email, role, city, image, blocked;
+    RETURNING id, name, email, role, city, neighborhood, image, blocked;
   `;
 
   const values = [
-    name,
-    email,
+    String(name || "").trim(),
+    String(email || "").trim(),
     passwordHash,
     role,
+
     image,
     bio,
     phone,
     address,
-    neighborhood,
-    city,
+
+    neighborhood == null ? null : String(neighborhood).trim(),
+    city == null ? null : String(city).trim(),
     cep,
+
     toJsonOrNull(services),
     toJsonOrNull(prices),
     toJsonOrNull(courses),
@@ -101,10 +104,7 @@ async function createUser({
    Buscar usuário por email
    ============================================================ */
 async function findUserByEmail(email) {
-  const result = await pool.query(
-    "SELECT * FROM users WHERE email = $1 LIMIT 1",
-    [email]
-  );
+  const result = await pool.query("SELECT * FROM users WHERE email = $1 LIMIT 1", [email]);
   return result.rows[0] || null;
 }
 
@@ -191,6 +191,7 @@ async function listAllUsers() {
         role,
         image,
         city,
+        neighborhood,
         blocked,
         created_at,
         updated_at
@@ -219,6 +220,7 @@ async function setUserBlockedStatus(id, blocked) {
         role,
         image,
         city,
+        neighborhood,
         blocked,
         created_at,
         updated_at;
@@ -236,10 +238,9 @@ async function getUserAvailability(userId) {
   const hasCol = await columnExists("users", "available_dates");
   if (!hasCol) return [];
 
-  const result = await pool.query(
-    "SELECT available_dates FROM users WHERE id = $1",
-    [userId]
-  );
+  const result = await pool.query("SELECT available_dates FROM users WHERE id = $1", [
+    userId,
+  ]);
   const row = result.rows[0];
   return row?.available_dates || [];
 }
@@ -338,7 +339,7 @@ module.exports = {
   listAllUsers,
   setUserBlockedStatus,
 
-   // 🔐 senha
+  // 🔐 senha
   updateUserPassword,
 
   // legado (não quebra caso ainda use)

@@ -231,8 +231,8 @@ function buildResetEmail({ link, minutes }) {
 
       <p style="margin:0 0 16px; font-size:14px;">
         Clique no botão abaixo para criar uma nova senha (o link expira em aproximadamente <strong>${escapeHtml(
-    String(safeMinutes)
-  )} minutos</strong>).
+          String(safeMinutes)
+        )} minutos</strong>).
       </p>
 
       <p style="margin:0 0 18px;">
@@ -269,10 +269,38 @@ function buildResetEmail({ link, minutes }) {
    ============================================================ */
 async function register(req, res) {
   try {
-    const { name, email, password, role = "tutor" } = readBody(req);
+    const body = readBody(req);
+
+    const name = String(body?.name || "").trim();
+    const email = String(body?.email || "").trim();
+    const password = String(body?.password || "");
+    const role = body?.role || "tutor";
+
+    // ✅ agora são obrigatórios
+    const city = String(body?.city || "").trim();
+    const neighborhood = String(body?.neighborhood || "").trim();
+
+    // opcionais
+    const phone = body?.phone ?? null;
+    const address = body?.address ?? null;
 
     if (!name || !email || !password) {
       return res.status(400).json({ error: "Nome, e-mail e senha são obrigatórios." });
+    }
+
+    // ✅ city + neighborhood obrigatórios (e não aceitam vazio)
+    if (!city) {
+      return res.status(400).json({
+        error: "Cidade é obrigatória.",
+        code: "CITY_REQUIRED",
+      });
+    }
+
+    if (!neighborhood) {
+      return res.status(400).json({
+        error: "Bairro é obrigatório.",
+        code: "NEIGHBORHOOD_REQUIRED",
+      });
     }
 
     // ✅ senha forte no backend
@@ -292,10 +320,14 @@ async function register(req, res) {
     const passwordHash = await bcrypt.hash(String(password), 10);
 
     const newUser = await createUser({
-      name: String(name).trim(),
+      name,
       email: normalizedEmail,
       passwordHash,
       role,
+      city,
+      neighborhood,
+      phone: phone ? String(phone).trim() : null,
+      address: address ? String(address).trim() : null,
     });
 
     const token = generateToken(newUser);
