@@ -16,8 +16,9 @@ const WHATSAPP_NUMBER = "5531994009734"; // ✅ troque aqui depois
 
 function buildWhatsAppLink({ text, content = "hero" }) {
   const base = `https://wa.me/${WHATSAPP_NUMBER}`;
-  const utm = `${BRAND_UTM}&utm_content=${encodeURIComponent(content)}`;
-  const msg = `${text}\n\n(${utm})`;
+  // ✅ mantém o UTM como rastreio “interno” (se quiser) mas NÃO coloca na mensagem
+  // Se você quiser rastrear por link, dá pra usar trackEvent no onClick (você já faz).
+  const msg = String(text || "").trim();
   return `${base}?text=${encodeURIComponent(msg)}`;
 }
 

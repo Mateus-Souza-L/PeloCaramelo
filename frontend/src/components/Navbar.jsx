@@ -949,7 +949,7 @@ export default function Navbar() {
 
       {!user ? (
         <Link to="/register" className="bg-[#95301F] px-4 py-2 rounded-lg font-semibold">
-          Cadastre-se
+          Entre / Cadastre-se
         </Link>
       ) : (
         <>
@@ -1071,7 +1071,7 @@ export default function Navbar() {
                 className="bg-[#95301F] px-4 py-2 rounded-lg font-semibold text-center"
                 onClick={closeMobile}
               >
-                Cadastre-se
+                Entre / Cadastre-se
               </Link>
             ) : (
               <>
