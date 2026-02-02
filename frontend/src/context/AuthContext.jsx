@@ -613,6 +613,14 @@ export function AuthProvider({ children }) {
     }
   }
 
+  function emitAuthChanged(status) {
+    try {
+      window.dispatchEvent(new CustomEvent("auth-changed", { detail: { status } }));
+    } catch {
+      // ignore
+    }
+  }
+
   function handleLogout() {
     setUser(null);
     setToken(null);
@@ -630,19 +638,27 @@ export function AuthProvider({ children }) {
     } catch {
       // ignore
     }
+
+    emitAuthChanged("logged_out");
   }
 
   /**
    * ✅ troca de modo:
    * - caregiver só é permitido se tiver caregiver_profile
    * - tutor sempre é permitido
-   * - role NÃO força modo (multi-perfil real)
+   * - FIX PROBLEMA 1: usa também o valor salvo no localStorage (evita "modo invertido")
    */
   function setMode(nextMode) {
     const saved = readSession();
     const desired = normalizeMode(nextMode);
 
-    const finalMode = desired === "caregiver" && !hasCaregiverProfile ? "tutor" : desired;
+    // ✅ fonte mais confiável no clique: saved.hasCaregiverProfile (se existir),
+    // senão cai no state atual.
+    const canCaregiver = Boolean(
+      saved?.hasCaregiverProfile ?? hasCaregiverProfile ?? false
+    );
+
+    const finalMode = desired === "caregiver" && !canCaregiver ? "tutor" : desired;
 
     setActiveMode(finalMode);
 
@@ -717,13 +733,9 @@ export function AuthProvider({ children }) {
       headers: { "Content-Type": "application/json" },
     });
 
-    // marca localmente como criado
     setHasCaregiverProfile(true);
-
-    // modo caregiver no UI
     setActiveMode("caregiver");
 
-    // persiste imediatamente
     persistSession({
       user,
       token,
@@ -731,7 +743,6 @@ export function AuthProvider({ children }) {
       activeMode: "caregiver",
     });
 
-    // fonte da verdade
     try {
       await refreshMe(token, { preferCaregiver: true });
     } catch {
@@ -748,7 +759,6 @@ export function AuthProvider({ children }) {
   function requestCreateCaregiverProfile() {
     if (!token) throw new Error("Não autenticado.");
 
-    // se já existe, só alterna pro modo caregiver
     if (hasCaregiverProfile) {
       setMode("caregiver");
       return;
@@ -763,11 +773,9 @@ export function AuthProvider({ children }) {
     setConfirmCreateOpen(false);
   }
 
-  // ✅ passo 1: confirmou que quer criar -> abre o setup
   async function confirmCreateCaregiverProfile() {
     if (creatingProfile) return;
 
-    // fecha confirmação e abre setup
     setConfirmCreateOpen(false);
     setCaregiverSetupError("");
     setCaregiverSetupOpen(true);
@@ -796,7 +804,7 @@ export function AuthProvider({ children }) {
     if (creatingProfile) return;
     const n = Number(v);
     if (!Number.isFinite(n)) {
-      setCaregiverDailyCapacity(v); // mantém o que digitou
+      setCaregiverDailyCapacity(v);
       return;
     }
     setCaregiverDailyCapacity(n);
@@ -867,7 +875,6 @@ export function AuthProvider({ children }) {
 
     setActiveMode(initialMode);
 
-    // sincroniza no backend
     meRequest(savedToken)
       .then((res) => {
         const has = coerceHasCaregiverProfile(res);
@@ -902,7 +909,6 @@ export function AuthProvider({ children }) {
 
         const status = err?.status ?? err?.response?.status ?? null;
 
-        // bloqueio
         const bi = pickBlockedPayload(err);
         if (status === 403 && bi) {
           showBlockedModal(bi);
@@ -910,12 +916,10 @@ export function AuthProvider({ children }) {
           return;
         }
 
-        // token inválido
         if (status === 401 || status === 403) {
           handleLogout();
           return;
         }
-
         // erro temporário: mantém sessão local
       })
       .finally(() => setLoading(false));
@@ -925,18 +929,36 @@ export function AuthProvider({ children }) {
 
   /* ============================================================
      Login ( /auth/login -> /auth/me )
+     FIX PROBLEMA 2: hidrata sessão IMEDIATA antes do /me
      ============================================================ */
 
   async function handleLogin(loginUser, newToken) {
+    const immediateUser = normalizeUser(loginUser);
+
     try {
-      setToken(newToken);
       setLoading(true);
+
+      // ✅ hidrata imediatamente (evita precisar clicar "Entrar" 2x)
+      setToken(newToken);
+      setUser(immediateUser);
 
       const savedMode = readSession()?.activeMode || "tutor";
 
+      // enquanto o /me não vem, assumimos "não sei ainda"
+      // mas preservamos preferência salva (tutor/caregiver).
+      persistSession({
+        user: immediateUser,
+        token: newToken,
+        hasCaregiverProfile: Boolean(readSession()?.hasCaregiverProfile ?? false),
+        activeMode: normalizeMode(savedMode),
+      });
+
+      emitAuthChanged("logged_in");
+
+      // ✅ agora sim confirma no backend
       const res = await meRequest(newToken);
       const has = coerceHasCaregiverProfile(res);
-      const fullUser = normalizeUser(res?.user || loginUser);
+      const fullUser = normalizeUser(res?.user || immediateUser);
 
       setUser(fullUser);
       setHasCaregiverProfile(has);
@@ -956,6 +978,8 @@ export function AuthProvider({ children }) {
         hasCaregiverProfile: has,
         activeMode: nextMode,
       });
+
+      return { user: fullUser, token: newToken, activeMode: nextMode, hasCaregiverProfile: has };
     } catch (err) {
       console.error("Erro ao buscar /auth/me após login:", err);
 
@@ -965,18 +989,14 @@ export function AuthProvider({ children }) {
       if (status === 403 && bi) {
         showBlockedModal(bi);
         handleLogout();
-        return;
+        return null;
       }
 
-      // fallback: mantém sessão com o loginUser
-      const full = normalizeUser(loginUser);
-      setUser(full);
-
-      // sem /me não sabemos se tem perfil
+      // fallback: mantém sessão com o usuário do login (já hidratado)
       setHasCaregiverProfile(false);
 
       const nextMode = decideMode({
-        role: full?.role,
+        role: immediateUser?.role,
         savedMode: "tutor",
         hasCaregiverProfile: false,
         preferCaregiver: false,
@@ -985,11 +1005,13 @@ export function AuthProvider({ children }) {
       setActiveMode(nextMode);
 
       persistSession({
-        user: full,
+        user: immediateUser,
         token: newToken,
         hasCaregiverProfile: false,
         activeMode: nextMode,
       });
+
+      return { user: immediateUser, token: newToken, activeMode: nextMode, hasCaregiverProfile: false };
     } finally {
       setLoading(false);
     }
