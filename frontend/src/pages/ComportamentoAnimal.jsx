@@ -6,24 +6,16 @@ import { Instagram, Mail } from "lucide-react";
 import { useToast } from "../components/ToastProvider";
 import { trackEvent } from "../utils/analytics";
 
+const API_BASE_URL = (import.meta.env.VITE_API_URL || "http://localhost:4000").replace(/\/+$/, "");
+
 const BRAND_UTM = "utm_source=pelocaramelo&utm_medium=cta&utm_campaign=comportamento";
 const WHATSAPP_NUMBER = "5531994009734"; // ✅ troque aqui depois
-
-// ✅ E-mail destino (orçamento de palestra)
-const CONTACT_EMAIL = "contato@pelocaramelo.com.br";
 
 function buildWhatsAppLink({ text, content = "hero" }) {
   const base = `https://wa.me/${WHATSAPP_NUMBER}`;
   const utm = `${BRAND_UTM}&utm_content=${encodeURIComponent(content)}`;
   const msg = `${text}\n\n(${utm})`;
   return `${base}?text=${encodeURIComponent(msg)}`;
-}
-
-// ✅ mailto com assunto/corpo (com UTM e dados do lead)
-function buildMailtoLink({ to = CONTACT_EMAIL, subject, body }) {
-  const s = encodeURIComponent(subject || "");
-  const b = encodeURIComponent(body || "");
-  return `mailto:${to}?subject=${s}&body=${b}`;
 }
 
 const FAQ = [
@@ -49,12 +41,23 @@ const FAQ = [
   },
 ];
 
+function safeJsonParse(raw, fallback) {
+  try {
+    const v = JSON.parse(raw);
+    return v ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export default function ComportamentoAnimal() {
   const { showToast } = useToast();
   const [openPalestra, setOpenPalestra] = useState(false);
   const [faqOpen, setFaqOpen] = useState(null); // index
   const dialogRef = useRef(null);
   const location = useLocation();
+
+  const [sendingLead, setSendingLead] = useState(false);
 
   // ✅ SEO (title já existia) + description + canonical
   useEffect(() => {
@@ -95,18 +98,8 @@ export default function ComportamentoAnimal() {
         {
           "@type": "BreadcrumbList",
           itemListElement: [
-            {
-              "@type": "ListItem",
-              position: 1,
-              name: "Início",
-              item: `${origin}/`,
-            },
-            {
-              "@type": "ListItem",
-              position: 2,
-              name: "Comportamento Animal",
-              item: `${origin}/comportamento`,
-            },
+            { "@type": "ListItem", position: 1, name: "Início", item: `${origin}/` },
+            { "@type": "ListItem", position: 2, name: "Comportamento Animal", item: `${origin}/comportamento` },
           ],
         },
         {
@@ -114,10 +107,7 @@ export default function ComportamentoAnimal() {
           mainEntity: FAQ.map((f) => ({
             "@type": "Question",
             name: f.q,
-            acceptedAnswer: {
-              "@type": "Answer",
-              text: f.a,
-            },
+            acceptedAnswer: { "@type": "Answer", text: f.a },
           })),
         },
       ],
@@ -138,12 +128,7 @@ export default function ComportamentoAnimal() {
       if (hash) {
         const el = document.getElementById(hash);
         if (el) {
-          const top =
-            el.getBoundingClientRect().top +
-            window.scrollY -
-            NAVBAR_OFFSET +
-            EXTRA_SCROLL;
-
+          const top = el.getBoundingClientRect().top + window.scrollY - NAVBAR_OFFSET + EXTRA_SCROLL;
           window.scrollTo({ top: Math.max(top, 0), behavior: "smooth" });
           return;
         }
@@ -161,7 +146,6 @@ export default function ComportamentoAnimal() {
         const ease = 1 - Math.pow(1 - percent, 3);
 
         window.scrollTo(0, start + (end - start) * ease);
-
         if (percent < 1) requestAnimationFrame(animateScroll);
       };
 
@@ -178,7 +162,6 @@ export default function ComportamentoAnimal() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // ✅ Links WA (com texto ajustado para "Consultar especialista" + Extra)
   const waHeroLink = useMemo(() => {
     const txt =
       "Olá, Dra. Laíse! Vim pela PeloCaramelo e gostaria de uma orientação sobre o comportamento do meu pet. Posso te contar o caso rapidinho?";
@@ -191,116 +174,98 @@ export default function ComportamentoAnimal() {
     return buildWhatsAppLink({ text: txt, content: "final" });
   }, []);
 
-  const handleSubmitLead = (e) => {
+  function isEmailValid(email) {
+    const s = String(email || "").trim();
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+  }
+
+  // ✅ Envia pro backend (sem mailto)
+  const handleSubmitLead = async (e) => {
     e.preventDefault();
+    if (sendingLead) return;
+
     const data = new FormData(e.currentTarget);
 
-    const nome = data.get("nome")?.trim();
-    const email = data.get("email")?.trim();
-    const tema = data.get("tema")?.trim();
-
-    if (!nome || !email || !tema) {
-      showToast("Preencha nome, e-mail e tema.", "error");
-      return;
-    }
-
-    const lead = {
-      id: Date.now(),
-      nome,
-      email,
-      empresa: data.get("empresa")?.trim(),
-      cidade: data.get("cidade")?.trim(),
-      publico: data.get("publico")?.trim(),
-      tamanho: data.get("tamanho")?.trim(),
-      formato: data.get("formato") || "Presencial",
-      duracao: data.get("duracao")?.trim(),
-      tema,
-      mensagem: data.get("mensagem")?.trim(),
+    const payload = {
+      nome: String(data.get("nome") || "").trim(),
+      email: String(data.get("email") || "").trim(),
+      empresa: String(data.get("empresa") || "").trim(),
+      cidade: String(data.get("cidade") || "").trim(),
+      publico: String(data.get("publico") || "").trim(),
+      tamanho: String(data.get("tamanho") || "").trim(),
+      formato: String(data.get("formato") || "Presencial").trim(),
+      duracao: String(data.get("duracao") || "").trim(),
+      tema: String(data.get("tema") || "").trim(),
+      mensagem: String(data.get("mensagem") || "").trim(),
+      page: "comportamento",
+      utm: BRAND_UTM,
       createdAt: new Date().toISOString(),
     };
 
-    // ✅ mantém cache local (opcional / útil pra você)
-    const leads = JSON.parse(localStorage.getItem("leads_palestras") || "[]");
-    localStorage.setItem("leads_palestras", JSON.stringify([...leads, lead]));
+    // ✅ todos obrigatórios
+    const requiredKeys = ["nome", "email", "empresa", "cidade", "publico", "tamanho", "formato", "duracao", "tema", "mensagem"];
+    const missing = requiredKeys.filter((k) => !String(payload[k] || "").trim());
 
-    // ✅ Analytics
-    trackEvent("submit_palestra_orcamento", {
-      page: "comportamento",
-      has_empresa: lead.empresa ? 1 : 0,
-      formato: String(lead.formato || ""),
-      cidade: String(lead.cidade || ""),
-    });
+    if (missing.length) {
+      showToast("Preencha todos os campos do formulário.", "error");
+      return;
+    }
 
-    // ✅ monta e-mail para contato@pelocaramelo.com.br
-    const origin = window.location.origin;
-    const utm = `${BRAND_UTM}&utm_content=palestra_orcamento`;
+    if (!isEmailValid(payload.email)) {
+      showToast("Informe um e-mail válido.", "error");
+      return;
+    }
 
-    const subject = `Orçamento de Palestra — ${lead.tema} — ${lead.nome}`;
-
-    const lines = [
-      "Olá! 👋",
-      "",
-      "Gostaria de solicitar um orçamento de palestra.",
-      "",
-      "=== DADOS DO SOLICITANTE ===",
-      `Nome: ${lead.nome}`,
-      `E-mail: ${lead.email}`,
-      `Empresa/Instituição: ${lead.empresa || "-"}`,
-      `Cidade/Estado: ${lead.cidade || "-"}`,
-      "",
-      "=== DETALHES DA PALESTRA ===",
-      `Tema principal: ${lead.tema}`,
-      `Público-alvo: ${lead.publico || "-"}`,
-      `Tamanho do público: ${lead.tamanho || "-"}`,
-      `Formato: ${lead.formato || "-"}`,
-      `Duração desejada: ${lead.duracao || "-"}`,
-      "",
-      "=== OBSERVAÇÕES ===",
-      `${lead.mensagem || "-"}`,
-      "",
-      "=== ORIGEM ===",
-      `Página: ${origin}/comportamento`,
-      `UTM: ${utm}`,
-      "",
-      "Obrigado!",
-    ];
-
-    const mailto = buildMailtoLink({
-      to: CONTACT_EMAIL,
-      subject,
-      body: lines.join("\n"),
-    });
-
-    // ✅ UX: fecha + toast + reset
-    setOpenPalestra(false);
-    showToast("Pedido de orçamento enviado! Abrindo seu e-mail para finalizar o envio. ✉️", "success");
-    e.currentTarget.reset();
-
-    // ✅ abre o cliente de e-mail com tudo preenchido
-    // (o usuário só clica em "enviar" no e-mail)
+    // ✅ backup local (mantém)
     try {
-      window.open(mailto, "_blank");
+      const lead = { id: Date.now(), ...payload };
+      const leads = safeJsonParse(localStorage.getItem("leads_palestras") || "[]", []);
+      localStorage.setItem("leads_palestras", JSON.stringify([...(Array.isArray(leads) ? leads : []), lead]));
     } catch {
-      // fallback: navega no próprio tab
-      window.location.href = mailto;
+      // ignore
+    }
+
+    try {
+      setSendingLead(true);
+
+      trackEvent("submit_palestra_quote", { page: "comportamento", method: "api" });
+
+      const resp = await fetch(`${API_BASE_URL}/contact/palestra`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!resp.ok) {
+        let msg = "Não foi possível enviar agora. Tente novamente.";
+        try {
+          const j = await resp.json();
+          if (j?.message) msg = String(j.message);
+        } catch {
+          // ignore
+        }
+        throw new Error(msg);
+      }
+
+      setOpenPalestra(false);
+      showToast("Pedido de orçamento enviado com sucesso! ✅", "success");
+      e.currentTarget.reset();
+    } catch (err) {
+      console.error("Erro ao enviar lead de palestra:", err);
+      showToast(err?.message || "Erro ao enviar pedido. Tente novamente.", "error");
+    } finally {
+      setSendingLead(false);
     }
   };
 
   return (
     <div className="bg-[#EBCBA9] min-h-screen text-[#5A3A22]">
       {/* ✅ SEO Structured Data */}
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(schemaJsonLd) }}
-      />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schemaJsonLd) }} />
 
       {/* HERO */}
       <section className="relative text-white text-center overflow-hidden">
-        <img
-          src="/images/hero-comportamento.jpg"
-          alt="Tutor acariciando um cachorro"
-          className="w-full h-[82vh] object-cover"
-        />
+        <img src="/images/hero-comportamento.jpg" alt="Tutor acariciando um cachorro" className="w-full h-[82vh] object-cover" />
         <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-black/25 to-transparent" />
 
         <div className="absolute inset-0 flex flex-col justify-center items-center px-4">
@@ -324,14 +289,12 @@ export default function ComportamentoAnimal() {
               <span className="text-white">Pelo</span>
               <span className="text-yellow-400">Caramelo</span>
             </span>{" "}
-            , acreditamos que compreender o comportamento do seu pet é o primeiro
-            passo para uma convivência saudável, feliz e sem traumas.
+            , acreditamos que compreender o comportamento do seu pet é o primeiro passo para uma convivência saudável,
+            feliz e sem traumas.
           </motion.p>
 
-          {/* ✅ Frase discreta no rodapé da imagem (sem atrapalhar visual) */}
           <p className="absolute bottom-6 left-0 right-0 px-4 text-[12px] sm:text-sm text-white/90 drop-shadow-[0_0_6px_rgba(0,0,0,0.55)]">
-            Atendimento com abordagem positiva e orientações práticas para o seu
-            dia a dia.
+            Atendimento com abordagem positiva e orientações práticas para o seu dia a dia.
           </p>
         </div>
       </section>
@@ -348,14 +311,11 @@ export default function ComportamentoAnimal() {
         </motion.h2>
 
         <p className="leading-relaxed text-[15px] md:text-base text-justify">
-          Cada gesto, olhar ou movimento do seu pet tem um significado. Quando
-          observamos com atenção, começamos a enxergar não apenas o que ele faz,
-          mas o que sente, deseja e tenta comunicar. Compreender esses sinais é
-          essencial para fortalecer o vínculo de confiança, prevenir conflitos
-          do dia a dia e evitar punições desnecessárias. Ao aprender sobre
-          comportamento animal, o tutor passa a oferecer uma rotina mais
-          previsível, respeitosa e acolhedora, onde o pet se sente seguro para
-          ser ele mesmo.
+          Cada gesto, olhar ou movimento do seu pet tem um significado. Quando observamos com atenção, começamos a
+          enxergar não apenas o que ele faz, mas o que sente, deseja e tenta comunicar. Compreender esses sinais é
+          essencial para fortalecer o vínculo de confiança, prevenir conflitos do dia a dia e evitar punições
+          desnecessárias. Ao aprender sobre comportamento animal, o tutor passa a oferecer uma rotina mais previsível,
+          respeitosa e acolhedora, onde o pet se sente seguro para ser ele mesmo.
         </p>
       </section>
 
@@ -371,7 +331,6 @@ export default function ComportamentoAnimal() {
         </motion.h2>
 
         <div className="flex flex-col md:flex-row items-center justify-between max-w-6xl mx-auto gap-10">
-          {/* ✅ bullets -> cards escaneáveis */}
           <div className="flex-1 order-2 md:order-1 md:pr-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {[
@@ -384,20 +343,14 @@ export default function ComportamentoAnimal() {
                 { t: "🌿 Bem-estar completo", d: "Físico e mental caminham juntos." },
                 { t: "🤝 Cooperação", d: "Priorize cooperação, não obediência forçada." },
               ].map((x) => (
-                <div
-                  key={x.t}
-                  className="rounded-2xl bg-white border border-[#5A3A22]/10 p-4 shadow-sm"
-                >
+                <div key={x.t} className="rounded-2xl bg-white border border-[#5A3A22]/10 p-4 shadow-sm">
                   <p className="font-extrabold text-[#5A3A22]">{x.t}</p>
-                  <p className="text-sm text-[#5A3A22]/75 mt-1 leading-relaxed">
-                    {x.d}
-                  </p>
+                  <p className="text-sm text-[#5A3A22]/75 mt-1 leading-relaxed">{x.d}</p>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* IMAGEM */}
           <motion.div
             initial={{ opacity: 0, x: 50 }}
             whileInView={{ opacity: 1, x: 0 }}
@@ -412,7 +365,6 @@ export default function ComportamentoAnimal() {
           </motion.div>
         </div>
 
-        {/* CITAÇÃO */}
         <div className="max-w-[1400px] mx-auto mt-10">
           <div className="bg-white rounded-2xl shadow p-6 md:p-8 border-l-4 border-[#5A3A22] text-center">
             <blockquote className="italic font-semibold text-[#5A3A22]">
@@ -422,7 +374,7 @@ export default function ComportamentoAnimal() {
         </div>
       </section>
 
-      {/* ✅ DRA. LAÍSE – CARD PRINCIPAL (com id para âncora) */}
+      {/* DRA. LAÍSE */}
       <section className="py-16 px-6" id="dra-laise-oliveira">
         <motion.div
           initial={{ opacity: 0 }}
@@ -437,16 +389,13 @@ export default function ComportamentoAnimal() {
           />
 
           <h3 className="text-2xl font-bold mb-2">Dra. Laíse Oliveira</h3>
-          <p className="font-medium mb-4">
-            Médica veterinária especializada em comportamento animal.
-          </p>
+          <p className="font-medium mb-4">Médica veterinária especializada em comportamento animal.</p>
 
           <p className="leading-relaxed mb-6 max-w-3xl">
-            A Dra. Laíse atua com foco em consultas comportamentais, orientação
-            para tutores e palestras sobre manejo emocional dos pets.
+            A Dra. Laíse atua com foco em consultas comportamentais, orientação para tutores e palestras sobre manejo
+            emocional dos pets.
           </p>
 
-          {/* INSTAGRAM DESTACADO */}
           <div className="flex justify-center items-center mb-6">
             <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#FFF8F0] border border-[#D2A679]">
               <Instagram size={18} className="text-[#5A3A22]" />
@@ -461,7 +410,6 @@ export default function ComportamentoAnimal() {
             </span>
           </div>
 
-          {/* ✅ CTA padronizada: "Consultar especialista" + Extra */}
           <div className="flex flex-col sm:flex-row justify-center gap-4 w-full">
             <a
               href={buildWhatsAppLink({
@@ -472,10 +420,7 @@ export default function ComportamentoAnimal() {
               target="_blank"
               rel="noreferrer"
               onClick={() =>
-                trackEvent("click_specialist_whatsapp", {
-                  page: "comportamento",
-                  position: "perfil",
-                })
+                trackEvent("click_specialist_whatsapp", { page: "comportamento", position: "perfil" })
               }
               className="
                 inline-flex items-center justify-center gap-2
@@ -484,18 +429,17 @@ export default function ComportamentoAnimal() {
                 focus:outline-none focus:ring-2 focus:ring-[#5A3A22]/20
               "
             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 32 32"
-                className="w-5 h-5 fill-current"
-              >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" className="w-5 h-5 fill-current">
                 <path d="M16 .395c-8.822 0-16 7.178-16 16 0 2.822.744 5.563 2.155 7.967L0 32l8.864-2.321A15.86 15.86 0 0 0 16 32c8.822 0 16-7.178 16-16s-7.178-15.605-16-15.605zm0 29.333a13.24 13.24 0 0 1-6.76-1.844l-.489-.289-5.26 1.375 1.406-5.146-.344-.533a13.213 13.213 0 1 1 11.447 6.437zm7.036-9.51c-.385-.193-2.273-1.12-2.626-1.247-.354-.128-.611-.192-.867.193-.257.386-.994 1.247-1.219 1.503-.225.257-.45.289-.835.096-.386-.193-1.628-.6-3.104-1.918-1.147-1.013-1.92-2.267-2.146-2.632-.225-.365-.024-.6.17-.793.175-.176.386-.45.579-.676.193-.225.257-.386.386-.643.128-.257.064-.48-.032-.676-.096-.193-.867-2.08-1.2-2.859-.32-.75-.644-.643-.867-.643h-.74c-.257 0-.675.096-1.025.482-.354.386-1.353 1.32-1.353 3.219s1.386 3.736 1.578 3.993c.193.257 2.736 4.176 6.632 5.85 3.896 1.643 3.896 1.098 4.596 1.031.7-.064 2.273-.932 2.603-1.834.321-.9 .321-1.672 .225-1.834-.096-.161-.354-.257-.74-.45z" />
               </svg>
               Consultar especialista
             </a>
 
             <button
-              onClick={() => setOpenPalestra(true)}
+              onClick={() => {
+                trackEvent("open_palestra_modal", { page: "comportamento" });
+                setOpenPalestra(true);
+              }}
               className="
                 inline-flex items-center justify-center gap-2
                 bg-[#5A3A22] hover:bg-[#95301F] text-white
@@ -509,13 +453,11 @@ export default function ComportamentoAnimal() {
           </div>
 
           <p className="mt-4 text-sm text-[#5A3A22]/80 max-w-3xl">
-            💰 <span className="font-semibold">Expectativa de valor:</span>{" "}
-            o valor é alinhado conforme o caso, a rotina da família e a complexidade do acompanhamento.
+            💰 <span className="font-semibold">Expectativa de valor:</span> o valor é alinhado conforme o caso, a rotina
+            da família e a complexidade do acompanhamento.
           </p>
 
-          <p className="mt-6 text-base md:text-lg font-semibold text-[#5A3A22]">
-            Cuidar é também compreender 💕
-          </p>
+          <p className="mt-6 text-base md:text-lg font-semibold text-[#5A3A22]">Cuidar é também compreender 💕</p>
         </motion.div>
       </section>
 
@@ -528,9 +470,7 @@ export default function ComportamentoAnimal() {
           className="max-w-[1400px] mx-auto bg-white rounded-2xl shadow p-6 md:p-8 border-l-4 border-[#D2A679] grid md:grid-cols-2 gap-6"
         >
           <div>
-            <h4 className="text-lg font-semibold mb-2 flex items-center gap-2">
-              Quando procurar uma consulta comportamental? 🐾
-            </h4>
+            <h4 className="text-lg font-semibold mb-2 flex items-center gap-2">Quando procurar uma consulta comportamental? 🐾</h4>
             <ul className="list-disc pl-5 space-y-1 text-sm md:text-base leading-relaxed">
               <li>Medo excessivo, insegurança ou dificuldade de adaptação.</li>
               <li>Latidos, destruição ou agitação fora do normal.</li>
@@ -540,9 +480,7 @@ export default function ComportamentoAnimal() {
           </div>
 
           <div>
-            <h4 className="text-lg font-semibold mb-2 flex items-center gap-2">
-              O que você pode esperar do atendimento 💬
-            </h4>
+            <h4 className="text-lg font-semibold mb-2 flex items-center gap-2">O que você pode esperar do atendimento 💬</h4>
             <ul className="list-disc pl-5 space-y-1 text-sm md:text-base leading-relaxed">
               <li>Escuta atenta da história do pet e da família.</li>
               <li>Explicações claras sobre o comportamento observado.</li>
@@ -553,7 +491,7 @@ export default function ComportamentoAnimal() {
         </motion.div>
       </section>
 
-      {/* ✅ MINI-FAQ (somente dúvidas fixas) */}
+      {/* MINI-FAQ */}
       <section className="pb-24 px-6">
         <div className="max-w-[1400px] mx-auto bg-white rounded-2xl shadow p-6 md:p-8 border-l-4 border-[#FFD700]/80">
           <div className="mb-5">
@@ -564,10 +502,7 @@ export default function ComportamentoAnimal() {
             {FAQ.map((item, idx) => {
               const open = faqOpen === idx;
               return (
-                <div
-                  key={item.q}
-                  className="rounded-2xl border border-[#5A3A22]/10 overflow-hidden"
-                >
+                <div key={item.q} className="rounded-2xl border border-[#5A3A22]/10 overflow-hidden">
                   <button
                     type="button"
                     onClick={() => setFaqOpen(open ? null : idx)}
@@ -580,9 +515,7 @@ export default function ComportamentoAnimal() {
                     aria-expanded={open}
                   >
                     <span className="font-bold text-[#5A3A22]">{item.q}</span>
-                    <span className="text-[#5A3A22]/70 font-bold">
-                      {open ? "−" : "+"}
-                    </span>
+                    <span className="text-[#5A3A22]/70 font-bold">{open ? "−" : "+"}</span>
                   </button>
 
                   <AnimatePresence initial={false}>
@@ -594,9 +527,7 @@ export default function ComportamentoAnimal() {
                         transition={{ duration: 0.2 }}
                         className="px-4"
                       >
-                        <p className="py-4 text-sm md:text-base text-[#5A3A22]/85 leading-relaxed">
-                          {item.a}
-                        </p>
+                        <p className="py-4 text-sm md:text-base text-[#5A3A22]/85 leading-relaxed">{item.a}</p>
                       </motion.div>
                     )}
                   </AnimatePresence>
@@ -607,28 +538,19 @@ export default function ComportamentoAnimal() {
         </div>
       </section>
 
-      {/* ✅ CTA final (simples e forte) */}
+      {/* CTA final */}
       <div className="px-6 pb-8">
         <div className="max-w-[1400px] mx-auto rounded-2xl bg-[#5A3A22] text-white p-6 md:p-8 shadow-lg flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <p className="text-lg md:text-xl font-extrabold">
-              Quer ajuda com o comportamento do seu pet?
-            </p>
-            <p className="text-sm text-white/85 mt-1">
-              Clique e fale com a especialista no WhatsApp. Mensagem pronta e rastreável.
-            </p>
+            <p className="text-lg md:text-xl font-extrabold">Quer ajuda com o comportamento do seu pet?</p>
+            <p className="text-sm text-white/85 mt-1">Clique e fale com a especialista no WhatsApp. Mensagem pronta e rastreável.</p>
           </div>
 
           <a
             href={waStickyLink}
             target="_blank"
             rel="noreferrer"
-            onClick={() =>
-              trackEvent("click_specialist_whatsapp", {
-                page: "comportamento",
-                position: "final",
-              })
-            }
+            onClick={() => trackEvent("click_specialist_whatsapp", { page: "comportamento", position: "final" })}
             className="
               inline-flex items-center justify-center gap-2
               bg-[#FFD700] text-[#5A3A22]
@@ -656,7 +578,7 @@ export default function ComportamentoAnimal() {
               px-4 py-6 sm:py-0
               overflow-y-auto
             "
-            onClick={(e) => e.target === e.currentTarget && setOpenPalestra(false)}
+            onClick={(e) => e.target === e.currentTarget && !sendingLead && setOpenPalestra(false)}
           >
             <motion.div
               ref={dialogRef}
@@ -672,90 +594,90 @@ export default function ComportamentoAnimal() {
               "
             >
               <div className="flex items-start sm:items-center justify-between gap-3 mb-4">
-                <h4 className="text-lg sm:text-xl font-bold leading-snug">
-                  Solicitar Orçamento de Palestra
-                </h4>
+                <h4 className="text-lg sm:text-xl font-bold leading-snug">Solicitar Orçamento de Palestra</h4>
 
                 <button
-                  onClick={() => setOpenPalestra(false)}
+                  onClick={() => !sendingLead && setOpenPalestra(false)}
                   className="
                     text-[#5A3A22]/70 hover:text-[#5A3A22] font-bold
                     w-10 h-10 sm:w-auto sm:h-auto
                     inline-flex items-center justify-center
                     rounded-full hover:bg-black/5
                     text-2xl sm:text-xl
+                    disabled:opacity-50 disabled:cursor-not-allowed
                   "
                   aria-label="Fechar"
+                  disabled={sendingLead}
                 >
                   ×
                 </button>
               </div>
 
-              <form
-                onSubmit={handleSubmitLead}
-                className="grid grid-cols-1 sm:grid-cols-2 gap-4"
-              >
-                <input name="nome" placeholder="Nome completo *" className="input" />
-                <input name="email" type="email" placeholder="E-mail *" className="input" />
-                <input name="empresa" placeholder="Empresa / Instituição" className="input" />
-                <input name="cidade" placeholder="Cidade / Estado" className="input" />
-                <input
-                  name="publico"
-                  placeholder="Público-alvo"
-                  className="input sm:col-span-2"
-                />
-                <input name="tamanho" placeholder="Tamanho do público" className="input" />
-                <input name="duracao" placeholder="Duração desejada" className="input" />
-                <select name="formato" className="input">
-                  <option>Presencial</option>
-                  <option>Online</option>
-                  <option>Híbrido</option>
+              <form onSubmit={handleSubmitLead} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <input name="nome" placeholder="Nome completo *" className="input" required />
+                <input name="email" type="email" placeholder="E-mail *" className="input" required />
+
+                <input name="empresa" placeholder="Empresa / Instituição *" className="input" required />
+                <input name="cidade" placeholder="Cidade / Estado *" className="input" required />
+
+                <input name="publico" placeholder="Público-alvo *" className="input sm:col-span-2" required />
+
+                <input name="tamanho" placeholder="Tamanho do público *" className="input" required />
+                <input name="duracao" placeholder="Duração desejada *" className="input" required />
+
+                <select name="formato" className="input" required defaultValue="Presencial">
+                  <option value="Presencial">Presencial</option>
+                  <option value="Online">Online</option>
+                  <option value="Híbrido">Híbrido</option>
                 </select>
-                <input
-                  name="tema"
-                  placeholder="Tema principal *"
-                  className="input sm:col-span-2"
-                />
+
+                <input name="tema" placeholder="Tema principal *" className="input sm:col-span-2" required />
+
                 <textarea
                   name="mensagem"
                   rows={4}
-                  placeholder="Observações / mensagem"
+                  placeholder="Observações / mensagem *"
                   className="textarea sm:col-span-2"
+                  required
                 />
 
                 <div className="sm:col-span-2 flex flex-col sm:flex-row sm:justify-end gap-3 mt-2">
                   <button
                     type="button"
                     onClick={() => setOpenPalestra(false)}
+                    disabled={sendingLead}
                     className="
                       w-full sm:w-auto
                       px-5 py-3 sm:py-2
                       min-h-[48px]
                       bg-gray-300 rounded-xl font-semibold text-[#5A3A22]
                       hover:bg-gray-400
+                      disabled:opacity-60 disabled:cursor-not-allowed
                     "
                   >
                     Cancelar
                   </button>
+
                   <button
                     type="submit"
+                    disabled={sendingLead}
                     className="
                       w-full sm:w-auto
                       px-5 py-3 sm:py-2
                       min-h-[48px]
                       bg-[#5A3A22] text-white rounded-xl font-semibold shadow-md
                       hover:bg-[#95301F]
+                      disabled:opacity-60 disabled:cursor-not-allowed
                     "
                   >
-                    Enviar pedido
+                    {sendingLead ? "Enviando..." : "Enviar pedido"}
                   </button>
                 </div>
               </form>
 
               <p className="mt-4 text-[12px] text-[#5A3A22]/70 leading-relaxed">
-                Ao enviar, vamos abrir seu e-mail com a mensagem pronta para{" "}
-                <span className="font-semibold">{CONTACT_EMAIL}</span>. (Também salvamos uma cópia local em{" "}
-                <span className="font-semibold">leads_palestras</span>.)
+                Ao enviar, vamos disparar seu pedido para <span className="font-semibold">contato@pelocaramelo.com.br</span>.
+                Também salvamos uma cópia local em <span className="font-semibold">localStorage</span> (leads_palestras).
               </p>
             </motion.div>
           </motion.div>

@@ -135,6 +135,9 @@ const reviewRoutes = require("./routes/reviewRoutes");
 const availabilityRoutes = require("./routes/availabilityRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
 
+// ✅ NOVO: Contato (orçamento de palestra)
+const contactRoutes = require("./routes/contactRoutes");
+
 /* ===========================================================
    ✅ Middlewares
    =========================================================== */
@@ -237,6 +240,9 @@ async function blockedGuard(req, res, next) {
    =========================================================== */
 app.use("/auth", authRoutes);
 app.use("/caregivers", caregiverRoutes);
+
+// ✅ NOVO: contato público (orçamento de palestra)
+app.use("/contact", contactRoutes);
 
 /* ===========================================================
    ✅ Rotas mistas
