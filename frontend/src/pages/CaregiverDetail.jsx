@@ -1054,6 +1054,17 @@ export default function CaregiverDetail() {
     return (listReviews || []).filter((rv) => String(rv?.service || "") === String(reviewSvcFilter));
   }, [listReviews, reviewSvcFilter]);
 
+  // ✅ total REAL de avaliações (vem do summary), independente da paginação carregada
+  const totalReviewsCount = useMemo(() => {
+    // count do summary é a fonte de verdade
+    const total = Number(reviewSummary?.count ?? 0) || 0;
+
+    // fallback: se summary não veio por algum motivo, usa o que já carregou
+    if (total <= 0) return (listReviews || []).length;
+
+    return total;
+  }, [reviewSummary?.count, listReviews]);
+
   const dayDiff = (a, b) => {
     const A = parseLocalKey(a);
     const B = parseLocalKey(b);
@@ -1797,7 +1808,7 @@ export default function CaregiverDetail() {
           ) : (
             <>
               <p className="text-xs text-[#5A3A22] opacity-70 mb-3">
-                Mostrando <b>{filteredReviews.length}</b> de <b>{listReviews.length}</b> avaliações
+                Mostrando <b>{filteredReviews.length}</b> de <b>{totalReviewsCount}</b> avaliações
                 {reviewSvcFilter !== "todos" ? (
                   <>
                     {" "}
