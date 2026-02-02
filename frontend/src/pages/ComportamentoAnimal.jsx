@@ -9,11 +9,21 @@ import { trackEvent } from "../utils/analytics";
 const BRAND_UTM = "utm_source=pelocaramelo&utm_medium=cta&utm_campaign=comportamento";
 const WHATSAPP_NUMBER = "5531994009734"; // ✅ troque aqui depois
 
+// ✅ E-mail destino (orçamento de palestra)
+const CONTACT_EMAIL = "contato@pelocaramelo.com.br";
+
 function buildWhatsAppLink({ text, content = "hero" }) {
   const base = `https://wa.me/${WHATSAPP_NUMBER}`;
   const utm = `${BRAND_UTM}&utm_content=${encodeURIComponent(content)}`;
   const msg = `${text}\n\n(${utm})`;
   return `${base}?text=${encodeURIComponent(msg)}`;
+}
+
+// ✅ mailto com assunto/corpo (com UTM e dados do lead)
+function buildMailtoLink({ to = CONTACT_EMAIL, subject, body }) {
+  const s = encodeURIComponent(subject || "");
+  const b = encodeURIComponent(body || "");
+  return `mailto:${to}?subject=${s}&body=${b}`;
 }
 
 const FAQ = [
@@ -209,12 +219,71 @@ export default function ComportamentoAnimal() {
       createdAt: new Date().toISOString(),
     };
 
+    // ✅ mantém cache local (opcional / útil pra você)
     const leads = JSON.parse(localStorage.getItem("leads_palestras") || "[]");
     localStorage.setItem("leads_palestras", JSON.stringify([...leads, lead]));
 
+    // ✅ Analytics
+    trackEvent("submit_palestra_orcamento", {
+      page: "comportamento",
+      has_empresa: lead.empresa ? 1 : 0,
+      formato: String(lead.formato || ""),
+      cidade: String(lead.cidade || ""),
+    });
+
+    // ✅ monta e-mail para contato@pelocaramelo.com.br
+    const origin = window.location.origin;
+    const utm = `${BRAND_UTM}&utm_content=palestra_orcamento`;
+
+    const subject = `Orçamento de Palestra — ${lead.tema} — ${lead.nome}`;
+
+    const lines = [
+      "Olá! 👋",
+      "",
+      "Gostaria de solicitar um orçamento de palestra.",
+      "",
+      "=== DADOS DO SOLICITANTE ===",
+      `Nome: ${lead.nome}`,
+      `E-mail: ${lead.email}`,
+      `Empresa/Instituição: ${lead.empresa || "-"}`,
+      `Cidade/Estado: ${lead.cidade || "-"}`,
+      "",
+      "=== DETALHES DA PALESTRA ===",
+      `Tema principal: ${lead.tema}`,
+      `Público-alvo: ${lead.publico || "-"}`,
+      `Tamanho do público: ${lead.tamanho || "-"}`,
+      `Formato: ${lead.formato || "-"}`,
+      `Duração desejada: ${lead.duracao || "-"}`,
+      "",
+      "=== OBSERVAÇÕES ===",
+      `${lead.mensagem || "-"}`,
+      "",
+      "=== ORIGEM ===",
+      `Página: ${origin}/comportamento`,
+      `UTM: ${utm}`,
+      "",
+      "Obrigado!",
+    ];
+
+    const mailto = buildMailtoLink({
+      to: CONTACT_EMAIL,
+      subject,
+      body: lines.join("\n"),
+    });
+
+    // ✅ UX: fecha + toast + reset
     setOpenPalestra(false);
-    showToast("Pedido de orçamento enviado com sucesso!", "success");
-    e.target.reset();
+    showToast("Pedido de orçamento enviado! Abrindo seu e-mail para finalizar o envio. ✉️", "success");
+    e.currentTarget.reset();
+
+    // ✅ abre o cliente de e-mail com tudo preenchido
+    // (o usuário só clica em "enviar" no e-mail)
+    try {
+      window.open(mailto, "_blank");
+    } catch {
+      // fallback: navega no próprio tab
+      window.location.href = mailto;
+    }
   };
 
   return (
@@ -254,8 +323,8 @@ export default function ComportamentoAnimal() {
             <span className="font-bold bg-[#5A3A22] px-2 py-0.5 rounded-md">
               <span className="text-white">Pelo</span>
               <span className="text-yellow-400">Caramelo</span>
-            </span>{" "},
-            acreditamos que compreender o comportamento do seu pet é o primeiro
+            </span>{" "}
+            , acreditamos que compreender o comportamento do seu pet é o primeiro
             passo para uma convivência saudável, feliz e sem traumas.
           </motion.p>
 
@@ -425,7 +494,6 @@ export default function ComportamentoAnimal() {
               Consultar especialista
             </a>
 
-            {/* ✅ mantém tamanho / ícone e-mail / mobile sem "Solicitar" */}
             <button
               onClick={() => setOpenPalestra(true)}
               className="
@@ -435,16 +503,11 @@ export default function ComportamentoAnimal() {
               "
             >
               <Mail size={18} className="text-white" />
-
-              {/* Mobile (sem “Solicitar”) */}
               <span className="sm:hidden whitespace-nowrap">Orçamento de Palestra</span>
-
-              {/* Web (mantém como estava) */}
               <span className="hidden sm:inline">Solicitar Orçamento de Palestra</span>
             </button>
           </div>
 
-          {/* ✅ faixa de preço / expectativa */}
           <p className="mt-4 text-sm text-[#5A3A22]/80 max-w-3xl">
             💰 <span className="font-semibold">Expectativa de valor:</span>{" "}
             o valor é alinhado conforme o caso, a rotina da família e a complexidade do acompanhamento.
@@ -587,8 +650,6 @@ export default function ComportamentoAnimal() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            // ✅ MOBILE: overlay rola + alinha no topo
-            // ✅ WEB: mantém centralizado
             className="
               fixed inset-0 bg-black/50 z-[999]
               flex items-start sm:items-center justify-center
@@ -603,8 +664,6 @@ export default function ComportamentoAnimal() {
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
               transition={{ duration: 0.2 }}
-              // ✅ MOBILE: max-height com dvh (melhor em mobile) + scroll interno
-              // ✅ WEB: volta ao normal
               className="
                 bg-white w-full max-w-2xl rounded-2xl shadow-xl
                 p-4 sm:p-6
@@ -613,12 +672,10 @@ export default function ComportamentoAnimal() {
               "
             >
               <div className="flex items-start sm:items-center justify-between gap-3 mb-4">
-                {/* ✅ MOBILE: título mais legível/compacto | WEB: mantém */}
                 <h4 className="text-lg sm:text-xl font-bold leading-snug">
                   Solicitar Orçamento de Palestra
                 </h4>
 
-                {/* ✅ MOBILE: botão fechar mais “thumb-friendly” | WEB: mantém */}
                 <button
                   onClick={() => setOpenPalestra(false)}
                   className="
@@ -666,7 +723,6 @@ export default function ComportamentoAnimal() {
                   className="textarea sm:col-span-2"
                 />
 
-                {/* ✅ MOBILE: botões grandes e empilhados | WEB: iguais (lado a lado, à direita) */}
                 <div className="sm:col-span-2 flex flex-col sm:flex-row sm:justify-end gap-3 mt-2">
                   <button
                     type="button"
@@ -697,8 +753,9 @@ export default function ComportamentoAnimal() {
               </form>
 
               <p className="mt-4 text-[12px] text-[#5A3A22]/70 leading-relaxed">
-                Dica: esses pedidos ficam salvos em{" "}
-                <span className="font-semibold">localStorage</span> (leads_palestras).
+                Ao enviar, vamos abrir seu e-mail com a mensagem pronta para{" "}
+                <span className="font-semibold">{CONTACT_EMAIL}</span>. (Também salvamos uma cópia local em{" "}
+                <span className="font-semibold">leads_palestras</span>.)
               </p>
             </motion.div>
           </motion.div>
