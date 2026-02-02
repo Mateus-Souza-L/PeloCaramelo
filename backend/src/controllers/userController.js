@@ -1,4 +1,6 @@
 // backend/src/controllers/userController.js
+const pool = require("../config/db");
+
 const {
   findUserById,
   updateUserProfile,
@@ -37,11 +39,6 @@ function ensureParsedJson(value, fallback) {
   return value;
 }
 
-function toNum(v) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
-}
-
 function toInt(v) {
   const n = Number(v);
   if (!Number.isFinite(n)) return null;
@@ -54,6 +51,101 @@ function clampInt(n, min, max) {
   if (x < min) return min;
   if (x > max) return max;
   return x;
+}
+
+// -----------------------------------------------------------------------------
+// ✅ Multi-perfil: detectar se usuário TEM perfil cuidador (caregiver_profiles)
+// - suporta schema antigo/novo: caregiver_profiles.user_id OU caregiver_profiles.caregiver_id
+// -----------------------------------------------------------------------------
+
+let _cpLinkCol = null; // "user_id" | "caregiver_id" | null
+let _cpCheckedAt = 0;
+
+async function detectCaregiverProfilesLinkColumn() {
+  const now = Date.now();
+  if (_cpCheckedAt && now - _cpCheckedAt < 5 * 60 * 1000) return _cpLinkCol;
+
+  try {
+    const { rows } = await pool.query(
+      `
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'caregiver_profiles'
+        AND column_name IN ('user_id', 'caregiver_id')
+      `
+    );
+
+    const cols = new Set((rows || []).map((r) => String(r.column_name)));
+    if (cols.has("user_id")) _cpLinkCol = "user_id";
+    else if (cols.has("caregiver_id")) _cpLinkCol = "caregiver_id";
+    else _cpLinkCol = null;
+
+    _cpCheckedAt = now;
+    return _cpLinkCol;
+  } catch {
+    _cpLinkCol = null;
+    _cpCheckedAt = now;
+    return null;
+  }
+}
+
+async function hasCaregiverProfileByUserId(userId) {
+  const id = Number(userId);
+  if (!Number.isFinite(id) || id <= 0) return false;
+
+  const linkCol = (await detectCaregiverProfilesLinkColumn()) || "user_id";
+
+  try {
+    if (linkCol === "caregiver_id") {
+      const { rows } = await pool.query(
+        `SELECT 1 FROM caregiver_profiles WHERE caregiver_id::text = $1 LIMIT 1`,
+        [String(id)]
+      );
+      return rows?.length > 0;
+    }
+
+    // default user_id
+    const { rows } = await pool.query(
+      `SELECT 1 FROM caregiver_profiles WHERE user_id::text = $1 LIMIT 1`,
+      [String(id)]
+    );
+    return rows?.length > 0;
+  } catch (e) {
+    // fallback tentativa/erro (não quebra)
+    try {
+      const { rows } = await pool.query(
+        `SELECT 1 FROM caregiver_profiles WHERE user_id::text = $1 LIMIT 1`,
+        [String(id)]
+      );
+      _cpLinkCol = "user_id";
+      _cpCheckedAt = Date.now();
+      return rows?.length > 0;
+    } catch {
+      try {
+        const { rows } = await pool.query(
+          `SELECT 1 FROM caregiver_profiles WHERE caregiver_id::text = $1 LIMIT 1`,
+          [String(id)]
+        );
+        _cpLinkCol = "caregiver_id";
+        _cpCheckedAt = Date.now();
+        return rows?.length > 0;
+      } catch {
+        return false;
+      }
+    }
+  }
+}
+
+async function isEffectiveCaregiver(req) {
+  // role caregiver (legado) OU possui caregiver_profiles (multi-perfil real)
+  const role = String(req.user?.role || "").toLowerCase().trim();
+  if (role === "caregiver") return true;
+
+  const userId = req.user?.id;
+  if (!userId) return false;
+
+  return await hasCaregiverProfileByUserId(userId);
 }
 
 // -----------------------------------------------------------------------------
@@ -120,8 +212,10 @@ async function updateMeController(req, res) {
       }
     });
 
-    // campos exclusivos do cuidador
-    if (req.user?.role === "caregiver") {
+    // ✅ multi-perfil: campos do cuidador devem salvar se for cuidador efetivo
+    const effectiveCaregiver = await isEffectiveCaregiver(req);
+
+    if (effectiveCaregiver) {
       if (Object.prototype.hasOwnProperty.call(body, "services")) {
         updates.services =
           body.services && typeof body.services === "object" && !Array.isArray(body.services)
@@ -140,6 +234,21 @@ async function updateMeController(req, res) {
         updates.courses = Array.isArray(body.courses)
           ? body.courses.filter((c) => typeof c === "string" && c.trim() !== "")
           : [];
+      }
+
+      // ✅ opcional: permitir salvar daily_capacity aqui também (além de /me/capacity)
+      if (
+        Object.prototype.hasOwnProperty.call(body, "daily_capacity") ||
+        Object.prototype.hasOwnProperty.call(body, "dailyCapacity")
+      ) {
+        const raw = body.daily_capacity ?? body.dailyCapacity ?? null;
+        const parsed = toInt(raw);
+        // não quebra se vier inválido: simplesmente ignora
+        if (parsed != null) {
+          // aqui mantenho coerente com 1..50 (igual ao endpoint capacity)
+          const cap = clampInt(parsed, 1, 50);
+          updates.daily_capacity = cap;
+        }
       }
     }
 
@@ -226,8 +335,9 @@ async function updateMyAvailabilityController(req, res) {
 const CAPACITY_MIN = 1;
 const CAPACITY_MAX = 50;
 
-function ensureCaregiver(req, res) {
-  if (req.user?.role !== "caregiver") {
+async function ensureCaregiver(req, res) {
+  const ok = await isEffectiveCaregiver(req);
+  if (!ok) {
     res.status(403).json({ error: "Apenas cuidadores." });
     return false;
   }
@@ -239,11 +349,10 @@ async function getMyDailyCapacityController(req, res) {
   try {
     const userId = getAuthenticatedUserId(req, res);
     if (!userId) return;
-    if (!ensureCaregiver(req, res)) return;
+    if (!(await ensureCaregiver(req, res))) return;
 
     const daily_capacity = await getDailyCapacityByUserId(userId);
 
-    // ✅ ajuda o front a montar slider/select sem “hardcode”
     return res.json({ daily_capacity, min: CAPACITY_MIN, max: CAPACITY_MAX });
   } catch (err) {
     console.error("Erro em GET /users/me/capacity:", err);
@@ -256,13 +365,9 @@ async function updateMyDailyCapacityController(req, res) {
   try {
     const userId = getAuthenticatedUserId(req, res);
     if (!userId) return;
-    if (!ensureCaregiver(req, res)) return;
+    if (!(await ensureCaregiver(req, res))) return;
 
-    const raw =
-      req.body?.daily_capacity ??
-      req.body?.dailyCapacity ??
-      req.body?.capacity ??
-      null;
+    const raw = req.body?.daily_capacity ?? req.body?.dailyCapacity ?? req.body?.capacity ?? null;
 
     const parsed = toInt(raw);
     if (parsed == null) {
@@ -272,9 +377,6 @@ async function updateMyDailyCapacityController(req, res) {
     }
 
     const cap = clampInt(parsed, CAPACITY_MIN, CAPACITY_MAX);
-
-    // se veio fora do range, clampInt já ajustou, mas aqui você pode preferir “bloquear”.
-    // Como seu fluxo atual já aceitava clamp, mantive o comportamento (sem quebrar UX).
     const updated = await updateDailyCapacityByUserId(userId, cap);
 
     return res.json({
