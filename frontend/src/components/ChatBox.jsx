@@ -14,15 +14,56 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:4000";
 // janela para “colar” msg otimista + msg real (ms)
 const DEDUPE_WINDOW_MS = 10_000;
 
+// ✅ Status em que o chat DEVE ficar habilitado
+const CHAT_ALLOWED_STATUS = "Aceita";
+
+// normaliza texto (remove acentos + lowercase) p/ comparar status de forma tolerante
+function normalizeStr(s) {
+  return String(s || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function isAcceptedStatus(status) {
+  if (!status) return null; // não informado
+  return normalizeStr(status) === normalizeStr(CHAT_ALLOWED_STATUS);
+}
+
 export default function ChatBox({
   reservationId,
   token,
   currentUserId,
   otherUserName,
+
+  // compat: continua existindo
   canChat = true,
+
+  // ✅ novo: se você passar o status, a regra “só enquanto Aceita” vira automática
+  reservationStatus = null,
+
   onNewMessage,
 }) {
   const { showToast } = useToast();
+
+  // ✅ regra final do chat
+  const accepted = useMemo(() => isAcceptedStatus(reservationStatus), [reservationStatus]);
+
+  // - Se status foi informado: só permite chat se for "Aceita"
+  // - Se status NÃO foi informado: mantém comportamento antigo (canChat)
+  const effectiveCanChat = useMemo(() => {
+    if (accepted === null) return !!canChat; // compat com fluxo atual
+    return !!canChat && accepted;
+  }, [canChat, accepted]);
+
+  const disabledReason = useMemo(() => {
+    if (!canChat) return "O chat desta reserva está desativado no momento.";
+    if (accepted === null) return "O chat desta reserva está desativado no momento."; // status não informado → fallback
+    if (accepted) return null;
+    // status informado e não é Aceita
+    return "O chat fica disponível apenas enquanto a reserva estiver Aceita. Esta reserva já foi finalizada/encerrada.";
+  }, [canChat, accepted]);
 
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -272,6 +313,7 @@ export default function ChatBox({
   const markReadServer = useCallback(
     async ({ force = false } = {}) => {
       if (!reservationId || !token) return;
+      if (!effectiveCanChat) return; // ✅ se chat não pode, não fica marcando read
 
       if (!force && document.visibilityState !== "visible") return;
       if (!force && !isAtBottomRef.current) return;
@@ -306,7 +348,7 @@ export default function ChatBox({
         markReadInFlightRef.current = false;
       }
     },
-    [reservationId, token, refreshUnread]
+    [reservationId, token, refreshUnread, effectiveCanChat]
   );
 
   const handleScroll = () => {
@@ -393,8 +435,8 @@ export default function ChatBox({
   // Socket.IO: conecta e entra na sala da reserva
   // --------------------------------------------
   const canUseSocket = useMemo(() => {
-    return !!(token && reservationId && canChat);
-  }, [token, reservationId, canChat]);
+    return !!(token && reservationId && effectiveCanChat);
+  }, [token, reservationId, effectiveCanChat]);
 
   useEffect(() => {
     if (!canUseSocket) return;
@@ -636,7 +678,7 @@ export default function ChatBox({
   // Carregar mensagens + polling (fallback)
   // --------------------------------------------
   useEffect(() => {
-    if (!canChat || !reservationId || !token || !currentUserId) return;
+    if (!effectiveCanChat || !reservationId || !token || !currentUserId) return;
 
     let cancelled = false;
     initialLoadRef.current = true;
@@ -696,7 +738,7 @@ export default function ChatBox({
   }, [
     reservationId,
     token,
-    canChat,
+    effectiveCanChat,
     currentUserId,
     markReadServer,
     showToast,
@@ -709,7 +751,7 @@ export default function ChatBox({
   async function handleSend(e) {
     e.preventDefault();
     const text = input.trim();
-    if (!text || !canChat || !reservationId || !token || !currentUserId) return;
+    if (!text || !effectiveCanChat || !reservationId || !token || !currentUserId) return;
 
     const clientId = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
     const tempId = `temp-${clientId}`;
@@ -796,10 +838,15 @@ export default function ChatBox({
     return <span className="text-[10px] opacity-70">✓ enviada</span>;
   };
 
-  if (!canChat) {
+  if (!effectiveCanChat) {
     return (
       <div className="mt-6 p-4 rounded-2xl bg-[#FFF7E0] border border-[#EBCBA9] text-sm text-[#5A3A22]">
-        O chat desta reserva está desativado no momento.
+        {disabledReason}
+        {reservationStatus ? (
+          <div className="mt-2 text-xs opacity-80">
+            Status atual: <span className="font-semibold">{String(reservationStatus)}</span>
+          </div>
+        ) : null}
       </div>
     );
   }

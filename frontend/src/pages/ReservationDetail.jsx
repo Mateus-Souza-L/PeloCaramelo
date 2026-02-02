@@ -103,7 +103,8 @@ const normalizePetObject = (p) => {
 
   const name = p.name ?? p.pet_name ?? p.petName ?? p.pet_nome ?? p.nome ?? "";
 
-  const specie = p.specie ?? p.species ?? p.specie_name ?? p.species_name ?? p.especie ?? p.tipo ?? "";
+  const specie =
+    p.specie ?? p.species ?? p.specie_name ?? p.species_name ?? p.especie ?? p.tipo ?? "";
 
   const breed = p.breed ?? p.race ?? p.raca ?? p.breed_name ?? p.race_name ?? "";
 
@@ -175,7 +176,9 @@ const extractPetsIds = (r) => {
   if (!Array.isArray(petsIds)) petsIds = [petsIds];
 
   if (Array.isArray(r?.pets) && r.pets.length) {
-    const fromPets = r.pets.map((p) => toStr(p?.id ?? p?.pet_id ?? p?.petId ?? "")).filter(Boolean);
+    const fromPets = r.pets
+      .map((p) => toStr(p?.id ?? p?.pet_id ?? p?.petId ?? ""))
+      .filter(Boolean);
     if (fromPets.length) petsIds = fromPets;
   }
 
@@ -187,7 +190,8 @@ const normalizeReservationFromApi = (r) => {
 
   const petsIds = extractPetsIds(r);
 
-  const snapshot = r.pets_snapshot || r.petsSnapshot || r.pets_details || r.petsDetails || r.pets || null;
+  const snapshot =
+    r.pets_snapshot || r.petsSnapshot || r.pets_details || r.petsDetails || r.pets || null;
 
   const petsSnapshot = normalizeSnapshotArray(snapshot, petsIds);
 
@@ -204,8 +208,16 @@ const normalizeReservationFromApi = (r) => {
     pricePerDay: toNumSafe(r.price_per_day ?? r.pricePerDay ?? r.price),
     total: toNumSafe(r.total),
 
-    startDate: r.start_date ? String(r.start_date).slice(0, 10) : r.startDate ? String(r.startDate).slice(0, 10) : "",
-    endDate: r.end_date ? String(r.end_date).slice(0, 10) : r.endDate ? String(r.endDate).slice(0, 10) : "",
+    startDate: r.start_date
+      ? String(r.start_date).slice(0, 10)
+      : r.startDate
+        ? String(r.startDate).slice(0, 10)
+        : "",
+    endDate: r.end_date
+      ? String(r.end_date).slice(0, 10)
+      : r.endDate
+        ? String(r.endDate).slice(0, 10)
+        : "",
     status: r.status || "Pendente",
 
     tutorRating: r.tutor_rating ?? r.tutorRating,
@@ -628,12 +640,14 @@ export default function ReservationDetail() {
     return uid === String(reservation.tutorId) || uid === String(reservation.caregiverId) || user?.role === "admin";
   }, [reservation, user?.id, user?.role]);
 
-  const myUserId = String(user?.id ?? (isTutor ? reservation?.tutorId : isCaregiver ? reservation?.caregiverId : "") ?? "");
+  const myUserId = String(
+    user?.id ?? (isTutor ? reservation?.tutorId : isCaregiver ? reservation?.caregiverId : "") ?? ""
+  );
 
-  const canChatNow = (() => {
-    const s = String(reservation?.status || "");
-    return s === "Aceita" || s === "Concluída" || s === "Concluida" || s === "Finalizada";
-  })();
+  // ✅ REGRA CORRIGIDA: chat só enquanto Aceita
+  const canChatNow = useMemo(() => {
+    return String(reservation?.status || "") === "Aceita";
+  }, [reservation?.status]);
 
   const reservationDays = useMemo(() => {
     if (!reservation?.startDate || !reservation?.endDate) return null;
@@ -1451,7 +1465,8 @@ export default function ReservationDetail() {
 
               {alreadyRatedByUser ? (
                 <p className="text-sm opacity-80">
-                  Você avaliou esta reserva com <b>⭐ {isTutor ? reservation.tutorRating : reservation.caregiverRating}/5</b>
+                  Você avaliou esta reserva com{" "}
+                  <b>⭐ {isTutor ? reservation.tutorRating : reservation.caregiverRating}/5</b>
                   {isTutor && reservation.tutorReview ? ' — "' + reservation.tutorReview + '"' : ""}
                   {isCaregiver && reservation.caregiverReview ? ' — "' + reservation.caregiverReview + '"' : ""}
                 </p>
@@ -1503,10 +1518,13 @@ export default function ReservationDetail() {
                   currentUserId={myUserId}
                   otherUserName={otherUserName}
                   canChat={true}
+                  reservationStatus={reservation.status} // ✅ novo: ChatBox também aplica a regra
                 />
               </ChatErrorBoundary>
             ) : (
-              <div className="pc-card pc-card-accent text-[#5A3A22]">O chat só é liberado após a reserva ser aceita.</div>
+              <div className="pc-card pc-card-accent text-[#5A3A22]">
+                O chat fica disponível apenas enquanto a reserva estiver <b>Aceita</b>.
+              </div>
             )}
           </div>
         )}
