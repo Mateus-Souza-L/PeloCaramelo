@@ -72,39 +72,39 @@ export default function WelcomeModal({
 
     const checklist = isCaregiver
       ? [
-          {
-            icon: UserRound,
-            title: "Complete seu perfil",
-            desc: "Foto, bio e detalhes do seu atendimento aumentam confiança e conversão.",
-          },
-          {
-            icon: CalendarDays,
-            title: "Defina sua disponibilidade",
-            desc: "Marque dias/horários para receber reservas sem dor de cabeça.",
-          },
-          {
-            icon: PawPrint,
-            title: "Revise segurança do ambiente",
-            desc: "Portões, telas, produtos tóxicos e áreas restritas — tudo pronto antes do primeiro pet.",
-          },
-        ]
+        {
+          icon: UserRound,
+          title: "Complete seu perfil",
+          desc: "Foto, bio e detalhes do seu atendimento aumentam confiança e conversão.",
+        },
+        {
+          icon: CalendarDays,
+          title: "Defina sua disponibilidade",
+          desc: "Marque dias/horários para receber reservas sem dor de cabeça.",
+        },
+        {
+          icon: PawPrint,
+          title: "Revise segurança do ambiente",
+          desc: "Portões, telas, produtos tóxicos e áreas restritas — tudo pronto antes do primeiro pet.",
+        },
+      ]
       : [
-          {
-            icon: UserRound,
-            title: "Complete seu perfil",
-            desc: "Informações claras ajudam o cuidador a entender melhor sua rotina.",
-          },
-          {
-            icon: PawPrint,
-            title: "Cadastre pelo menos 1 pet",
-            desc: "Assim a reserva fica mais rápida e o cuidador já recebe as informações essenciais.",
-          },
-          {
-            icon: CalendarDays,
-            title: "Tenha datas em mente",
-            desc: "Planeje dias e horários para facilitar a busca e acelerar a confirmação.",
-          },
-        ];
+        {
+          icon: UserRound,
+          title: "Complete seu perfil",
+          desc: "Informações claras ajudam o cuidador a entender melhor sua rotina.",
+        },
+        {
+          icon: PawPrint,
+          title: "Cadastre pelo menos 1 pet",
+          desc: "Assim a reserva fica mais rápida e o cuidador já recebe as informações essenciais.",
+        },
+        {
+          icon: CalendarDays,
+          title: "Tenha datas em mente",
+          desc: "Planeje dias e horários para facilitar a busca e acelerar a confirmação.",
+        },
+      ];
 
     return { title, intro, emotional, gift, contact, checklistTitle, checklist };
   }, [isCaregiver, safeName]);
@@ -143,16 +143,19 @@ export default function WelcomeModal({
               {/* ✅ MOBILE: título menor + menos quebras */}
               <h2
                 className="
-                  min-w-0
-                  font-extrabold text-[#5A3A22]
-                  leading-tight tracking-tight
-                  text-[26px] sm:text-3xl
+                 min-w-0
+                 font-extrabold text-[#5A3A22]
+                 tracking-tight
+                 leading-snug
+                 text-[22px] sm:text-3xl
+                 max-w-full
                 "
               >
-                <span className="inline">{content.title}</span>{" "}
-                {/* ✅ MOBILE: “pata” menor (evita quebrar em linha sozinha) */}
-                <span className="inline align-middle text-[18px] sm:text-[22px] whitespace-nowrap">
-                  🐾
+                <span className="inline whitespace-normal">
+                  {content.title}
+                  <span className="inline-block align-middle ml-1 text-[16px] sm:text-[22px] whitespace-nowrap">
+                    🐾
+                  </span>
                 </span>
               </h2>
 
