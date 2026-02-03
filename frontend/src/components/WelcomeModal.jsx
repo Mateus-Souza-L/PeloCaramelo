@@ -5,7 +5,14 @@ import { X, CheckCircle2, UserRound, PawPrint, CalendarDays } from "lucide-react
 function RoleBadge({ role }) {
   const label = role === "caregiver" ? "Cuidador" : "Tutor";
   return (
-    <span className="inline-flex items-center rounded-full bg-[#FFF7E0] border border-[#FFD700]/60 px-3 py-1 text-xs font-semibold text-[#5A3A22]">
+    <span
+      className="
+        inline-flex items-center justify-center
+        rounded-full bg-[#FFF7E0] border border-[#FFD700]/60
+        px-3 py-1 text-xs font-semibold text-[#5A3A22]
+        whitespace-nowrap
+      "
+    >
       Perfil: {label}
     </span>
   );
@@ -20,7 +27,9 @@ function ChecklistItem({ icon: Icon, title, desc }) {
       <div className="min-w-0">
         <div className="flex items-start gap-2">
           {Icon ? <Icon className="w-4 h-4 mt-0.5 text-[#5A3A22]/80" /> : null}
-          <p className="font-semibold text-[#5A3A22] leading-snug">{title}</p>
+          <p className="font-semibold text-[#5A3A22] leading-snug whitespace-nowrap">
+            {title}
+          </p>
         </div>
         {desc ? (
           <p className="text-sm text-[#5A3A22]/80 leading-relaxed mt-1">{desc}</p>
@@ -49,7 +58,6 @@ export default function WelcomeModal({ role = "tutor", userName = "", onClose })
 
     const gift =
       "🎁 Enviamos um presente para o seu e-mail: seu Guia de Boas-vindas. Dá uma olhadinha — ele ajuda a começar com segurança e tranquilidade.";
-
     const fallback = "Se não receber, peça o guia em contato@pelocaramelo.com.br 🐾";
 
     const checklistTitle = isCaregiver
@@ -97,25 +105,23 @@ export default function WelcomeModal({ role = "tutor", userName = "", onClose })
 
   return (
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/55 p-4 overflow-y-auto"
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/55 p-3 sm:p-4 overflow-y-auto"
       aria-modal="true"
       role="dialog"
     >
-      {/* Card (mais largo no desktop, melhor leitura) */}
+      {/* Card: mais largo no desktop, mas responsivo no mobile */}
       <div
         className="
-          relative
-          w-full
-          max-w-2xl xl:max-w-3xl
+          relative w-full
+          max-w-[96vw] sm:max-w-[92vw] lg:max-w-4xl xl:max-w-5xl
           rounded-2xl bg-white shadow-2xl
           border-l-8 border-[#FFD700]
-          overflow-hidden
-          my-auto
+          overflow-hidden my-auto
         "
         style={{ maxHeight: "92vh" }}
       >
         {/* Header */}
-        <div className="relative p-5 sm:p-7">
+        <div className="relative p-4 sm:p-6 lg:p-7">
           <button
             onClick={onClose}
             className="absolute top-3 right-3 sm:top-4 sm:right-4 rounded-full p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100"
@@ -125,42 +131,39 @@ export default function WelcomeModal({ role = "tutor", userName = "", onClose })
             <X className="w-5 h-5" />
           </button>
 
-          <div className="flex items-start justify-between gap-3 pr-10">
-            <div className="min-w-0">
-              <h2 className="text-2xl sm:text-3xl font-extrabold text-[#5A3A22] leading-tight">
-                {content.title}
-              </h2>
+          <div className="flex items-start justify-between gap-3 pr-12">
+            <h2 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-[#5A3A22] leading-tight whitespace-nowrap">
+              {content.title}
+            </h2>
 
-              <p className="mt-3 text-[#5A3A22] font-semibold text-base sm:text-lg">
-                {content.intro}
-              </p>
-
-              <p className="mt-2 text-sm sm:text-base text-[#5A3A22]/85 leading-relaxed max-w-[70ch]">
-                {content.emotional}
-              </p>
+            <div className="shrink-0">
+              <RoleBadge role={isCaregiver ? "caregiver" : "tutor"} />
             </div>
-
-            <RoleBadge role={isCaregiver ? "caregiver" : "tutor"} />
           </div>
+
+          <p className="mt-3 text-[#5A3A22] font-semibold text-base sm:text-lg">
+            {content.intro}
+          </p>
+
+          <p className="mt-2 text-sm sm:text-base text-[#5A3A22]/85 leading-relaxed max-w-[85ch]">
+            {content.emotional}
+          </p>
 
           {/* Gift box */}
           <div className="mt-5 rounded-xl bg-[#FFF7E0] border border-[#FFD700]/60 p-4 sm:p-5">
-            <p className="text-sm sm:text-base text-[#5A3A22] leading-relaxed max-w-[72ch]">
+            <p className="text-sm sm:text-base text-[#5A3A22] leading-relaxed max-w-[90ch]">
               {content.gift}
             </p>
-
-            <p className="mt-2 text-xs sm:text-sm text-[#5A3A22]/85">
-              {content.fallback}
-            </p>
+            <p className="mt-2 text-xs sm:text-sm text-[#5A3A22]/85">{content.fallback}</p>
           </div>
         </div>
 
         {/* Body (scroll interno) */}
         <div
-          className="px-5 pb-5 sm:px-7 sm:pb-7 overflow-y-auto"
-          style={{ maxHeight: "calc(92vh - 260px)" }}
+          className="px-4 pb-4 sm:px-6 sm:pb-6 lg:px-7 lg:pb-7 overflow-y-auto"
+          style={{ maxHeight: "calc(92vh - 240px)" }}
         >
-          <div className="rounded-2xl border border-[#EBCBA9]/60 bg-[#FAF6EF] p-5 sm:p-6">
+          <div className="rounded-2xl border border-[#EBCBA9]/60 bg-[#FAF6EF] p-4 sm:p-5 lg:p-6">
             <h3 className="text-lg sm:text-xl font-extrabold text-[#5A3A22]">
               {content.checklistTitle}
             </h3>
@@ -169,8 +172,8 @@ export default function WelcomeModal({ role = "tutor", userName = "", onClose })
               Um passo de cada vez — o importante é começar com clareza e carinho.
             </p>
 
-            {/* ✅ no desktop vira 2 colunas (melhor leitura) */}
-            <ul className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-5">
+            {/* ✅ Desktop: 3 colunas (todos na mesma linha) | Mobile: 1 coluna */}
+            <ul className="mt-5 grid grid-cols-1 lg:grid-cols-3 gap-5">
               {content.checklist.map((it, idx) => (
                 <ChecklistItem key={idx} icon={it.icon} title={it.title} desc={it.desc} />
               ))}
@@ -178,13 +181,22 @@ export default function WelcomeModal({ role = "tutor", userName = "", onClose })
           </div>
 
           <p className="mt-5 text-xs sm:text-sm text-[#5A3A22]/75 leading-relaxed">
-            *Dica rápida:* se você não encontrar o e-mail do guia agora, procure por “PeloCaramelo” e confira o spam/lixo eletrônico.
+            *Dica rápida:* se você não encontrar o e-mail do guia agora, procure por “PeloCaramelo”
+            e confira o spam/lixo eletrônico.
           </p>
 
           <p className="mt-2 text-[11px] sm:text-xs text-[#5A3A22]/60">
             Para continuar, feche esta mensagem pelo <b>✕</b> no canto.
           </p>
         </div>
+
+        {/* ✅ Ajustes específicos no mobile: permitir quebra do título se faltar espaço */}
+        <style>{`
+          @media (max-width: 640px) {
+            /* no mobile, o title pode quebrar pra não empurrar tudo */
+            h2 { white-space: normal !important; }
+          }
+        `}</style>
       </div>
     </div>
   );
