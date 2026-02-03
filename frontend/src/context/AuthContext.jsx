@@ -630,6 +630,23 @@ export function AuthProvider({ children }) {
   }
 
   function handleLogout() {
+    // ✅ limpa storage primeiro
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // ignore
+    }
+
+    // ✅ redireciona IMEDIATAMENTE para a Home
+    // (antes de qualquer setState que dispare ProtectedRoute)
+    try {
+      window.location.replace("/");
+      return;
+    } catch {
+      // fallback continua abaixo
+    }
+
+    // 🔻 fallback (só roda se o replace falhar)
     setUser(null);
     setToken(null);
     setHasCaregiverProfile(false);
@@ -641,20 +658,7 @@ export function AuthProvider({ children }) {
     setCaregiverSetupOpen(false);
     setCaregiverSetupError("");
 
-    try {
-      localStorage.removeItem(STORAGE_KEY);
-    } catch {
-      // ignore
-    }
-
     emitAuthChanged("logged_out");
-
-    // ✅ garante que após logout volta para a Home (vence ProtectedRoute -> /login)
-    try {
-      window.location.replace("/");
-    } catch {
-      // ignore
-    }
   }
 
   /**
