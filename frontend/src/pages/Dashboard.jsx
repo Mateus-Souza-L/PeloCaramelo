@@ -2138,44 +2138,78 @@ export default function Dashboard() {
       });
 
     return (
-      <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] p-6">
-        {/* Tabs */}
-        <div className="max-w-[1400px] mx-auto mb-4 flex gap-3 justify-center">
-          <button
-            onClick={() => setTab("reservasTutor")}
-            className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${tab === "reservasTutor"
-              ? "bg-[#5A3A22] text-white"
-              : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
-              }`}
-            type="button"
-          >
-            Minhas Reservas
-          </button>
+      <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] p-3 md:p-6">
+        {/* Header (MOBILE: 3 ações na mesma linha | DESKTOP: mantém como antes) */}
+        <div className="max-w-[1400px] mx-auto mb-4">
+          {/* ✅ Mobile: 3 colunas */}
+          <div className="grid grid-cols-3 gap-2 md:hidden">
+            <button
+              onClick={() => setTab("reservasTutor")}
+              className={`px-2 py-2 rounded-2xl font-semibold shadow transition text-[11px] leading-tight ${tab === "reservasTutor"
+                  ? "bg-[#5A3A22] text-white"
+                  : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
+                }`}
+              type="button"
+            >
+              Minhas Reservas
+            </button>
 
-          <button
-            onClick={() => setTab("pets")}
-            className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${tab === "pets"
-              ? "bg-[#5A3A22] text-white"
-              : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
-              }`}
-            type="button"
-          >
-            Meus Pets
-          </button>
-        </div>
+            <button
+              onClick={() => setTab("pets")}
+              className={`px-2 py-2 rounded-2xl font-semibold shadow transition text-[11px] leading-tight ${tab === "pets"
+                  ? "bg-[#5A3A22] text-white"
+                  : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
+                }`}
+              type="button"
+            >
+              Meus Pets
+            </button>
 
-        {/* Avaliações */}
-        <div className="max-w-[1400px] mx-auto mb-4 flex justify-end">
-          <Link
-            to={`/avaliacoes?mode=${activeRole}`}
-            className="px-4 py-2 rounded-2xl bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22] font-semibold shadow text-sm"
-          >
-            Ver minhas avaliações
-          </Link>
+            <Link
+              to={`/avaliacoes?mode=${activeRole}`}
+              className="px-2 py-2 rounded-2xl bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22] font-semibold shadow text-[11px] leading-tight flex items-center justify-center"
+              title="Ver minhas avaliações"
+            >
+              Avaliações
+            </Link>
+          </div>
+
+          {/* ✅ Desktop (md+): mantém layout original */}
+          <div className="hidden md:flex gap-3 justify-center">
+            <button
+              onClick={() => setTab("reservasTutor")}
+              className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${tab === "reservasTutor"
+                  ? "bg-[#5A3A22] text-white"
+                  : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
+                }`}
+              type="button"
+            >
+              Minhas Reservas
+            </button>
+
+            <button
+              onClick={() => setTab("pets")}
+              className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${tab === "pets"
+                  ? "bg-[#5A3A22] text-white"
+                  : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
+                }`}
+              type="button"
+            >
+              Meus Pets
+            </button>
+
+            <Link
+              to={`/avaliacoes?mode=${activeRole}`}
+              className="px-4 py-2 rounded-2xl bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22] font-semibold shadow text-sm flex items-center justify-center"
+              title="Ver minhas avaliações"
+            >
+              Ver minhas avaliações
+            </Link>
+          </div>
         </div>
 
         {/* Conteúdo */}
-        <div className="max-w-[1400px] mx-auto bg-white rounded-2xl shadow p-6 border-l-4 border-[#FFD700]/80">
+        <div className="max-w-[1400px] mx-auto bg-white rounded-2xl shadow p-4 md:p-6 border-l-4 border-[#FFD700]/80">
           {/* ✅ TAB: RESERVAS */}
           {tab === "reservasTutor" && (
             <>
@@ -2456,8 +2490,8 @@ export default function Dashboard() {
             <button
               onClick={() => setTab("disponibilidade")}
               className={`px-2 py-2 rounded-2xl font-semibold shadow transition text-[11px] leading-tight ${tab === "disponibilidade"
-                  ? "bg-[#5A3A22] text-white"
-                  : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
+                ? "bg-[#5A3A22] text-white"
+                : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
                 }`}
               type="button"
             >
@@ -2467,8 +2501,8 @@ export default function Dashboard() {
             <button
               onClick={() => setTab("reservas")}
               className={`px-2 py-2 rounded-2xl font-semibold shadow transition text-[11px] leading-tight ${tab === "reservas"
-                  ? "bg-[#5A3A22] text-white"
-                  : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
+                ? "bg-[#5A3A22] text-white"
+                : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
                 }`}
               type="button"
             >
@@ -2489,8 +2523,8 @@ export default function Dashboard() {
             <button
               onClick={() => setTab("disponibilidade")}
               className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${tab === "disponibilidade"
-                  ? "bg-[#5A3A22] text-white"
-                  : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
+                ? "bg-[#5A3A22] text-white"
+                : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
                 }`}
               type="button"
             >
@@ -2500,8 +2534,8 @@ export default function Dashboard() {
             <button
               onClick={() => setTab("reservas")}
               className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${tab === "reservas"
-                  ? "bg-[#5A3A22] text-white"
-                  : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
+                ? "bg-[#5A3A22] text-white"
+                : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
                 }`}
               type="button"
             >
