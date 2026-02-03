@@ -1,5 +1,6 @@
+// frontend/src/components/WelcomeModal.jsx
 import { useMemo } from "react";
-import { X, CheckCircle2, Mail, Loader2, UserRound, PawPrint, CalendarDays } from "lucide-react";
+import { X, CheckCircle2, UserRound, PawPrint, CalendarDays } from "lucide-react";
 
 function RoleBadge({ role }) {
   const label = role === "caregiver" ? "Cuidador" : "Tutor";
@@ -22,9 +23,7 @@ function ChecklistItem({ icon: Icon, title, desc }) {
           <p className="font-semibold text-[#5A3A22] leading-snug">{title}</p>
         </div>
         {desc ? (
-          <p className="text-sm text-[#5A3A22]/80 leading-relaxed mt-1">
-            {desc}
-          </p>
+          <p className="text-sm text-[#5A3A22]/80 leading-relaxed mt-1">{desc}</p>
         ) : null}
       </div>
     </li>
@@ -35,9 +34,6 @@ export default function WelcomeModal({
   role = "tutor",
   userName = "",
   onClose, // fecha SOMENTE no X
-  onResendGuide,
-  resending = false,
-  resendState = "idle", // "idle" | "ok" | "error"
 }) {
   const isCaregiver = String(role).toLowerCase() === "caregiver";
   const safeName = String(userName || "").trim();
@@ -55,7 +51,11 @@ export default function WelcomeModal({
       ? "Aqui, a confiança vem antes de tudo: tutores encontram cuidado de verdade — e cuidadores constroem vínculos com responsabilidade e carinho."
       : "Aqui, confiança e carinho andam juntos: tutores e cuidadores se conectam com um único objetivo — o bem-estar dos pets.";
 
-    const gift = "🎁 Enviamos um presente para o seu e-mail: seu Guia de Boas-vindas. Dá uma olhadinha — ele ajuda a começar com segurança e tranquilidade.";
+    const gift =
+      "🎁 Enviamos um presente para o seu e-mail: seu Guia de Boas-vindas. Dá uma olhadinha — ele ajuda a começar com segurança e tranquilidade.";
+
+    const fallback =
+      "Se não receber, peça o guia em contato@pelocaramelo.com.br 🐾";
 
     const checklistTitle = isCaregiver
       ? "Seu começo ideal como cuidador"
@@ -97,23 +97,27 @@ export default function WelcomeModal({
           },
         ];
 
-    return { title, intro, emotional, gift, checklistTitle, checklist };
+    return { title, intro, emotional, gift, fallback, checklistTitle, checklist };
   }, [isCaregiver, safeName]);
 
   return (
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/55 px-3 py-4"
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/55 p-4 overflow-y-auto"
       aria-modal="true"
       role="dialog"
     >
       {/* Card */}
       <div
         className="
+          relative
           w-full max-w-lg
           rounded-2xl bg-white shadow-2xl
           border-l-8 border-[#FFD700]
           overflow-hidden
+          my-auto
         "
+        // ✅ garante que nunca “some” no desktop e no mobile vira scroll interno
+        style={{ maxHeight: "92vh" }}
       >
         {/* Header */}
         <div className="relative p-4 sm:p-6">
@@ -122,6 +126,7 @@ export default function WelcomeModal({
             onClick={onClose}
             className="absolute top-3 right-3 sm:top-4 sm:right-4 rounded-full p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100"
             aria-label="Fechar"
+            type="button"
           >
             <X className="w-5 h-5" />
           </button>
@@ -133,61 +138,26 @@ export default function WelcomeModal({
             <RoleBadge role={isCaregiver ? "caregiver" : "tutor"} />
           </div>
 
-          <p className="mt-3 text-[#5A3A22] font-semibold">
-            {content.intro}
-          </p>
+          <p className="mt-3 text-[#5A3A22] font-semibold">{content.intro}</p>
 
           <p className="mt-2 text-sm sm:text-base text-[#5A3A22]/85 leading-relaxed">
             {content.emotional}
           </p>
 
-          {/* Gift box */}
+          {/* Gift box (sem botão) */}
           <div className="mt-4 rounded-xl bg-[#FFF7E0] border border-[#FFD700]/60 p-4">
             <p className="text-sm sm:text-base text-[#5A3A22] leading-relaxed">
               {content.gift}
             </p>
 
-            <button
-              type="button"
-              onClick={onResendGuide}
-              disabled={resending}
-              className="
-                mt-3 inline-flex w-full items-center justify-center gap-2
-                rounded-xl px-4 py-2.5
-                bg-[#95301F] text-white font-semibold
-                hover:bg-[#B25B38] disabled:opacity-60 disabled:cursor-not-allowed
-                transition
-              "
-            >
-              {resending ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Reenviando...
-                </>
-              ) : (
-                <>
-                  <Mail className="w-4 h-4" />
-                  Reenviar guia por e-mail
-                </>
-              )}
-            </button>
-
-            {resendState === "ok" ? (
-              <p className="mt-2 text-xs sm:text-sm text-green-700">
-                ✅ Pronto! Reenviamos o guia. Se não aparecer, confira o spam/lixo eletrônico.
-              </p>
-            ) : null}
-
-            {resendState === "error" ? (
-              <p className="mt-2 text-xs sm:text-sm text-red-700">
-                ⚠️ Não conseguimos reenviar agora. Tente novamente em instantes.
-              </p>
-            ) : null}
+            <p className="mt-2 text-xs sm:text-sm text-[#5A3A22]/85">
+              {content.fallback}
+            </p>
           </div>
         </div>
 
-        {/* Body (scroll no mobile) */}
-        <div className="px-4 pb-4 sm:px-6 sm:pb-6">
+        {/* Body (scroll interno) */}
+        <div className="px-4 pb-4 sm:px-6 sm:pb-6 overflow-y-auto" style={{ maxHeight: "calc(92vh - 220px)" }}>
           <div className="rounded-2xl border border-[#EBCBA9]/60 bg-[#FAF6EF] p-4 sm:p-5">
             <h3 className="text-base sm:text-lg font-extrabold text-[#5A3A22]">
               {content.checklistTitle}
@@ -199,19 +169,14 @@ export default function WelcomeModal({
 
             <ul className="mt-4 space-y-4">
               {content.checklist.map((it, idx) => (
-                <ChecklistItem
-                  key={idx}
-                  icon={it.icon}
-                  title={it.title}
-                  desc={it.desc}
-                />
+                <ChecklistItem key={idx} icon={it.icon} title={it.title} desc={it.desc} />
               ))}
             </ul>
           </div>
 
           {/* Nota final */}
           <p className="mt-4 text-xs sm:text-sm text-[#5A3A22]/75 leading-relaxed">
-            *Dica rápida:* se você não encontrar o e-mail do guia agora, procure por “PeloCaramelo” e marque como confiável.
+            *Dica rápida:* se você não encontrar o e-mail do guia agora, procure por “PeloCaramelo” e confira o spam/lixo eletrônico.
           </p>
 
           {/* Observação importante: só fecha no X */}
@@ -219,16 +184,6 @@ export default function WelcomeModal({
             Para continuar, feche esta mensagem pelo <b>✕</b> no canto.
           </p>
         </div>
-
-        {/* Responsividade extra: garante que no mobile não estoure */}
-        <style>{`
-          @media (max-height: 720px) {
-            div[role="dialog"] > div {
-              max-height: 92vh;
-              overflow: auto;
-            }
-          }
-        `}</style>
       </div>
     </div>
   );
