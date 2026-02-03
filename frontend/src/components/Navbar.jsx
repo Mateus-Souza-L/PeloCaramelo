@@ -306,6 +306,11 @@ export default function Navbar() {
   const role = String(user?.role || "").toLowerCase().trim();
   const isAdminLike = role === "admin" || role === "admin_master";
 
+  // ✅ considera cuidador válido se:
+  // - hasCaregiverProfile true (fluxo antigo)
+  // - OU role vindo do backend já é caregiver (seu caso atual pós Opção A)
+  const hasCaregiverAccess = Boolean(hasCaregiverProfile) || role === "caregiver";
+
   const [chatUnreadIds, setChatUnreadIds] = useState([]);
   const [reservationUnreadCount, setReservationUnreadCount] = useState(0);
 
@@ -332,11 +337,37 @@ export default function Navbar() {
     window.dispatchEvent(new CustomEvent("active-role-changed", { detail: { role: next } }));
   }, []);
 
-  const effectiveMode = isAdminLike ? "admin" : activeMode || "tutor";
+  // ✅ escolha do modo efetivo:
+  // - admin => admin
+  // - senão: usa activeMode, mas se estiver vazio usa o role do backend como fallback
+  const effectiveMode = useMemo(() => {
+    if (isAdminLike) return "admin";
+    if (activeMode === "tutor" || activeMode === "caregiver") return activeMode;
+    if (role === "caregiver") return "caregiver";
+    return "tutor";
+  }, [isAdminLike, activeMode, role]);
+
   const isTutor = effectiveMode === "tutor";
   const isCaregiver = effectiveMode === "caregiver";
 
   const canUseBell = !isAdminLike && (isTutor || isCaregiver);
+
+  // ✅ FIX: sincroniza "activeMode" com o role real do backend para evitar:
+  // Navbar "Painel Tutor" enquanto Dashboard renderiza cuidador (ou vice-versa)
+  useEffect(() => {
+    if (isAdminLike) return;
+    if (!user) return;
+
+    const backendMode = role === "caregiver" ? "caregiver" : role === "tutor" ? "tutor" : null;
+    if (!backendMode) return;
+
+    // Se o activeMode estiver diferente do backend, ajusta para evitar descompasso visual
+    if (activeMode !== backendMode) {
+      setMode?.(backendMode);
+      emitRoleChanged(backendMode);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, role, isAdminLike]);
 
   useEffect(() => {
     closeMobile();
@@ -774,7 +805,8 @@ export default function Navbar() {
   };
 
   const switchToCaregiver = () => {
-    if (hasCaregiverProfile) {
+    // ✅ ajustado: considera role caregiver como acesso válido
+    if (hasCaregiverAccess) {
       navigateDashboardAfterMode("caregiver");
       return;
     }
@@ -786,10 +818,10 @@ export default function Navbar() {
 
   const otherActionLabel = useMemo(() => {
     if (isAdminLike) return null;
-    if (isTutor) return hasCaregiverProfile ? "Cuidador" : "Ser cuidador";
+    if (isTutor) return hasCaregiverAccess ? "Cuidador" : "Ser cuidador";
     if (isCaregiver) return "Tutor";
     return null;
-  }, [isAdminLike, isTutor, isCaregiver, hasCaregiverProfile]);
+  }, [isAdminLike, isTutor, isCaregiver, hasCaregiverAccess]);
 
   const handleOtherAction = () => {
     if (isAdminLike) return;
@@ -836,7 +868,7 @@ export default function Navbar() {
               >
                 <span>{otherActionLabel}</span>
 
-                {isTutor && !hasCaregiverProfile && (
+                {isTutor && !hasCaregiverAccess && (
                   <span className="text-xs font-semibold text-[#95301F]">
                     {createCareLoading ? "aguarde..." : "(criar perfil)"}
                   </span>
@@ -1008,7 +1040,7 @@ export default function Navbar() {
                     creatingProfile || createCareLoading ? "opacity-60 cursor-not-allowed" : "",
                   ].join(" ")}
                 >
-                  {isTutor ? (hasCaregiverProfile ? "Cuidador" : "Ser cuidador") : "Tutor"}
+                  {isTutor ? (hasCaregiverAccess ? "Cuidador" : "Ser cuidador") : "Tutor"}
                 </button>
 
                 <button
