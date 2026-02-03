@@ -114,9 +114,10 @@ function normalizeDailyCapacity(input) {
 }
 
 /* ============================================================
-   ✅ Helpers: filtro de cuidador com serviço+preço
+   ✅ Helpers: filtro de cuidador
    - Compatível com jsonb OU string JSON
-   - Regra: precisa ter pelo menos 1 serviço true e preço numérico > 0
+   - Regra NOVA (BUSCA): precisa ter pelo menos 1 serviço true
+   - (Preço pode ser vazio — UI mostra "Preço não definido")
    ============================================================ */
 
 function safeParseJson(v, fallback) {
@@ -133,29 +134,13 @@ function safeParseJson(v, fallback) {
   return fallback;
 }
 
-function parsePriceToNumber(v) {
-  if (v == null) return null;
-  const s = String(v).trim();
-  if (!s) return null;
-
-  // aceita "35,50" e "35.50"
-  const n = Number(s.replace(",", "."));
-  return Number.isFinite(n) ? n : null;
-}
-
-function hasAtLeastOnePricedService(servicesRaw, pricesRaw) {
+function hasAtLeastOneEnabledService(servicesRaw) {
   const services = safeParseJson(servicesRaw, {});
-  const prices = safeParseJson(pricesRaw, {});
-
   if (!services || typeof services !== "object") return false;
 
-  for (const [key, enabled] of Object.entries(services)) {
-    if (!enabled) continue;
-
-    const priceNum = parsePriceToNumber(prices?.[key]);
-    if (priceNum != null && priceNum > 0) return true;
+  for (const enabled of Object.values(services)) {
+    if (enabled) return true;
   }
-
   return false;
 }
 
@@ -438,7 +423,7 @@ router.post("/me", authMiddleware, async (req, res) => {
    ✅ GET /caregivers
    Lista cuidadores via caregiver_profiles (multi-perfil)
    ✅ inclui services + daily_capacity
-   ✅ filtro: só retorna cuidadores com pelo menos 1 serviço com preço > 0
+   ✅ REGRA NOVA: retorna cuidadores com pelo menos 1 serviço ativo
    ============================================================ */
 router.get("/", async (req, res) => {
   try {
@@ -465,8 +450,8 @@ router.get("/", async (req, res) => {
 
     const { rows } = await pool.query(query);
 
-    // ✅ filtro: exige ao menos 1 serviço ativo com preço > 0
-    const filtered = (rows || []).filter((c) => hasAtLeastOnePricedService(c.services, c.prices));
+    // ✅ filtro: exige ao menos 1 serviço ativo (preço pode ser vazio)
+    const filtered = (rows || []).filter((c) => hasAtLeastOneEnabledService(c.services));
 
     return res.json({ caregivers: filtered });
   } catch (err) {
@@ -479,7 +464,7 @@ router.get("/", async (req, res) => {
    ✅ GET /caregivers/:id
    Detalhe do cuidador via caregiver_profiles (multi-perfil)
    ✅ inclui services + daily_capacity
-   ✅ proteção: se não tiver serviço com preço, responde 404
+   ✅ REGRA NOVA: se não tiver serviço ativo, responde 404
    ============================================================ */
 router.get("/:id", async (req, res) => {
   try {
@@ -518,8 +503,8 @@ router.get("/:id", async (req, res) => {
 
     const caregiver = rows[0];
 
-    // ✅ regra: se não tiver ao menos 1 serviço com preço, não exibe o perfil
-    if (!hasAtLeastOnePricedService(caregiver.services, caregiver.prices)) {
+    // ✅ regra NOVA: se não tiver ao menos 1 serviço ativo, não exibe o perfil
+    if (!hasAtLeastOneEnabledService(caregiver.services)) {
       return res.status(404).json({ error: "Cuidador não encontrado." });
     }
 

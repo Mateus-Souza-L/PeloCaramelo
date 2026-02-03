@@ -38,6 +38,11 @@ function toNum(v) {
   return Number.isFinite(n) ? n : null;
 }
 
+/**
+ * ✅ Normaliza parâmetros de serviço vindos por URL / UI
+ * Backend usa: hospedagem | creche | passeio | visita | banho
+ * Front antigo usava: passeios | petSitter
+ */
 function normalizeServiceParam(raw) {
   const v = String(raw || "").trim();
   if (!v) return "";
@@ -52,25 +57,76 @@ function normalizeServiceParam(raw) {
     creche: "creche",
     daycare: "creche",
 
-    // pet sitter
-    petsitter: "petSitter",
-    "pet-sitter": "petSitter",
-    pet_sitter: "petSitter",
-    pet: "petSitter",
-    pets: "petSitter",
-    petsit: "petSitter",
-    petsitting: "petSitter",
-    "pet sitter": "petSitter",
-    petSitter: "petSitter",
+    // antigo "petSitter" -> backend "visita"
+    petsitter: "visita",
+    "pet-sitter": "visita",
+    pet_sitter: "visita",
+    pet: "visita",
+    pets: "visita",
+    petsit: "visita",
+    petsitting: "visita",
+    "pet sitter": "visita",
+    petsitterr: "visita",
+    petsitterrr: "visita",
+    petsitterrrrr: "visita",
+    petsitterrrrrr: "visita",
+    petSitter: "visita", // compat
+    visita: "visita",
 
-    // passeios
-    passeio: "passeios",
-    passeios: "passeios",
-    walk: "passeios",
-    walking: "passeios",
+    // passeios -> backend "passeio"
+    passeio: "passeio",
+    passeios: "passeio",
+    walk: "passeio",
+    walking: "passeio",
+
+    // banho
+    banho: "banho",
+    "banho & tosa": "banho",
+    "banho e tosa": "banho",
+    tosa: "banho",
   };
 
+  // compat antiga do front
+  if (x === "passeios") return "passeio";
+  if (x === "petsitter") return "visita";
+  if (x === "petsitter") return "visita";
+
   return map[x] || v;
+}
+
+/**
+ * Front pode ter valores legados no state/URL.
+ * Converte para chave real do backend antes de filtrar.
+ */
+function normalizeSvcToBackendKey(svc) {
+  const s = String(svc || "").trim();
+  if (!s || s === "todos") return "todos";
+  if (s === "passeios") return "passeio";
+  if (s === "petSitter") return "visita";
+  return s;
+}
+
+/**
+ * label seguro (caso utils ainda não tenha alguns nomes)
+ */
+function serviceLabelSafe(key) {
+  const k = String(key || "");
+  const map = {
+    hospedagem: "Hospedagem",
+    creche: "Creche",
+    passeio: "Passeio",
+    visita: "Visita / Pet Sitter",
+    banho: "Banho & Tosa",
+  };
+
+  try {
+    const fromUtils = serviceLabel(k);
+    if (fromUtils && fromUtils !== k) return fromUtils;
+  } catch {
+    // ignore
+  }
+
+  return map[k] || k;
 }
 
 /**
@@ -381,10 +437,12 @@ export default function Search() {
     const s1 = sp.get("start") || sp.get("startDate") || sp.get("inicio") || "";
     const s2 = sp.get("end") || sp.get("endDate") || sp.get("fim") || "";
 
+    // ✅ normaliza para chave REAL do backend
     const svcRaw = normalizeServiceParam(sp.get("svc") || sp.get("service") || "");
     const sortRaw = (sp.get("sort") || "").trim();
 
-    const allowedSvc = new Set(["todos", "hospedagem", "creche", "petSitter", "passeios"]);
+    // ✅ valores aceitos agora (backend)
+    const allowedSvc = new Set(["todos", "hospedagem", "creche", "visita", "passeio", "banho"]);
     const allowedSort = new Set(["preco", "nome"]);
 
     const nextQuery = String(q).trim();
@@ -483,8 +541,10 @@ export default function Search() {
       );
     }
 
-    if (svc !== "todos") {
-      list = list.filter((c) => !!c?.services?.[svc]);
+    const svcBackend = normalizeSvcToBackendKey(svc);
+
+    if (svcBackend !== "todos") {
+      list = list.filter((c) => !!c?.services?.[svcBackend]);
     }
 
     if (sort === "preco") {
@@ -625,7 +685,7 @@ export default function Search() {
     }
 
     if (svc && svc !== "todos") {
-      parts.push(serviceLabel(svc));
+      parts.push(serviceLabelSafe(normalizeSvcToBackendKey(svc)));
     }
 
     return parts.join(" • ");
@@ -647,7 +707,7 @@ export default function Search() {
     searchTrackTimerRef.current = setTimeout(() => {
       const payload = {
         q: String(query || "").trim().slice(0, 80),
-        svc: String(svc || "todos"),
+        svc: String(normalizeSvcToBackendKey(svc) || "todos"),
         start: isValidKey(startDateKey) ? startDateKey : "",
         end: isValidKey(endDateKey) ? endDateKey : "",
         sort: String(sort || "preco"),
@@ -716,7 +776,7 @@ export default function Search() {
     if (svc && svc !== "todos") {
       pills.push({
         key: "svc",
-        label: `🏷️ ${serviceLabel(svc)}`,
+        label: `🏷️ ${serviceLabelSafe(normalizeSvcToBackendKey(svc))}`,
         remove: () => setSvc("todos"),
         title: "Filtro de serviço",
       });
@@ -736,9 +796,6 @@ export default function Search() {
   const skeletonCount = 9;
 
   return (
-    // ✅ MUDANÇA SOMENTE MOBILE:
-    // - padding lateral menor no mobile: px-3 (antes px-6)
-    // - mantém no sm+: px-6
     <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] py-8 px-3 sm:px-6">
       {/* ✅ SEO Structured Data */}
       <script
@@ -746,10 +803,6 @@ export default function Search() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(schemaJsonLd) }}
       />
 
-      {/* ✅ MUDANÇA SOMENTE MOBILE:
-          - card com padding menor no mobile: p-4 (antes p-6)
-          - mantém no sm+: p-6
-      */}
       <div className="max-w-[1400px] mx-auto bg-white rounded-2xl shadow p-4 sm:p-6 border-l-4 border-[#FFD700]/80">
         {/* ✅ Destaque rápido (antes do título) */}
         <div className="mb-5 rounded-2xl border border-[#5A3A22]/10 bg-[#FFF8F0] p-4 sm:p-5 shadow-sm">
@@ -763,7 +816,6 @@ export default function Search() {
               </p>
             </div>
 
-            {/* ✅ WEB: mantém botão | ✅ MOBILE: remove (hidden sm:flex) */}
             <Link
               to="/sobre#como-funciona"
               className="
@@ -780,7 +832,6 @@ export default function Search() {
             </Link>
           </div>
 
-          {/* ✅ WEB: mantém cards | ✅ MOBILE: remove */}
           <div className="hidden sm:grid mt-4 grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="rounded-xl bg-white border border-[#5A3A22]/10 p-3">
               <p className="font-bold text-[#5A3A22]">✅ Sem taxas</p>
@@ -802,7 +853,6 @@ export default function Search() {
             </div>
           </div>
 
-          {/* ✅ “Resultados para…” quando vier da Home/URL */}
           {showResultsHint && hasActiveFilters && (
             <div className="mt-4 rounded-xl bg-white border border-[#5A3A22]/10 p-3">
               <p className="text-sm text-[#5A3A22]">
@@ -821,7 +871,6 @@ export default function Search() {
             </p>
           </div>
 
-          {/* ✅ WEB: mantém ordenação aqui | ✅ MOBILE: vai pro sanduíche */}
           <div className="hidden sm:flex items-center gap-2">
             <span className="text-sm text-[#5A3A22]/70">Ordenar por:</span>
             <select
@@ -836,9 +885,7 @@ export default function Search() {
           </div>
         </div>
 
-        {/* =========================
-            ✅ FILTROS (WEB)
-            ========================= */}
+        {/* ✅ FILTROS (WEB) */}
         <div className="hidden sm:grid grid-cols-1 md:grid-cols-12 gap-2 mb-4">
           <input
             type="text"
@@ -870,8 +917,8 @@ export default function Search() {
             <option value="todos">Todos</option>
             <option value="hospedagem">Hospedagem</option>
             <option value="creche">Creche</option>
-            <option value="petSitter">Pet Sitter</option>
-            <option value="passeios">Passeios</option>
+            <option value="visita">Pet Sitter</option>
+            <option value="passeio">Passeios</option>
           </select>
 
           <button
@@ -888,9 +935,7 @@ export default function Search() {
           </button>
         </div>
 
-        {/* =========================
-            ✅ FILTROS (MOBILE - sanduíche)
-            ========================= */}
+        {/* ✅ FILTROS (MOBILE) */}
         <div className="sm:hidden mb-4">
           <div className="rounded-2xl border border-[#5A3A22]/10 bg-[#FFF8F0] p-3 shadow-sm">
             <div className="flex items-center justify-between gap-2">
@@ -910,9 +955,7 @@ export default function Search() {
               >
                 <span className="text-lg leading-none">☰</span>
                 <span>Filtros</span>
-                <span className="text-[#5A3A22]/60">
-                  {mobileFiltersOpen ? "▲" : "▼"}
-                </span>
+                <span className="text-[#5A3A22]/60">{mobileFiltersOpen ? "▲" : "▼"}</span>
               </button>
 
               <button
@@ -931,9 +974,7 @@ export default function Search() {
             {mobileFiltersOpen && (
               <div id="mobile-filters-panel" className="mt-3 grid grid-cols-1 gap-2">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-[#5A3A22]/70 whitespace-nowrap">
-                    Ordenar:
-                  </span>
+                  <span className="text-sm text-[#5A3A22]/70 whitespace-nowrap">Ordenar:</span>
                   <select
                     value={sort}
                     onChange={(e) => setSort(e.target.value)}
@@ -976,15 +1017,14 @@ export default function Search() {
                   <option value="todos">Todos</option>
                   <option value="hospedagem">Hospedagem</option>
                   <option value="creche">Creche</option>
-                  <option value="petSitter">Pet Sitter</option>
-                  <option value="passeios">Passeios</option>
+                  <option value="visita">Pet Sitter</option>
+                  <option value="passeio">Passeios</option>
                 </select>
               </div>
             )}
           </div>
         </div>
 
-        {/* pílulas de filtros ativos */}
         {activePills.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-5">
             {activePills.map((p) => (
@@ -995,7 +1035,6 @@ export default function Search() {
           </div>
         )}
 
-        {/* badges visuais de diferenciais (UI-only) */}
         <div className="flex flex-wrap gap-2 mb-5">
           <span className="text-xs px-3 py-1 rounded-full bg-[#FFF6CC] text-[#5A3A22] border border-[#5A3A22]/10">
             ✅ Sem taxas
@@ -1011,7 +1050,6 @@ export default function Search() {
           </span>
         </div>
 
-        {/* estados + listagem */}
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
             {Array.from({ length: skeletonCount }).map((_, i) => (
@@ -1105,7 +1143,7 @@ export default function Search() {
                         .filter(([, v]) => v)
                         .map(([k]) => (
                           <span key={k} className="text-xs px-2 py-1 rounded-full bg-[#FFF6CC]">
-                            {serviceLabel(k)}
+                            {serviceLabelSafe(k)}
                           </span>
                         ))}
                     </div>
