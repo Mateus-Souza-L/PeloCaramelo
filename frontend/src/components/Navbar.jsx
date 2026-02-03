@@ -285,6 +285,125 @@ function CreateCaregiverProfileModal({
   );
 }
 
+/* ============================================================
+   Modal: Criar perfil de tutor (confirmação)
+   - Igual ao cuidador, mas sem backend (tutor-profile é "conceito do front")
+   ============================================================ */
+
+function CreateTutorProfileModal({ open, loading, onClose, onConfirm }) {
+  if (!open) return null;
+
+  const colors = {
+    brown: "#5A3A22",
+    yellow: "#FFD700",
+    beige: "#EBCBA9",
+    red: "#95301F",
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.55)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 999,
+        padding: 16,
+      }}
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget && !loading) onClose?.();
+      }}
+    >
+      <div
+        style={{
+          width: "min(620px, 100%)",
+          background: "#fff",
+          borderRadius: 18,
+          overflow: "hidden",
+          boxShadow: "0 12px 30px rgba(0,0,0,0.22)",
+          border: "1px solid #eee",
+        }}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div style={{ padding: 18, borderBottom: "1px solid #eee", background: "#fff" }}>
+          <div style={{ fontSize: 18, fontWeight: 1000, color: colors.brown }}>
+            Criar perfil de tutor(a)
+          </div>
+          <div style={{ marginTop: 8, color: "#333", lineHeight: 1.4, fontSize: 13 }}>
+            Ao confirmar, você poderá alternar para <b>Tutor</b> no Painel e fazer reservas normalmente.
+          </div>
+        </div>
+
+        <div style={{ padding: 18, background: "#fafafa" }}>
+          <div
+            style={{
+              padding: 12,
+              borderRadius: 14,
+              border: "1px solid #f0e5d7",
+              background: colors.beige,
+              color: "#222",
+              fontSize: 13,
+              lineHeight: 1.4,
+              fontWeight: 900,
+            }}
+          >
+            Confirma a criação do perfil de tutor(a)?
+          </div>
+        </div>
+
+        <div
+          style={{
+            padding: 18,
+            display: "flex",
+            gap: 10,
+            justifyContent: "flex-end",
+            background: "#fff",
+            borderTop: "1px solid #eee",
+          }}
+        >
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={loading}
+            style={{
+              padding: "10px 14px",
+              borderRadius: 12,
+              border: "1px solid #ddd",
+              background: "#fff",
+              color: "#333",
+              fontWeight: 900,
+              cursor: loading ? "not-allowed" : "pointer",
+              opacity: loading ? 0.7 : 1,
+            }}
+          >
+            Cancelar
+          </button>
+
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={loading}
+            style={{
+              padding: "10px 14px",
+              borderRadius: 12,
+              border: "1px solid transparent",
+              background: colors.yellow,
+              color: colors.brown,
+              fontWeight: 1000,
+              cursor: loading ? "not-allowed" : "pointer",
+              opacity: loading ? 0.85 : 1,
+            }}
+          >
+            {loading ? "Criando..." : "Confirmar"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Navbar() {
   const {
     user,
@@ -303,6 +422,28 @@ export default function Navbar() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // ============================================================
+  // session helpers (usar o mesmo STORAGE_KEY do AuthContext)
+  // ============================================================
+  const readSession = () => {
+    try {
+      const raw = localStorage.getItem("pelocaramelo_auth");
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const persistSession = (patch) => {
+    try {
+      const prev = readSession() || {};
+      const next = { ...prev, ...patch };
+      localStorage.setItem("pelocaramelo_auth", JSON.stringify(next));
+    } catch {
+      // ignore
+    }
+  };
+
   const role = String(user?.role || "").toLowerCase().trim();
   const isAdminLike = role === "admin" || role === "admin_master";
 
@@ -317,9 +458,13 @@ export default function Navbar() {
   const [panelOpen, setPanelOpen] = useState(false);
   const panelWrapRef = useRef(null);
 
-  // ✅ modal (novo): criar perfil cuidador com serviços + capacidade
+  // ✅ modal (cuidador)
   const [createCareOpen, setCreateCareOpen] = useState(false);
   const [createCareLoading, setCreateCareLoading] = useState(false);
+
+  // ✅ modal (tutor)
+  const [createTutorOpen, setCreateTutorOpen] = useState(false);
+  const [createTutorLoading, setCreateTutorLoading] = useState(false);
 
   const chatUnreadCount = chatUnreadIds.length;
   const totalUnread = chatUnreadCount + reservationUnreadCount;
@@ -346,6 +491,18 @@ export default function Navbar() {
   const effectiveMode = inferredDefaultMode;
   const isTutor = effectiveMode === "tutor";
   const isCaregiver = effectiveMode === "caregiver";
+
+  // ✅ Tutor "não existe" no backend como perfil separado: controlamos no front via localStorage
+  const hasTutorProfile = useMemo(() => {
+    const saved = readSession();
+    const savedHasTutor = Boolean(saved?.hasTutorProfile ?? false);
+
+    // se backend já marcou role tutor, considera como tendo perfil
+    if (role === "tutor") return true;
+
+    return savedHasTutor;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, role]);
 
   // ✅ FIX EXTRA (resolve seu print): se role é caregiver, garante modo caregiver
   useEffect(() => {
@@ -807,18 +964,54 @@ export default function Navbar() {
     closeMobile();
   };
 
+  // ===== Tutor "criar perfil" (confirmação)
+  const openCreateTutorModal = () => setCreateTutorOpen(true);
+
+  const closeCreateTutorModal = () => {
+    if (createTutorLoading) return;
+    setCreateTutorOpen(false);
+  };
+
+  const confirmCreateTutorProfile = async () => {
+    setCreateTutorLoading(true);
+    try {
+      // marca tutor como "criado" no front
+      persistSession({ hasTutorProfile: true });
+
+      // alterna pro modo tutor
+      navigateDashboardAfterMode("tutor");
+      setCreateTutorOpen(false);
+    } finally {
+      setCreateTutorLoading(false);
+    }
+  };
+
   const otherActionLabel = useMemo(() => {
     if (isAdminLike) return null;
+
+    // Se estou em Tutor, alterno para Cuidador (ou "Ser cuidador")
     if (isTutor) return hasCaregiverProfile ? "Cuidador" : "Ser cuidador";
-    if (isCaregiver) return "Tutor";
+
+    // Se estou em Cuidador, alterno para Tutor (ou "Ser tutor")
+    if (isCaregiver) return hasTutorProfile ? "Tutor" : "Ser tutor";
+
     return null;
-  }, [isAdminLike, isTutor, isCaregiver, hasCaregiverProfile]);
+  }, [isAdminLike, isTutor, isCaregiver, hasCaregiverProfile, hasTutorProfile]);
 
   const handleOtherAction = () => {
     if (isAdminLike) return;
 
     if (isTutor) return switchToCaregiver();
-    if (isCaregiver) return switchToTutor();
+
+    if (isCaregiver) {
+      if (!hasTutorProfile) {
+        openCreateTutorModal();
+        setPanelOpen(false);
+        closeMobile();
+        return;
+      }
+      return switchToTutor();
+    }
   };
 
   const PanelDropdown = user && !isAdminLike ? (
@@ -850,10 +1043,12 @@ export default function Navbar() {
               <button
                 type="button"
                 onClick={handleOtherAction}
-                disabled={creatingProfile || createCareLoading}
+                disabled={creatingProfile || createCareLoading || createTutorLoading}
                 className={[
                   "w-full px-4 py-3 text-left hover:bg-black/5 transition font-semibold flex items-center justify-between",
-                  creatingProfile || createCareLoading ? "opacity-60 cursor-not-allowed" : "",
+                  creatingProfile || createCareLoading || createTutorLoading
+                    ? "opacity-60 cursor-not-allowed"
+                    : "",
                 ].join(" ")}
                 role="menuitem"
               >
@@ -862,6 +1057,12 @@ export default function Navbar() {
                 {isTutor && !hasCaregiverProfile && (
                   <span className="text-xs font-semibold text-[#95301F]">
                     {createCareLoading ? "aguarde..." : "(criar perfil)"}
+                  </span>
+                )}
+
+                {isCaregiver && !hasTutorProfile && (
+                  <span className="text-xs font-semibold text-[#95301F]">
+                    {createTutorLoading ? "aguarde..." : "(criar perfil)"}
                   </span>
                 )}
               </button>
@@ -1020,16 +1221,32 @@ export default function Navbar() {
                   type="button"
                   onClick={() => {
                     closeMobile();
+
                     if (isTutor) return switchToCaregiver();
-                    if (isCaregiver) return switchToTutor();
+
+                    if (isCaregiver) {
+                      if (!hasTutorProfile) {
+                        setCreateTutorOpen(true);
+                        return;
+                      }
+                      return switchToTutor();
+                    }
                   }}
-                  disabled={creatingProfile || createCareLoading}
+                  disabled={creatingProfile || createCareLoading || createTutorLoading}
                   className={[
                     "w-full bg-white/10 hover:bg-white/15 border border-white/15 px-3 py-2 rounded-lg font-semibold text-center transition",
-                    creatingProfile || createCareLoading ? "opacity-60 cursor-not-allowed" : "",
+                    creatingProfile || createCareLoading || createTutorLoading
+                      ? "opacity-60 cursor-not-allowed"
+                      : "",
                   ].join(" ")}
                 >
-                  {isTutor ? (hasCaregiverProfile ? "Cuidador" : "Ser cuidador") : "Tutor"}
+                  {isTutor
+                    ? hasCaregiverProfile
+                      ? "Cuidador"
+                      : "Ser cuidador"
+                    : hasTutorProfile
+                    ? "Tutor"
+                    : "Ser tutor"}
                 </button>
 
                 <button
@@ -1107,6 +1324,13 @@ export default function Navbar() {
         onConfirm={confirmCreateCaregiverWithDetails}
         initialServices={[]}
         initialDailyCapacity={3}
+      />
+
+      <CreateTutorProfileModal
+        open={createTutorOpen}
+        loading={createTutorLoading}
+        onClose={closeCreateTutorModal}
+        onConfirm={confirmCreateTutorProfile}
       />
     </>
   );
