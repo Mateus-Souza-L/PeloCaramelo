@@ -736,14 +736,21 @@ export default function Search() {
   const skeletonCount = 9;
 
   return (
-    <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] py-8 px-6">
+    // ✅ MUDANÇA SOMENTE MOBILE:
+    // - padding lateral menor no mobile: px-3 (antes px-6)
+    // - mantém no sm+: px-6
+    <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] py-8 px-3 sm:px-6">
       {/* ✅ SEO Structured Data */}
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(schemaJsonLd) }}
       />
 
-      <div className="max-w-[1400px] mx-auto bg-white rounded-2xl shadow p-6 border-l-4 border-[#FFD700]/80">
+      {/* ✅ MUDANÇA SOMENTE MOBILE:
+          - card com padding menor no mobile: p-4 (antes p-6)
+          - mantém no sm+: p-6
+      */}
+      <div className="max-w-[1400px] mx-auto bg-white rounded-2xl shadow p-4 sm:p-6 border-l-4 border-[#FFD700]/80">
         {/* ✅ Destaque rápido (antes do título) */}
         <div className="mb-5 rounded-2xl border border-[#5A3A22]/10 bg-[#FFF8F0] p-4 sm:p-5 shadow-sm">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">

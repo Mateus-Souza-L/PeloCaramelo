@@ -244,9 +244,7 @@ export default function ReviewHistory() {
 
           <button
             type="button"
-            onClick={() =>
-              setRevPage((p) => Math.min(totalPages, Number(p || 1) + 1))
-            }
+            onClick={() => setRevPage((p) => Math.min(totalPages, Number(p || 1) + 1))}
             disabled={!canNext}
             className={`px-3 py-2 rounded-lg text-xs font-semibold shadow ${
               canNext
@@ -293,8 +291,10 @@ export default function ReviewHistory() {
     : "Você ainda não recebeu avaliações neste perfil.";
 
   return (
-    <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] py-8 px-6">
-      <div className="max-w-[1400px] mx-auto bg-white rounded-2xl shadow p-6 border-l-4 border-[#FFD700]/80">
+    // ✅ MOBILE: menos "espremido" (p-3) | DESKTOP: mantém (px-6 / p-6)
+    <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] py-8 px-3 md:px-6">
+      {/* ✅ MOBILE: padding menor no card (p-4) | DESKTOP: mantém (p-6) */}
+      <div className="max-w-[1400px] mx-auto bg-white rounded-2xl shadow p-4 md:p-6 border-l-4 border-[#FFD700]/80">
         <h1 className="text-2xl font-bold text-[#5A3A22] mb-2">{profileTitle}</h1>
 
         <p className="text-[#5A3A22] text-lg mb-6">
@@ -346,7 +346,9 @@ export default function ReviewHistory() {
                     <div className="mt-2 text-xs opacity-80">
                       <p className="text-[#95301F] font-semibold">Oculta pela moderação</p>
                       {ev.__hiddenReason ? <p>Motivo: {ev.__hiddenReason}</p> : null}
-                      {ev.__hiddenAt ? <p>Ocultada em: {formatDateBR(ev.__hiddenAt)}</p> : null}
+                      {ev.__hiddenAt ? (
+                        <p>Ocultada em: {formatDateBR(ev.__hiddenAt)}</p>
+                      ) : null}
                     </div>
                   ) : null}
                 </div>
