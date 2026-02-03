@@ -156,10 +156,10 @@ function getRatingSummary(c) {
   const list = Array.isArray(c.reviews)
     ? c.reviews
     : Array.isArray(c.ratings)
-    ? c.ratings
-    : Array.isArray(c.avaliacoes)
-    ? c.avaliacoes
-    : null;
+      ? c.ratings
+      : Array.isArray(c.avaliacoes)
+        ? c.avaliacoes
+        : null;
 
   if ((avg == null || !Number.isFinite(avg)) && list && list.length) {
     const nums = list
@@ -396,14 +396,14 @@ export default function Search() {
     const itemList =
       !loading && !filteringDates && Array.isArray(filteredAsync)
         ? filteredAsync
-            .filter((c) => c && c.id != null)
-            .slice(0, 50)
-            .map((c, i) => ({
-              "@type": "ListItem",
-              position: i + 1,
-              name: String(c.name || "Cuidador"),
-              url: `${origin}/caregiver/${c.id}`,
-            }))
+          .filter((c) => c && c.id != null)
+          .slice(0, 50)
+          .map((c, i) => ({
+            "@type": "ListItem",
+            position: i + 1,
+            name: String(c.name || "Cuidador"),
+            url: `${origin}/caregiver/${c.id}`,
+          }))
         : [];
 
     return {
@@ -490,7 +490,7 @@ export default function Search() {
 
     try {
       abortRef.current?.abort?.();
-    } catch {}
+    } catch { }
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -624,7 +624,7 @@ export default function Search() {
 
     try {
       availabilityReqAbortRef.current?.abort?.();
-    } catch {}
+    } catch { }
 
     const controller = new AbortController();
     availabilityReqAbortRef.current = controller;
@@ -661,6 +661,80 @@ export default function Search() {
   }, [baseFiltered, startDateKey, endDateKey, fetchAvailabilityKeys]);
 
   const filtered = filteredAsync;
+
+  // ===========================================================
+  // 📄 Paginação — 20 perfis por página (client-side)
+  // ===========================================================
+  const SEARCH_PAGE_SIZE = 20;
+  const [page, setPage] = useState(1);
+
+  const totalResults = filtered.length;
+
+  const totalPages = useMemo(() => {
+    return Math.max(1, Math.ceil(totalResults / SEARCH_PAGE_SIZE));
+  }, [totalResults]);
+
+  // ao mudar filtros/lista, volta para página 1
+  useEffect(() => {
+    setPage(1);
+  }, [query, startDateKey, endDateKey, svc, sort, filteringDates, loading]);
+
+  // garante página válida quando totalPages mudar
+  useEffect(() => {
+    setPage((p) => {
+      const cur = Math.max(1, Number(p || 1));
+      return Math.min(cur, totalPages);
+    });
+  }, [totalPages]);
+
+  const paginated = useMemo(() => {
+    const cur = Math.max(1, Number(page || 1));
+    const start = (cur - 1) * SEARCH_PAGE_SIZE;
+    return filtered.slice(start, start + SEARCH_PAGE_SIZE);
+  }, [filtered, page]);
+
+  function SearchPager() {
+    const curPage = Math.max(1, Number(page || 1));
+    const canPrev = curPage > 1;
+    const canNext = curPage < totalPages;
+
+    if (!canPrev && !canNext) return null;
+
+    return (
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+        <p className="text-xs text-[#5A3A22] opacity-80">
+          Página <b>{curPage}</b> de <b>{totalPages}</b> —{" "}
+          <b>{totalResults}</b> resultado{totalResults === 1 ? "" : "s"}
+        </p>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setPage((p) => Math.max(1, Number(p || 1) - 1))}
+            disabled={!canPrev}
+            className={`px-3 py-2 rounded-lg text-xs font-semibold shadow ${canPrev
+              ? "bg-[#D2A679] hover:bg-[#B25B38] text-[#5A3A22]"
+              : "bg-gray-200 text-[#5A3A22]/50 cursor-not-allowed"
+              }`}
+          >
+            ← Anterior
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setPage((p) => Math.min(totalPages, Number(p || 1) + 1))}
+            disabled={!canNext}
+            className={`px-3 py-2 rounded-lg text-xs font-semibold shadow ${canNext
+              ? "bg-[#D2A679] hover:bg-[#B25B38] text-[#5A3A22]"
+              : "bg-gray-200 text-[#5A3A22]/50 cursor-not-allowed"
+              }`}
+          >
+            Próxima →
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const hasActiveFilters = useMemo(() => {
     const q = String(query || "").trim();
@@ -1097,12 +1171,15 @@ export default function Search() {
         ) : (
           <>
             <p className="text-sm text-[#5A3A22]/70 mb-4">
-              Mostrando <span className="font-semibold text-[#5A3A22]">{filtered.length}</span>{" "}
-              {filtered.length === 1 ? "cuidador" : "cuidadores"}.
+              Mostrando{" "}
+              <span className="font-semibold text-[#5A3A22]">{totalResults}</span>{" "}
+              {totalResults === 1 ? "cuidador" : "cuidadores"}.
             </p>
 
+            <SearchPager />
+
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-              {filtered.map((c) => {
+              {paginated.map((c) => {
                 const { avg, count } = getRatingSummary(c);
 
                 return (
