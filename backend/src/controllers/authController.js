@@ -28,6 +28,7 @@ const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-trocar-em-producao";
    ============================================================ */
 
 function generateToken(user) {
+  // ✅ token sempre reflete o role do DB (mas agora o register garante tutor)
   return jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: "7d" });
 }
 
@@ -274,9 +275,13 @@ async function register(req, res) {
     const name = String(body?.name || "").trim();
     const email = String(body?.email || "").trim();
     const password = String(body?.password || "");
-    const role = body?.role || "tutor";
 
-    // ✅ agora são obrigatórios
+    // ✅ CORREÇÃO DEFINITIVA:
+    // Nunca aceitar "role" vindo do front no cadastro.
+    // Usuário nasce como tutor e "ser cuidador" depende do caregiver_profile.
+    const role = "tutor";
+
+    // ✅ obrigatórios
     const city = String(body?.city || "").trim();
     const neighborhood = String(body?.neighborhood || "").trim();
 
@@ -288,7 +293,6 @@ async function register(req, res) {
       return res.status(400).json({ error: "Nome, e-mail e senha são obrigatórios." });
     }
 
-    // ✅ city + neighborhood obrigatórios (e não aceitam vazio)
     if (!city) {
       return res.status(400).json({
         error: "Cidade é obrigatória.",
@@ -375,7 +379,6 @@ async function login(req, res) {
     }
 
     const token = generateToken(user);
-
     const hasCaregiverProfile = await hasCaregiverProfileByUserId(user.id);
 
     return res.json({ user, token, hasCaregiverProfile });

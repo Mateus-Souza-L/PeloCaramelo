@@ -51,26 +51,56 @@ function usersDailyCapacitySelectExpr() {
    ✅ Helpers: normalização/validação do body
    ============================================================ */
 
-function normalizeServices(input) {
-  // aceita array de strings, ou string única (ou null)
+// ✅ opções canônicas (keys) + aceitação de label
+const SERVICE_OPTIONS = [
+  { key: "hospedagem", label: "Hospedagem" },
+  { key: "creche", label: "Creche" },
+  { key: "passeio", label: "Passeio" },
+  { key: "visita", label: "Visita / Pet Sitter" },
+  { key: "banho", label: "Banho & Tosa" },
+];
+
+// mapa label->key e key->key (aceita ambos)
+const SERVICE_TOKEN_TO_KEY = (() => {
+  const m = new Map();
+  for (const opt of SERVICE_OPTIONS) {
+    m.set(String(opt.key).toLowerCase(), opt.key);
+    m.set(String(opt.label).toLowerCase(), opt.key);
+  }
+  return m;
+})();
+
+function normalizeServicesToKeys(input) {
+  // aceita array, string única, ou null
   if (input == null) return null;
 
   const arr = Array.isArray(input) ? input : [input];
   const cleaned = arr
     .map((v) => String(v || "").trim())
     .filter(Boolean)
-    .slice(0, 30); // guarda de tamanho
+    .slice(0, 30);
 
-  // remove duplicados (case-insensitive)
   const seen = new Set();
-  const unique = [];
+  const keys = [];
   for (const s of cleaned) {
-    const k = s.toLowerCase();
-    if (seen.has(k)) continue;
-    seen.add(k);
-    unique.push(s);
+    const token = s.toLowerCase();
+    const key = SERVICE_TOKEN_TO_KEY.get(token);
+    if (!key) continue; // ignora serviços desconhecidos
+    if (seen.has(key)) continue;
+    seen.add(key);
+    keys.push(key);
   }
-  return unique;
+  return keys;
+}
+
+function buildServicesObjectFromKeys(keys) {
+  // gera objeto no formato esperado pelo sistema: { hospedagem: true, ... }
+  const obj = {};
+  for (const opt of SERVICE_OPTIONS) obj[opt.key] = false;
+  for (const k of keys || []) {
+    if (Object.prototype.hasOwnProperty.call(obj, k)) obj[k] = true;
+  }
+  return obj;
 }
 
 function normalizeDailyCapacity(input) {
@@ -285,7 +315,7 @@ function joinOnCaregiverProfiles(linkCol) {
 /* ============================================================
    ✅ POST /caregivers/me (idempotente)
    - cria perfil se não existe
-   - ✅ agora também salva services + daily_capacity (quando enviados)
+   - ✅ salva services (como OBJETO) + daily_capacity (quando enviados)
    ============================================================ */
 router.post("/me", authMiddleware, async (req, res) => {
   const userId = req.user?.id;
@@ -301,12 +331,12 @@ router.post("/me", authMiddleware, async (req, res) => {
 
     // ✅ lê body vindo do front
     const body = req.body || {};
-    const servicesNorm = normalizeServices(body.services);
+    const serviceKeys = normalizeServicesToKeys(body.services);
     const dailyCapNorm = normalizeDailyCapacity(body.daily_capacity);
 
     // ✅ validações: se mandou algo, precisa estar ok
     if (body.services !== undefined) {
-      if (!servicesNorm || servicesNorm.length === 0) {
+      if (!serviceKeys || serviceKeys.length === 0) {
         return res.status(400).json({
           error: "Selecione pelo menos 1 serviço.",
           code: "INVALID_SERVICES",
@@ -334,17 +364,18 @@ router.post("/me", authMiddleware, async (req, res) => {
     }
 
     // ✅ salva campos no users (se vieram no body)
-    // services sempre existe (você já usa u.services nos SELECTs)
-    // daily_capacity só atualiza se a coluna existir
     const updates = [];
     const values = [];
     let idx = 1;
 
-    if (servicesNorm != null) {
+    // ✅ services: salva como OBJETO { hospedagem:true, ... } (jsonb)
+    if (serviceKeys != null) {
+      const servicesObj = buildServicesObjectFromKeys(serviceKeys);
       updates.push(`services = $${idx++}::jsonb`);
-      values.push(JSON.stringify(servicesNorm));
+      values.push(JSON.stringify(servicesObj));
     }
 
+    // daily_capacity só atualiza se a coluna existir
     if (_hasDailyCapacityCol && dailyCapNorm != null) {
       updates.push(`daily_capacity = $${idx++}::int`);
       values.push(dailyCapNorm);
