@@ -27,9 +27,7 @@ function ChecklistItem({ icon: Icon, title, desc }) {
       <div className="min-w-0">
         <div className="flex items-start gap-2">
           {Icon ? <Icon className="w-4 h-4 mt-0.5 text-[#5A3A22]/80" /> : null}
-          <p className="font-semibold text-[#5A3A22] leading-snug whitespace-nowrap">
-            {title}
-          </p>
+          <p className="font-semibold text-[#5A3A22] leading-snug">{title}</p>
         </div>
         {desc ? (
           <p className="text-sm text-[#5A3A22]/80 leading-relaxed mt-1">{desc}</p>
@@ -109,7 +107,7 @@ export default function WelcomeModal({ role = "tutor", userName = "", onClose })
       aria-modal="true"
       role="dialog"
     >
-      {/* Card: mais largo no desktop, mas responsivo no mobile */}
+      {/* Card (WEB mantém como está) */}
       <div
         className="
           relative w-full
@@ -132,7 +130,13 @@ export default function WelcomeModal({ role = "tutor", userName = "", onClose })
           </button>
 
           <div className="flex items-start justify-between gap-3 pr-12">
-            <h2 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-[#5A3A22] leading-tight whitespace-nowrap">
+            <h2
+              className="
+                text-2xl sm:text-3xl lg:text-4xl
+                font-extrabold text-[#5A3A22] leading-tight
+                whitespace-nowrap
+              "
+            >
               {content.title}
             </h2>
 
@@ -172,7 +176,6 @@ export default function WelcomeModal({ role = "tutor", userName = "", onClose })
               Um passo de cada vez — o importante é começar com clareza e carinho.
             </p>
 
-            {/* ✅ Desktop: 3 colunas (todos na mesma linha) | Mobile: 1 coluna */}
             <ul className="mt-5 grid grid-cols-1 lg:grid-cols-3 gap-5">
               {content.checklist.map((it, idx) => (
                 <ChecklistItem key={idx} icon={it.icon} title={it.title} desc={it.desc} />
@@ -190,11 +193,75 @@ export default function WelcomeModal({ role = "tutor", userName = "", onClose })
           </p>
         </div>
 
-        {/* ✅ Ajustes específicos no mobile: permitir quebra do título se faltar espaço */}
+        {/* ✅ AJUSTES SOMENTE NO MOBILE */}
         <style>{`
           @media (max-width: 640px) {
-            /* no mobile, o title pode quebrar pra não empurrar tudo */
-            h2 { white-space: normal !important; }
+            /* Card ocupa quase toda a tela e vira layout com scroll interno */
+            div[role="dialog"] > div {
+              max-height: 92vh !important;
+              width: 100% !important;
+            }
+
+            /* Header mais compacto */
+            div[role="dialog"] > div > div:first-child {
+              padding: 14px !important;
+            }
+
+            /* Linha title + badge: permitir quebrar (sem destruir), mas reduzir fonte para evitar “escada” */
+            h2 {
+              white-space: normal !important;
+              font-size: 22px !important;     /* ↓ reduz quebra */
+              line-height: 1.15 !important;
+              letter-spacing: -0.01em;
+            }
+
+            /* Badge e botão X mais compactos */
+            button[aria-label="Fechar"] {
+              top: 10px !important;
+              right: 10px !important;
+            }
+
+            /* Textos do header um pouco menores */
+            div[role="dialog"] p {
+              font-size: 13px;
+            }
+            div[role="dialog"] p.font-semibold {
+              font-size: 14px !important;
+            }
+
+            /* Gift box mais compacto */
+            div[role="dialog"] .bg-\\[\\#FFF7E0\\] {
+              padding: 12px !important;
+            }
+
+            /* ✅ Corpo: força scroll interno real para não “cortar” os cards */
+            div[role="dialog"] > div > div:nth-child(2) {
+              max-height: calc(92vh - 260px) !important;
+              overflow-y: auto !important;
+              -webkit-overflow-scrolling: touch;
+              padding: 14px !important;
+              padding-top: 0 !important;
+            }
+
+            /* Cards checklist: 1 coluna e menor espaçamento */
+            ul {
+              margin-top: 14px !important;
+              gap: 12px !important;
+            }
+
+            /* Item do checklist: compactar títulos/descrições */
+            li p {
+              font-size: 13px !important;
+            }
+            li p.font-semibold {
+              font-size: 14px !important;
+              white-space: normal !important;
+            }
+
+            /* Caixa do checklist mais compacta */
+            div[role="dialog"] .bg-\\[\\#FAF6EF\\] {
+              padding: 12px !important;
+            }
           }
         `}</style>
       </div>
