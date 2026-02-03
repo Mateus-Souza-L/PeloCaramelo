@@ -116,7 +116,7 @@ function normalizeDailyCapacity(input) {
 /* ============================================================
    ✅ Helpers: filtro de cuidador
    - Compatível com jsonb OU string JSON
-   - Regra NOVA (BUSCA): precisa ter pelo menos 1 serviço true
+   - REGRA (BUSCA): precisa ter pelo menos 1 serviço true
    - (Preço pode ser vazio — UI mostra "Preço não definido")
    ============================================================ */
 
@@ -139,7 +139,7 @@ function hasAtLeastOneEnabledService(servicesRaw) {
   if (!services || typeof services !== "object") return false;
 
   for (const enabled of Object.values(services)) {
-    if (enabled) return true;
+    if (enabled === true) return true;
   }
   return false;
 }
@@ -423,7 +423,7 @@ router.post("/me", authMiddleware, async (req, res) => {
    ✅ GET /caregivers
    Lista cuidadores via caregiver_profiles (multi-perfil)
    ✅ inclui services + daily_capacity
-   ✅ REGRA NOVA: retorna cuidadores com pelo menos 1 serviço ativo
+   ✅ REGRA: retorna cuidadores com pelo menos 1 serviço ativo
    ============================================================ */
 router.get("/", async (req, res) => {
   try {
@@ -464,7 +464,7 @@ router.get("/", async (req, res) => {
    ✅ GET /caregivers/:id
    Detalhe do cuidador via caregiver_profiles (multi-perfil)
    ✅ inclui services + daily_capacity
-   ✅ REGRA NOVA: se não tiver serviço ativo, responde 404
+   ✅ REGRA: se não tiver serviço ativo, responde 404
    ============================================================ */
 router.get("/:id", async (req, res) => {
   try {
@@ -503,7 +503,7 @@ router.get("/:id", async (req, res) => {
 
     const caregiver = rows[0];
 
-    // ✅ regra NOVA: se não tiver ao menos 1 serviço ativo, não exibe o perfil
+    // ✅ regra: se não tiver ao menos 1 serviço ativo, não exibe o perfil
     if (!hasAtLeastOneEnabledService(caregiver.services)) {
       return res.status(404).json({ error: "Cuidador não encontrado." });
     }
