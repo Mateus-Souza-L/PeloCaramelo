@@ -332,36 +332,34 @@ export default function Navbar() {
     window.dispatchEvent(new CustomEvent("active-role-changed", { detail: { role: next } }));
   }, []);
 
-  // ✅ Modo efetivo = escolha do usuário (activeMode)
-  // Regra: se tentar "caregiver" sem ter perfil, cai pra "tutor"
-  const effectiveMode = useMemo(() => {
+  // ✅ FIX: modo efetivo não pode “defaultar tutor” se o usuário é caregiver
+  const inferredDefaultMode = useMemo(() => {
     if (isAdminLike) return "admin";
-    const m = activeMode === "caregiver" || activeMode === "tutor" ? activeMode : "tutor";
-    if (m === "caregiver" && !hasCaregiverProfile) return "tutor";
-    return m;
-  }, [isAdminLike, activeMode, hasCaregiverProfile]);
+    if (activeMode === "caregiver" || activeMode === "tutor") return activeMode;
 
+    // Se o usuário é caregiver no backend, o padrão do front deve ser caregiver
+    if (role === "caregiver") return "caregiver";
+
+    return "tutor";
+  }, [isAdminLike, activeMode, role]);
+
+  const effectiveMode = inferredDefaultMode;
   const isTutor = effectiveMode === "tutor";
   const isCaregiver = effectiveMode === "caregiver";
 
-  const canUseBell = !isAdminLike && (isTutor || isCaregiver);
-
-  // ✅ segurança: se o usuário não tem perfil cuidador, garante que não fica travado em caregiver
+  // ✅ FIX EXTRA (resolve seu print): se role é caregiver, garante modo caregiver
   useEffect(() => {
-    if (isAdminLike) return;
-    if (!user) return;
+    if (!user || isAdminLike) return;
 
-    if (activeMode === "caregiver" && !hasCaregiverProfile) {
-      setMode?.("tutor");
-      emitRoleChanged("tutor");
-    }
-
-    if (activeMode !== "tutor" && activeMode !== "caregiver") {
-      setMode?.("tutor");
-      emitRoleChanged("tutor");
+    // Se backend diz caregiver, não faz sentido a Navbar ficar em tutor
+    if (role === "caregiver" && activeMode !== "caregiver") {
+      setMode?.("caregiver");
+      emitRoleChanged("caregiver");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id, hasCaregiverProfile, isAdminLike]);
+  }, [user?.id, role, isAdminLike]);
+
+  const canUseBell = !isAdminLike && (isTutor || isCaregiver);
 
   useEffect(() => {
     closeMobile();
@@ -768,18 +766,23 @@ export default function Navbar() {
         body: { services, daily_capacity },
       });
 
-      // ✅ agora existe perfil cuidador (o /auth/me deve refletir isso)
+      setMode?.("caregiver");
+      emitRoleChanged("caregiver");
+
       try {
         await refreshMe?.(token, { preferCaregiver: true });
       } catch {}
 
       setCreateCareOpen(false);
+
       navigateDashboardAfterMode("caregiver");
     } catch (err) {
       console.error("Erro ao criar perfil cuidador com detalhes:", err);
 
       try {
         await authRequest("/caregivers/me", token, { method: "POST" });
+        setMode?.("caregiver");
+        emitRoleChanged("caregiver");
         try {
           await refreshMe?.(token, { preferCaregiver: true });
         } catch {}
@@ -799,7 +802,6 @@ export default function Navbar() {
       return;
     }
 
-    // ✅ se NÃO tem perfil, não “troca”: abre modal para criar
     openCreateCaregiverModal();
     setPanelOpen(false);
     closeMobile();
@@ -948,7 +950,7 @@ export default function Navbar() {
     </div>
   );
 
-  // ✅ MOBILE MENU
+  // ✅ MOBILE MENU (somente mobile): sininho ao lado do sanduíche + remove item "Notificações" do dropdown
   const MobileMenu = (
     <div className="md:hidden flex items-center gap-2">
       {user && canUseBell && (
@@ -960,6 +962,7 @@ export default function Navbar() {
           aria-label="Abrir notificações"
         >
           <Bell className="w-5 h-5" />
+
           {totalUnread > 0 && (
             <span
               className="
