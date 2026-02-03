@@ -263,7 +263,7 @@ export default function Home() {
                           backdrop-blur-sm
                         "
                       >
-                        Cadastre‑se como cuidador(a)
+                        Cadastre-se como cuidador(a)
                       </Link>
                     </div>
                   </div>
@@ -529,14 +529,24 @@ export default function Home() {
                       barulho.
                     </p>
 
-                    <div className="mt-6 flex flex-row flex-wrap gap-3">
+                    {/* ✅ AJUSTE SOMENTE MOBILE: menos “espremido” + botões alinhados/iguais */}
+                    <div
+                      className="
+                        mt-6
+                        grid grid-cols-1 gap-3
+                        sm:flex sm:flex-row sm:flex-wrap sm:gap-3
+                      "
+                    >
                       <Link
                         to="/comportamento"
                         className="
+                          w-full
+                          h-12
+                          inline-flex items-center justify-center
                           bg-[#95301F] hover:brightness-110 text-white
                           rounded-xl font-semibold shadow-md transition
-                          px-4 py-2 text-sm
-                          sm:px-6 sm:py-3 sm:text-base
+                          px-4 text-[14px]
+                          sm:w-auto sm:h-auto sm:px-6 sm:py-3 sm:text-base
                           focus:outline-none focus:ring-2 focus:ring-[#95301F]/40
                         "
                       >
@@ -546,10 +556,13 @@ export default function Home() {
                       <Link
                         to="/comportamento#dra-laise-oliveira"
                         className="
+                          w-full
+                          h-12
+                          inline-flex items-center justify-center
                           bg-transparent border-2 border-[#5A3A22] text-[#5A3A22]
                           hover:bg-[#5A3A22]/10 rounded-xl font-semibold transition
-                          px-4 py-2 text-sm
-                          sm:px-6 sm:py-3 sm:text-base
+                          px-4 text-[14px]
+                          sm:w-auto sm:h-auto sm:px-6 sm:py-3 sm:text-base
                           focus:outline-none focus:ring-2 focus:ring-[#5A3A22]/30
                         "
                       >
