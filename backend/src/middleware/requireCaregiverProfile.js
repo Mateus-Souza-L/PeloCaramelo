@@ -11,6 +11,9 @@ const pool = require("../config/db");
  * ✅ Fix importante:
  * - NÃO tentar coluna inexistente (evita: column does not exist)
  * - fallback seguro: aceita "caregivers" caso exista e tenha vínculo com user_id
+ *
+ * ✅ Opção A (definitiva p/ seu caso):
+ * - se o usuário já está com role "caregiver", libera acesso (não depende de caregiver_profiles)
  */
 
 // ------------------------------
@@ -244,9 +247,13 @@ async function requireCaregiverProfile(req, res, next) {
       });
     }
 
-    // ✅ Admin passa sempre
     const role = String(req.user?.role || "").toLowerCase().trim();
+
+    // ✅ Admin passa sempre
     if (role === "admin" || role === "admin_master") return next();
+
+    // ✅ Opção A: se o usuário já está com role caregiver, permite acessar
+    if (role === "caregiver") return next();
 
     // ✅ fast-path: se authMiddleware injetou a flag
     if (req.user?.hasCaregiverProfile === true) return next();
@@ -256,7 +263,10 @@ async function requireCaregiverProfile(req, res, next) {
     try {
       ok = await existsCaregiverProfileByUserId(userId);
     } catch (e) {
-      console.error("[requireCaregiverProfile] caregiver_profiles check error:", e?.message || e);
+      console.error(
+        "[requireCaregiverProfile] caregiver_profiles check error:",
+        e?.message || e
+      );
       ok = false;
     }
 
