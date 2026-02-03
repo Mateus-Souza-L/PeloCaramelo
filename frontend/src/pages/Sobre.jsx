@@ -195,7 +195,7 @@ export default function Sobre() {
   };
 
   return (
-    <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] py-8 px-6">
+    <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] py-6 sm:py-8 px-4 sm:px-6">
       {/* ✅ Schema.org FAQ (JSON-LD) */}
       <script
         type="application/ld+json"
@@ -204,21 +204,21 @@ export default function Sobre() {
       />
 
       {/* CARD BRANCO PRINCIPAL */}
-      <div className="max-w-[1400px] mx-auto bg-white rounded-2xl shadow p-6 md:p-8 border-l-4 border-[#5A3A22]">
+      <div className="max-w-[1400px] mx-auto bg-white rounded-2xl shadow p-5 sm:p-6 md:p-8 border-l-4 border-[#5A3A22]">
         {/* Título */}
-        <h1 className="text-2xl md:text-3xl font-bold text-[#5A3A22] mb-4 text-center">
+        <h1 className="text-[26px] leading-tight sm:text-2xl md:text-3xl font-bold text-[#5A3A22] mb-4 text-center">
           Sobre a PeloCaramelo
         </h1>
 
         {/* Texto inicial */}
-        <p className="text-[#5A3A22] mb-4 leading-relaxed text-[15px] md:text-base">
+        <p className="text-[#5A3A22] mb-4 leading-relaxed text-[15px] md:text-base text-left md:text-left">
           A PeloCaramelo nasceu com uma ideia simples: ajudar tutores e cuidadores a se
           encontrarem de maneira leve, clara e sem complicações. Sabemos como pode ser
           difícil confiar o cuidado de um pet a alguém e também entendemos que muitos
           cuidadores têm dificuldade de alcançar famílias que realmente precisam deles.
         </p>
 
-        <p className="text-[#5A3A22] mb-4 leading-relaxed text-[15px] md:text-base">
+        <p className="text-[#5A3A22] mb-4 leading-relaxed text-[15px] md:text-base text-left md:text-left">
           Por isso escolhemos seguir um caminho diferente.{" "}
           <strong>
             A plataforma não cobra taxas, porcentagens ou comissões sobre os serviços
@@ -228,7 +228,7 @@ export default function Sobre() {
           para conversarem e ajustarem o que for melhor para os dois.
         </p>
 
-        <p className="text-[#5A3A22] mb-2 leading-relaxed text-[15px] md:text-base">
+        <p className="text-[#5A3A22] mb-2 leading-relaxed text-[15px] md:text-base text-left md:text-left">
           Para manter o projeto vivo e em evolução, usamos outras formas de monetização,
           como publicidade e parcerias. Assim, conseguimos cuidar da sustentabilidade da
           plataforma sem transformar cada reserva em uma cobrança extra.
@@ -238,18 +238,18 @@ export default function Sobre() {
         <div id="como-funciona" className="scroll-mt-28" />
 
         {/* CONJUNTO DE CARDS */}
-        <div className="mt-8 space-y-8 md:space-y-10">
+        <div className="mt-7 sm:mt-8 space-y-6 sm:space-y-8 md:space-y-10">
           {/* BLOCO 1 – Nossa missão */}
           <motion.section
-            className="pc-card pc-card-accent border-l-4 border-[#5A3A22]"
+            className="pc-card pc-card-accent border-l-4 border-[#5A3A22] p-5 sm:p-6"
             {...cardMotion}
           >
             <div className="flex flex-col md:flex-row items-center gap-6">
               <div className="flex-1 order-2 md:order-1">
-                <h2 className="text-lg font-semibold text-[#5A3A22] mb-2 flex items-center gap-2">
+                <h2 className="text-[18px] sm:text-lg font-semibold text-[#5A3A22] mb-2 flex items-center gap-2">
                   Nossa missão <span className="text-xl">💛</span>
                 </h2>
-                <p className="text-[#5A3A22] leading-relaxed text-sm md:text-base">
+                <p className="text-[#5A3A22] leading-relaxed text-[15px] sm:text-sm md:text-base text-left md:text-left">
                   Aproximar pessoas que cuidam com carinho. Tornar a busca por cuidadores
                   mais humana, acessível e transparente, fortalecendo relações de
                   confiança entre famílias e quem se dedica a cuidar dos pets.
@@ -273,7 +273,10 @@ export default function Sobre() {
           </motion.section>
 
           {/* BLOCO 2 – Como ajudamos */}
-          <motion.section className="pc-card mb-8 border-r-4 border-[#5A3A22]" {...cardMotion}>
+          <motion.section
+            className="pc-card mb-6 sm:mb-8 border-r-4 border-[#5A3A22] p-5 sm:p-6"
+            {...cardMotion}
+          >
             <div className="flex flex-col md:flex-row items-center gap-6">
               <motion.div
                 className="flex-1 order-1 md:order-1 flex justify-center"
@@ -290,10 +293,10 @@ export default function Sobre() {
               </motion.div>
 
               <div className="flex-1 order-2 md:order-2">
-                <h2 className="text-lg font-semibold text-[#5A3A22] mb-2 flex items-center gap-2">
+                <h2 className="text-[18px] sm:text-lg font-semibold text-[#5A3A22] mb-2 flex items-center gap-2">
                   Como ajudamos <span className="text-xl">🐾</span>
                 </h2>
-                <ul className="list-disc pl-5 space-y-1 text-[#5A3A22] text-sm md:text-base leading-relaxed">
+                <ul className="list-disc pl-5 space-y-2 sm:space-y-1 text-[#5A3A22] text-[15px] sm:text-sm md:text-base leading-relaxed text-left">
                   <li>Busca facilitada por cidade, região ou tipo de serviço.</li>
                   <li>Informações claras sobre valores, rotina e perfil do cuidador.</li>
                   <li>Calendário atualizado diretamente pelo cuidador.</li>
@@ -308,16 +311,16 @@ export default function Sobre() {
 
           {/* BLOCO 3 – Nosso compromisso */}
           <motion.section
-            className="pc-card pc-card-accent border-l-4 border-[#D2A679]"
+            className="pc-card pc-card-accent border-l-4 border-[#D2A679] p-5 sm:p-6"
             {...cardMotion}
           >
             <div className="flex flex-col md:flex-row items-center gap-6">
               <div className="flex-1 order-2 md:order-1">
-                <h2 className="text-lg font-semibold text-[#5A3A22] mb-2 flex items-center gap-2">
+                <h2 className="text-[18px] sm:text-lg font-semibold text-[#5A3A22] mb-2 flex items-center gap-2">
                   Nosso compromisso com o bem-estar animal{" "}
                   <span className="text-xl">🌿</span>
                 </h2>
-                <p className="text-[#5A3A22] leading-relaxed text-sm md:text-base">
+                <p className="text-[#5A3A22] leading-relaxed text-[15px] sm:text-sm md:text-base text-left md:text-left">
                   Acreditamos na educação baseada em respeito, confiança e métodos
                   positivos. O objetivo é que cada experiência seja segura, leve e
                   acolhedora para o pet, para o tutor e para quem cuida. Buscamos apoiar
@@ -343,11 +346,11 @@ export default function Sobre() {
           </motion.section>
 
           {/* BLOCO 4 – Relação tutor/cuidador */}
-          <motion.section className="pc-card border-r-4 border-[#5A3A22]" {...cardMotion}>
-            <h2 className="text-lg font-semibold text-[#5A3A22] mb-2 flex items-center gap-2 justify-center text-center">
+          <motion.section className="pc-card border-r-4 border-[#5A3A22] p-5 sm:p-6" {...cardMotion}>
+            <h2 className="text-[18px] sm:text-lg font-semibold text-[#5A3A22] mb-3 flex items-center gap-2 justify-center text-center leading-snug">
               Relação entre tutor e cuidador <span className="text-xl">🤝</span>
             </h2>
-            <p className="text-[#5A3A22] leading-relaxed text-sm md:text-base">
+            <p className="text-[#5A3A22] leading-relaxed text-[15px] sm:text-sm md:text-base text-left md:text-left">
               A plataforma não participa das negociações ou pagamentos. Tudo é combinado
               diretamente entre tutor e cuidador, de acordo com a realidade de cada um.
               Mesmo assim, incentivamos combinados claros, diálogo aberto e respeito em
@@ -361,14 +364,14 @@ export default function Sobre() {
 
           {/* ✅ FAQ NO FINAL */}
           <motion.section
-            className="pc-card pc-card-accent border-l-4 border-[#FFD700]"
+            className="pc-card pc-card-accent border-l-4 border-[#FFD700] p-5 sm:p-6"
             {...cardMotion}
           >
-            <h2 className="text-lg font-semibold text-[#5A3A22] mb-2 flex items-center gap-2 justify-center text-center">
+            <h2 className="text-[18px] sm:text-lg font-semibold text-[#5A3A22] mb-2 flex items-center gap-2 justify-center text-center">
               Perguntas frequentes <span className="text-xl">❓</span>
             </h2>
 
-            <p className="text-[#5A3A22]/80 text-sm md:text-base text-center mb-6">
+            <p className="text-[#5A3A22]/80 text-[14px] sm:text-sm md:text-base text-center mb-6 leading-relaxed">
               Respostas rápidas para você começar a usar a PeloCaramelo com confiança.
             </p>
 
@@ -379,32 +382,35 @@ export default function Sobre() {
                   className="group rounded-xl bg-white border border-[#5A3A22]/10 p-4"
                 >
                   <summary className="cursor-pointer list-none flex items-start justify-between gap-3">
-                    <span className="font-semibold text-[#5A3A22]">{x.q}</span>
+                    <span className="font-semibold text-[#5A3A22] leading-snug">
+                      {x.q}
+                    </span>
                     <span className="text-[#5A3A22]/70 group-open:rotate-180 transition">
                       ▼
                     </span>
                   </summary>
-                  <p className="mt-2 text-[#5A3A22]/80 leading-relaxed">{x.a}</p>
+                  <p className="mt-2 text-[#5A3A22]/80 leading-relaxed text-[14px] sm:text-sm md:text-base">
+                    {x.a}
+                  </p>
                 </details>
               ))}
             </div>
-
           </motion.section>
         </div>
       </div>
 
       {/* FAIXA FINAL COM CTA */}
-      <section className="max-w-[1400px] mx-auto mt-8 bg-[#5A3A22] text-white py-10 px-6 rounded-2xl text-center shadow">
-        <h2 className="text-2xl md:text-3xl font-bold mb-3">
+      <section className="max-w-[1400px] mx-auto mt-7 sm:mt-8 bg-[#5A3A22] text-white py-9 sm:py-10 px-4 sm:px-6 rounded-2xl text-center shadow">
+        <h2 className="text-[22px] leading-tight sm:text-2xl md:text-3xl font-bold mb-3">
           Pronto para encontrar um cuidador?
         </h2>
-        <p className="max-w-2xl mx-auto mb-6 text-base md:text-lg leading-relaxed">
+        <p className="max-w-2xl mx-auto mb-6 text-[15px] sm:text-base md:text-lg leading-relaxed text-white/90">
           Comece explorando perfis de cuidadores próximos a você e encontre alguém que
           combine com o jeito e as necessidades do seu pet.
         </p>
         <a
           href="/buscar"
-          className="inline-block bg-[#C48B52] hover:bg-[#B37343] text-white px-6 py-3 rounded-lg font-semibold shadow-md transition"
+          className="inline-flex items-center justify-center min-h-[48px] bg-[#C48B52] hover:bg-[#B37343] text-white px-6 py-3 rounded-lg font-semibold shadow-md transition w-full sm:w-auto"
         >
           Buscar cuidadores
         </a>

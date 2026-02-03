@@ -326,16 +326,16 @@ export default function ComportamentoAnimal() {
         <img
           src="/images/hero-comportamento.jpg"
           alt="Tutor acariciando um cachorro"
-          className="w-full h-[82vh] object-cover"
+          className="w-full h-[78vh] sm:h-[82vh] object-cover"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-black/25 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/25 to-transparent" />
 
         <div className="absolute inset-0 flex flex-col justify-center items-center px-4">
           <motion.h1
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4 }}
-            className="text-3xl sm:text-4xl md:text-5xl font-bold mb-3 drop-shadow-lg"
+            className="text-[30px] leading-tight sm:text-4xl md:text-5xl font-bold mb-3 drop-shadow-lg"
           >
             Comportamento Animal e Bem-Estar
           </motion.h1>
@@ -344,7 +344,13 @@ export default function ComportamentoAnimal() {
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1, duration: 0.4 }}
-            className="text-base sm:text-lg md:text-xl max-w-3xl mx-auto leading-relaxed drop-shadow-[0_0_6px_rgba(0,0,0,0.55)]"
+            className="
+              text-[14px] leading-relaxed
+              sm:text-lg md:text-xl
+              max-w-[26rem] sm:max-w-3xl
+              mx-auto
+              drop-shadow-[0_0_6px_rgba(0,0,0,0.55)]
+            "
           >
             Na{" "}
             <span className="font-bold bg-[#5A3A22] px-2 py-0.5 rounded-md">
@@ -362,17 +368,17 @@ export default function ComportamentoAnimal() {
       </section>
 
       {/* O QUE É COMPORTAMENTO ANIMAL */}
-      <section className="pt-6 pb-10 px-6 max-w-5xl mx-auto">
+      <section className="pt-8 pb-12 px-4 sm:px-6 max-w-5xl mx-auto">
         <motion.h2
           initial={{ opacity: 0, x: -15 }}
           whileInView={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.35 }}
-          className="text-2xl md:text-3xl font-bold mb-3"
+          className="text-2xl md:text-3xl font-bold mb-4"
         >
           O que é comportamento animal?
         </motion.h2>
 
-        <p className="leading-relaxed text-[15px] md:text-base text-justify">
+        <p className="leading-relaxed text-[15px] md:text-base text-left md:text-justify">
           Cada gesto, olhar ou movimento do seu pet tem um significado. Quando observamos com atenção, começamos a
           enxergar não apenas o que ele faz, mas o que sente, deseja e tenta comunicar. Compreender esses sinais é
           essencial para fortalecer o vínculo de confiança, prevenir conflitos do dia a dia e evitar punições
@@ -382,7 +388,7 @@ export default function ComportamentoAnimal() {
       </section>
 
       {/* MÉTODOS POSITIVOS */}
-      <section className="bg-[#FFF8F0] py-12 px-6">
+      <section className="bg-[#FFF8F0] py-12 sm:py-12 px-4 sm:px-6">
         <motion.h2
           initial={{ opacity: 0, x: -15 }}
           whileInView={{ opacity: 1, x: 0 }}
@@ -405,9 +411,14 @@ export default function ComportamentoAnimal() {
                 { t: "🌿 Bem-estar completo", d: "Físico e mental caminham juntos." },
                 { t: "🤝 Cooperação", d: "Priorize cooperação, não obediência forçada." },
               ].map((x) => (
-                <div key={x.t} className="rounded-2xl bg-white border border-[#5A3A22]/10 p-4 shadow-sm">
+                <div
+                  key={x.t}
+                  className="rounded-2xl bg-white border border-[#5A3A22]/10 p-5 sm:p-4 shadow-sm"
+                >
                   <p className="font-extrabold text-[#5A3A22]">{x.t}</p>
-                  <p className="text-sm text-[#5A3A22]/75 mt-1 leading-relaxed">{x.d}</p>
+                  <p className="text-sm text-[#5A3A22]/75 mt-2 sm:mt-1 leading-relaxed">
+                    {x.d}
+                  </p>
                 </div>
               ))}
             </div>
@@ -421,7 +432,7 @@ export default function ComportamentoAnimal() {
           >
             <img
               src="/images/gato-comportamento.jpg"
-              className="rounded-2xl shadow-lg w-[90%] md:w-[72%] object-cover aspect-[4/5]"
+              className="rounded-2xl shadow-lg w-[95%] sm:w-[90%] md:w-[72%] object-cover aspect-[4/5]"
               alt="Gato calmo representando bem-estar"
             />
           </motion.div>
@@ -437,23 +448,28 @@ export default function ComportamentoAnimal() {
       </section>
 
       {/* DRA. LAÍSE */}
-      <section className="py-16 px-6" id="dra-laise-oliveira">
+      <section className="py-14 sm:py-16 px-4 sm:px-6" id="dra-laise-oliveira">
         <motion.div
           initial={{ opacity: 0 }}
           whileInView={{ opacity: 1 }}
           transition={{ duration: 0.6 }}
-          className="max-w-[1400px] mx-auto bg-white rounded-2xl shadow p-8 md:p-10 border-l-4 border-[#5A3A22] flex flex-col items-center text-center"
+          className="
+            max-w-[1400px] mx-auto bg-white rounded-2xl shadow
+            p-6 sm:p-8 md:p-10
+            border-l-4 border-[#5A3A22]
+            flex flex-col items-center text-center
+          "
         >
           <img
             src="/images/laise-profile.jpg"
-            className="w-44 h-44 object-cover rounded-full mb-4 border-4 border-[#D2A679]"
+            className="w-40 h-40 sm:w-44 sm:h-44 object-cover rounded-full mb-4 border-4 border-[#D2A679]"
             alt="Foto da Dra. Laíse Oliveira"
           />
 
           <h3 className="text-2xl font-bold mb-2">Dra. Laíse Oliveira</h3>
           <p className="font-medium mb-4">Médica veterinária especializada em comportamento animal.</p>
 
-          <p className="leading-relaxed mb-6 max-w-3xl">
+          <p className="leading-relaxed mb-6 max-w-3xl text-[15px] sm:text-base">
             A Dra. Laíse atua com foco em consultas comportamentais, orientação para tutores e palestras sobre manejo
             emocional dos pets.
           </p>
@@ -472,7 +488,8 @@ export default function ComportamentoAnimal() {
             </span>
           </div>
 
-          <div className="flex flex-col sm:flex-row justify-center gap-4 w-full">
+          {/* ✅ MOBILE: menos espremido (botões full + altura padrão) | ✅ WEB igual */}
+          <div className="flex flex-col sm:flex-row justify-center gap-3 sm:gap-4 w-full">
             <a
               href={buildWhatsAppLink({
                 text:
@@ -481,8 +498,12 @@ export default function ComportamentoAnimal() {
               })}
               target="_blank"
               rel="noreferrer"
-              onClick={() => trackEvent("click_specialist_whatsapp", { page: "comportamento", position: "perfil" })}
+              onClick={() =>
+                trackEvent("click_specialist_whatsapp", { page: "comportamento", position: "perfil" })
+              }
               className="
+                w-full sm:w-auto
+                min-h-[48px]
                 inline-flex items-center justify-center gap-2
                 bg-[#25D366] hover:brightness-105 text-[#0b2a14]
                 px-6 py-3 rounded-xl font-extrabold shadow-md transition
@@ -501,6 +522,8 @@ export default function ComportamentoAnimal() {
                 setOpenPalestra(true);
               }}
               className="
+                w-full sm:w-auto
+                min-h-[48px]
                 inline-flex items-center justify-center gap-2
                 bg-[#5A3A22] hover:bg-[#95301F] text-white
                 px-6 py-3 rounded-xl font-semibold shadow-md transition
@@ -517,23 +540,30 @@ export default function ComportamentoAnimal() {
             da família e a complexidade do acompanhamento.
           </p>
 
-          <p className="mt-6 text-base md:text-lg font-semibold text-[#5A3A22]">Cuidar é também compreender 💕</p>
+          <p className="mt-6 text-base md:text-lg font-semibold text-[#5A3A22]">
+            Cuidar é também compreender 💕
+          </p>
         </motion.div>
       </section>
 
       {/* SEÇÃO COMPLEMENTAR */}
-      <section className="pb-10 px-6">
+      <section className="pb-12 sm:pb-10 px-4 sm:px-6">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
-          className="max-w-[1400px] mx-auto bg-white rounded-2xl shadow p-6 md:p-8 border-l-4 border-[#D2A679] grid md:grid-cols-2 gap-6"
+          className="
+            max-w-[1400px] mx-auto bg-white rounded-2xl shadow
+            p-6 md:p-8
+            border-l-4 border-[#D2A679]
+            grid md:grid-cols-2 gap-6
+          "
         >
           <div>
-            <h4 className="text-lg font-semibold mb-2 flex items-center gap-2">
+            <h4 className="text-lg font-semibold mb-3 flex items-center gap-2">
               Quando procurar uma consulta comportamental? 🐾
             </h4>
-            <ul className="list-disc pl-5 space-y-1 text-sm md:text-base leading-relaxed">
+            <ul className="list-disc pl-5 space-y-2 sm:space-y-1 text-sm md:text-base leading-relaxed">
               <li>Medo excessivo, insegurança ou dificuldade de adaptação.</li>
               <li>Latidos, destruição ou agitação fora do normal.</li>
               <li>Dificuldade em ficar sozinho ou mudanças recentes na rotina.</li>
@@ -542,10 +572,10 @@ export default function ComportamentoAnimal() {
           </div>
 
           <div>
-            <h4 className="text-lg font-semibold mb-2 flex items-center gap-2">
+            <h4 className="text-lg font-semibold mb-3 flex items-center gap-2">
               O que você pode esperar do atendimento 💬
             </h4>
-            <ul className="list-disc pl-5 space-y-1 text-sm md:text-base leading-relaxed">
+            <ul className="list-disc pl-5 space-y-2 sm:space-y-1 text-sm md:text-base leading-relaxed">
               <li>Escuta atenta da história do pet e da família.</li>
               <li>Explicações claras sobre o comportamento observado.</li>
               <li>Plano de manejo personalizado, respeitando a rotina da casa.</li>
@@ -556,7 +586,7 @@ export default function ComportamentoAnimal() {
       </section>
 
       {/* MINI-FAQ */}
-      <section className="pb-24 px-6">
+      <section className="pb-24 px-4 sm:px-6">
         <div className="max-w-[1400px] mx-auto bg-white rounded-2xl shadow p-6 md:p-8 border-l-4 border-[#FFD700]/80">
           <div className="mb-5">
             <h4 className="text-xl font-extrabold">Dúvidas rápidas</h4>
@@ -591,7 +621,9 @@ export default function ComportamentoAnimal() {
                         transition={{ duration: 0.2 }}
                         className="px-4"
                       >
-                        <p className="py-4 text-sm md:text-base text-[#5A3A22]/85 leading-relaxed">{item.a}</p>
+                        <p className="py-4 text-sm md:text-base text-[#5A3A22]/85 leading-relaxed">
+                          {item.a}
+                        </p>
                       </motion.div>
                     )}
                   </AnimatePresence>
@@ -603,12 +635,12 @@ export default function ComportamentoAnimal() {
       </section>
 
       {/* CTA final */}
-      <div className="px-6 pb-8">
+      <div className="px-4 sm:px-6 pb-10 sm:pb-8">
         <div className="max-w-[1400px] mx-auto rounded-2xl bg-[#5A3A22] text-white p-6 md:p-8 shadow-lg flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <p className="text-lg md:text-xl font-extrabold">Quer ajuda com o comportamento do seu pet?</p>
             <p className="text-sm text-white/85 mt-1">
-              Clique e fale com a especialista no WhatsApp. Mensagem pronta e rastreável.
+              Clique e fale com a especialista no WhatsApp.
             </p>
           </div>
 
@@ -624,6 +656,7 @@ export default function ComportamentoAnimal() {
               shadow-md hover:brightness-105 transition
               focus:outline-none focus:ring-2 focus:ring-white/70
               w-full md:w-auto
+              min-h-[48px]
             "
           >
             Consultar especialista
