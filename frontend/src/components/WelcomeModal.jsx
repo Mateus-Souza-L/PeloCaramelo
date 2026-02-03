@@ -30,11 +30,7 @@ function ChecklistItem({ icon: Icon, title, desc }) {
   );
 }
 
-export default function WelcomeModal({
-  role = "tutor",
-  userName = "",
-  onClose, // fecha SOMENTE no X
-}) {
+export default function WelcomeModal({ role = "tutor", userName = "", onClose }) {
   const isCaregiver = String(role).toLowerCase() === "caregiver";
   const safeName = String(userName || "").trim();
 
@@ -54,8 +50,7 @@ export default function WelcomeModal({
     const gift =
       "🎁 Enviamos um presente para o seu e-mail: seu Guia de Boas-vindas. Dá uma olhadinha — ele ajuda a começar com segurança e tranquilidade.";
 
-    const fallback =
-      "Se não receber, peça o guia em contato@pelocaramelo.com.br 🐾";
+    const fallback = "Se não receber, peça o guia em contato@pelocaramelo.com.br 🐾";
 
     const checklistTitle = isCaregiver
       ? "Seu começo ideal como cuidador"
@@ -106,22 +101,21 @@ export default function WelcomeModal({
       aria-modal="true"
       role="dialog"
     >
-      {/* Card */}
+      {/* Card (mais largo no desktop, melhor leitura) */}
       <div
         className="
           relative
-          w-full max-w-lg
+          w-full
+          max-w-2xl xl:max-w-3xl
           rounded-2xl bg-white shadow-2xl
           border-l-8 border-[#FFD700]
           overflow-hidden
           my-auto
         "
-        // ✅ garante que nunca “some” no desktop e no mobile vira scroll interno
         style={{ maxHeight: "92vh" }}
       >
         {/* Header */}
-        <div className="relative p-4 sm:p-6">
-          {/* close: SOMENTE ele fecha */}
+        <div className="relative p-5 sm:p-7">
           <button
             onClick={onClose}
             className="absolute top-3 right-3 sm:top-4 sm:right-4 rounded-full p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100"
@@ -131,22 +125,27 @@ export default function WelcomeModal({
             <X className="w-5 h-5" />
           </button>
 
-          <div className="flex items-center justify-between gap-3 pr-10">
-            <h2 className="text-xl sm:text-2xl font-extrabold text-[#5A3A22] leading-tight">
-              {content.title}
-            </h2>
+          <div className="flex items-start justify-between gap-3 pr-10">
+            <div className="min-w-0">
+              <h2 className="text-2xl sm:text-3xl font-extrabold text-[#5A3A22] leading-tight">
+                {content.title}
+              </h2>
+
+              <p className="mt-3 text-[#5A3A22] font-semibold text-base sm:text-lg">
+                {content.intro}
+              </p>
+
+              <p className="mt-2 text-sm sm:text-base text-[#5A3A22]/85 leading-relaxed max-w-[70ch]">
+                {content.emotional}
+              </p>
+            </div>
+
             <RoleBadge role={isCaregiver ? "caregiver" : "tutor"} />
           </div>
 
-          <p className="mt-3 text-[#5A3A22] font-semibold">{content.intro}</p>
-
-          <p className="mt-2 text-sm sm:text-base text-[#5A3A22]/85 leading-relaxed">
-            {content.emotional}
-          </p>
-
-          {/* Gift box (sem botão) */}
-          <div className="mt-4 rounded-xl bg-[#FFF7E0] border border-[#FFD700]/60 p-4">
-            <p className="text-sm sm:text-base text-[#5A3A22] leading-relaxed">
+          {/* Gift box */}
+          <div className="mt-5 rounded-xl bg-[#FFF7E0] border border-[#FFD700]/60 p-4 sm:p-5">
+            <p className="text-sm sm:text-base text-[#5A3A22] leading-relaxed max-w-[72ch]">
               {content.gift}
             </p>
 
@@ -157,29 +156,31 @@ export default function WelcomeModal({
         </div>
 
         {/* Body (scroll interno) */}
-        <div className="px-4 pb-4 sm:px-6 sm:pb-6 overflow-y-auto" style={{ maxHeight: "calc(92vh - 220px)" }}>
-          <div className="rounded-2xl border border-[#EBCBA9]/60 bg-[#FAF6EF] p-4 sm:p-5">
-            <h3 className="text-base sm:text-lg font-extrabold text-[#5A3A22]">
+        <div
+          className="px-5 pb-5 sm:px-7 sm:pb-7 overflow-y-auto"
+          style={{ maxHeight: "calc(92vh - 260px)" }}
+        >
+          <div className="rounded-2xl border border-[#EBCBA9]/60 bg-[#FAF6EF] p-5 sm:p-6">
+            <h3 className="text-lg sm:text-xl font-extrabold text-[#5A3A22]">
               {content.checklistTitle}
             </h3>
 
-            <p className="mt-1 text-sm text-[#5A3A22]/80">
+            <p className="mt-1 text-sm sm:text-base text-[#5A3A22]/80">
               Um passo de cada vez — o importante é começar com clareza e carinho.
             </p>
 
-            <ul className="mt-4 space-y-4">
+            {/* ✅ no desktop vira 2 colunas (melhor leitura) */}
+            <ul className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-5">
               {content.checklist.map((it, idx) => (
                 <ChecklistItem key={idx} icon={it.icon} title={it.title} desc={it.desc} />
               ))}
             </ul>
           </div>
 
-          {/* Nota final */}
-          <p className="mt-4 text-xs sm:text-sm text-[#5A3A22]/75 leading-relaxed">
+          <p className="mt-5 text-xs sm:text-sm text-[#5A3A22]/75 leading-relaxed">
             *Dica rápida:* se você não encontrar o e-mail do guia agora, procure por “PeloCaramelo” e confira o spam/lixo eletrônico.
           </p>
 
-          {/* Observação importante: só fecha no X */}
           <p className="mt-2 text-[11px] sm:text-xs text-[#5A3A22]/60">
             Para continuar, feche esta mensagem pelo <b>✕</b> no canto.
           </p>
