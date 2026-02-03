@@ -384,6 +384,29 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  /* ===========================================================
+   ✅ Toast principal pós-cadastro (aparece 1x no Dashboard)
+   - setado no Register.jsx: pc_showWelcomeToast = "1"
+   - remove após mostrar para não repetir
+   =========================================================== */
+  useEffect(() => {
+    try {
+      const flag = localStorage.getItem("pc_showWelcomeToast");
+      if (flag !== "1") return;
+
+      // opcional: se quiser personalizar por role no futuro
+      // const role = localStorage.getItem("pc_showWelcomeToast_role");
+
+      // limpa primeiro para garantir "1x" mesmo se der re-render
+      localStorage.removeItem("pc_showWelcomeToast");
+      localStorage.removeItem("pc_showWelcomeToast_role");
+
+      showToast("Cadastro concluído! 🎉 Bem-vindo(a) à PeloCaramelo.", "success");
+    } catch {
+      // ignore
+    }
+  }, [showToast]);
+
   // ===========================================================
   // ✅ Troca de perfil (tutor/caregiver) sem trocar usuário
   // - Detecta se o usuário tem ambos perfis
@@ -2146,8 +2169,8 @@ export default function Dashboard() {
             <button
               onClick={() => setTab("reservasTutor")}
               className={`px-2 py-2 rounded-2xl font-semibold shadow transition text-[11px] leading-tight ${tab === "reservasTutor"
-                  ? "bg-[#5A3A22] text-white"
-                  : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
+                ? "bg-[#5A3A22] text-white"
+                : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
                 }`}
               type="button"
             >
@@ -2157,8 +2180,8 @@ export default function Dashboard() {
             <button
               onClick={() => setTab("pets")}
               className={`px-2 py-2 rounded-2xl font-semibold shadow transition text-[11px] leading-tight ${tab === "pets"
-                  ? "bg-[#5A3A22] text-white"
-                  : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
+                ? "bg-[#5A3A22] text-white"
+                : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
                 }`}
               type="button"
             >
@@ -2179,8 +2202,8 @@ export default function Dashboard() {
             <button
               onClick={() => setTab("reservasTutor")}
               className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${tab === "reservasTutor"
-                  ? "bg-[#5A3A22] text-white"
-                  : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
+                ? "bg-[#5A3A22] text-white"
+                : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
                 }`}
               type="button"
             >
@@ -2190,8 +2213,8 @@ export default function Dashboard() {
             <button
               onClick={() => setTab("pets")}
               className={`px-5 py-2 rounded-2xl font-semibold shadow transition ${tab === "pets"
-                  ? "bg-[#5A3A22] text-white"
-                  : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
+                ? "bg-[#5A3A22] text-white"
+                : "bg-[#D2A679] text-[#5A3A22] hover:bg-[#B25B38]"
                 }`}
               type="button"
             >

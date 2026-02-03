@@ -3,7 +3,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const pool = require("../config/db");
-const { sendEmail } = require("../services/emailService");
+const { sendEmail, sendWelcomeEmail } = require("../services/emailService");
 const { resetPasswordEmail } = require("../email/templates/resetPassword");
 
 const {
@@ -214,33 +214,12 @@ async function hasCaregiverProfileByUserId(userId) {
   }
 }
 
-function computeFrontendBase(req) {
-  const envBase = String(process.env.FRONTEND_URL || "").trim().replace(/\/$/, "");
-  if (envBase) return envBase;
-
-  const origin = String(req.get("origin") || "").trim().replace(/\/$/, "");
-  if (origin) return origin;
-
-  const referer = String(req.get("referer") || "").trim();
-  if (referer) {
-    try {
-      const u = new URL(referer);
-      return `${u.protocol}//${u.host}`;
-    } catch {
-      // ignore
-    }
-  }
-
-  return "";
-}
-
-function escapeHtml(s) {
-  return String(s || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
+/**
+ * ✅ Para links críticos (ex.: reset de senha), prefira SEMPRE FRONTEND_URL
+ * - evita origin/referer errados em produção/proxies
+ */
+function getFrontendBaseStrict() {
+  return String(process.env.FRONTEND_URL || "").trim().replace(/\/$/, "");
 }
 
 /* ============================================================
@@ -317,6 +296,17 @@ async function register(req, res) {
       phone: phone ? String(phone).trim() : null,
       address: address ? String(address).trim() : null,
     });
+
+    // ✅ tenta mandar e-mail de boas-vindas (com PDF opcional) sem travar o cadastro
+    try {
+      await sendWelcomeEmail({
+        email: newUser.email,
+        name: newUser?.name || name,
+        role: newUser?.role || role, // "tutor" | "caregiver"
+      });
+    } catch (e) {
+      console.error("[welcomeEmail] Falha ao enviar e-mail de boas-vindas:", e?.message || e);
+    }
 
     const token = generateToken(newUser);
 
@@ -437,11 +427,12 @@ async function forgotPassword(req, res) {
     await invalidateAllActiveByUserId(user.id);
     await createPasswordReset({ userId: user.id, token, expiresAt });
 
-    const base = computeFrontendBase(req);
+    // ✅ CRÍTICO: reset deve usar SEMPRE FRONTEND_URL (evita origin/referer errados)
+    const base = getFrontendBaseStrict();
 
     if (!base) {
       console.warn(
-        "[forgotPassword] FRONTEND_URL/origin ausente. Configure FRONTEND_URL no Render. " +
+        "[forgotPassword] FRONTEND_URL ausente. Configure FRONTEND_URL no Render. " +
           "E-mail não será enviado para evitar link quebrado."
       );
       return res.json(safeResponse);

@@ -6,7 +6,7 @@
  * Uso:
  *   const { welcomeEmail } = require("../email/templates/welcomeEmail");
  *   const email = welcomeEmail({ userName, appUrl });
- *   await sendEmail({ to: user.email, ...email });
+ *   await sendEmail({ to: user.email, ...email, attachments: [...] });
  */
 
 const { renderEmail } = require("../renderEmail");
@@ -32,24 +32,32 @@ function welcomeEmail({ userName, appUrl }) {
 
   const safeName = userName ? escapeHtml(userName) : null;
 
-  const subject = "Bem-vindo(a) à PeloCaramelo 🐾";
+  const subject = "🎉 Bem-vindo(a) à PeloCaramelo — seu presente chegou! 🐾";
 
-  const title = "Seu cadastro foi criado com sucesso!";
+  const title = "Que bom ter você por aqui! 🐶🐱";
 
   const preheader =
-    "Seu cadastro na PeloCaramelo foi concluído. Comece agora a cuidar do seu pet com tranquilidade.";
+    "Seu cadastro foi concluído. Complete seu perfil, confira seu e-mail e aproveite seu presente de boas-vindas.";
 
   const bodyHtml = `
     <p>Olá${safeName ? `, <strong>${safeName}</strong>` : ""}! 👋</p>
 
     <p>
-      Que alegria ter você com a gente! Seu cadastro na
-      <strong>PeloCaramelo</strong> foi concluído com sucesso.
+      Seja muito bem-vindo(a) à <strong>PeloCaramelo</strong>! 🎉
+      Seu cadastro foi criado com sucesso e a partir de agora você pode
+      encontrar cuidadores de confiança (ou oferecer seus serviços) com tranquilidade.
     </p>
 
     <p>
-      Aqui você pode encontrar cuidadores de confiança, acompanhar reservas
-      e garantir mais tranquilidade para você e seu pet.
+      <strong>✅ Um passo importante:</strong> antes de realizar uma reserva,
+      complete todos os dados do seu perfil. Isso deixa tudo mais rápido e seguro
+      para você e para o seu pet.
+    </p>
+
+    <p>
+      <strong>📩 Confere seu e-mail:</strong> deixamos um <strong>presente de boas-vindas</strong> pra você —
+      e neste e-mail também vai um <strong>PDF com dicas</strong> para ajudar tutores e cuidadores
+      a criarem um ambiente mais saudável e tranquilo para o pet. 🐾
     </p>
 
     <p>
@@ -76,4 +84,8 @@ function welcomeEmail({ userName, appUrl }) {
   });
 }
 
-module.exports = { welcomeEmail };
+module.exports = { 
+  sendEmail, 
+  sendPalestraQuoteEmail, 
+  sendWelcomeEmail 
+};

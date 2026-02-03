@@ -136,7 +136,13 @@ export default function Register() {
 
       login(user, token);
 
-      showToast("Cadastro concluído! 🎉 Bem-vindo(a).", "success");
+      // ✅ Mostra o toast principal na próxima tela (Dashboard) apenas 1 vez
+      try {
+        localStorage.setItem("pc_showWelcomeToast", "1");
+        localStorage.setItem("pc_showWelcomeToast_role", String(user?.role || role || ""));
+      } catch {
+        // ignore
+      }
 
       if (user.role === "caregiver") navigate("/painel-cuidador", { replace: true });
       else navigate("/dashboard", { replace: true });

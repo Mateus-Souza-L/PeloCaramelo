@@ -26,6 +26,13 @@ if (!hasFetch) {
   );
 }
 
+/* ===========================================================
+   ✅ Helpers gerais
+   =========================================================== */
+
+const fs = require("fs");
+const path = require("path");
+
 /**
  * Normaliza destinatários:
  * - aceita string ou array
@@ -59,12 +66,27 @@ function resolveReplyTo(replyTo) {
     return s;
   };
 
-  return (
-    pick(replyTo) ||
-    pick(EMAIL_REPLY_TO_RAW) ||
-    pick(EMAIL_REPLY_TO_DEFAULT) ||
-    null
-  );
+  return pick(replyTo) || pick(EMAIL_REPLY_TO_RAW) || pick(EMAIL_REPLY_TO_DEFAULT) || null;
+}
+
+/**
+ * ✅ Normaliza anexos (Resend)
+ * Esperado: [{ filename: string, content: base64String }]
+ * - ignora anexos inválidos (não quebra envio)
+ * - não envia attachments se vazio
+ */
+function normalizeAttachments(attachments) {
+  if (!attachments) return [];
+  if (!Array.isArray(attachments)) return [];
+
+  return attachments
+    .map((a) => {
+      const filename = a?.filename ? String(a.filename).trim() : "";
+      const content = a?.content ? String(a.content).trim() : "";
+      if (!filename || !content) return null;
+      return { filename, content };
+    })
+    .filter(Boolean);
 }
 
 /**
@@ -75,8 +97,9 @@ function resolveReplyTo(replyTo) {
  * @param {string=} params.html - corpo HTML
  * @param {string=} params.text - corpo texto
  * @param {string=} params.replyTo - reply-to opcional (sobrescreve o padrão)
+ * @param {Array<{filename:string, content:string}>=} params.attachments - anexos (base64)
  */
-async function sendEmail({ to, subject, html, text, replyTo }) {
+async function sendEmail({ to, subject, html, text, replyTo, attachments }) {
   const toList = normalizeTo(to);
 
   if (!toList.length) throw new Error("sendEmail: destinatário (to) ausente.");
@@ -91,6 +114,7 @@ async function sendEmail({ to, subject, html, text, replyTo }) {
 
   try {
     const resolvedReplyTo = resolveReplyTo(replyTo);
+    const safeAttachments = normalizeAttachments(attachments);
 
     const payload = {
       from: String(EMAIL_FROM),
@@ -100,6 +124,8 @@ async function sendEmail({ to, subject, html, text, replyTo }) {
       ...(text ? { text: String(text) } : {}),
       // ✅ só envia reply_to se houver um valor válido
       ...(resolvedReplyTo ? { reply_to: resolvedReplyTo } : {}),
+      // ✅ anexos (opcional)
+      ...(safeAttachments.length ? { attachments: safeAttachments } : {}),
     };
 
     const resp = await fetch("https://api.resend.com/emails", {
@@ -137,9 +163,7 @@ async function sendEmail({ to, subject, html, text, replyTo }) {
     return data; // normalmente { id: ... }
   } catch (err) {
     const isAbort = err?.name === "AbortError";
-    const msg = isAbort
-      ? "Timeout ao chamar Resend API"
-      : err?.message || String(err);
+    const msg = isAbort ? "Timeout ao chamar Resend API" : err?.message || String(err);
     console.error("[emailService] Erro ao enviar e-mail:", msg);
     throw err;
   } finally {
@@ -148,9 +172,7 @@ async function sendEmail({ to, subject, html, text, replyTo }) {
 }
 
 /* ===========================================================
-   ✅ Orçamento de palestra (Comportamento)
-   - Envia para contato@pelocaramelo.com.br
-   - Reply-To = email do lead (pra responder direto)
+   ✅ Template base (opcional) + escape
    =========================================================== */
 
 function escapeHtml(s) {
@@ -165,9 +187,7 @@ function escapeHtml(s) {
 // tenta usar o template base se existir
 let baseTemplateFn = null;
 try {
-  // ajuste se seu caminho for diferente
   const mod = require("../email/templates/baseTemplate");
-  // tolerante: pode ser function direto, ou { baseTemplate }, ou { default }
   baseTemplateFn =
     (typeof mod === "function" ? mod : null) ||
     (typeof mod?.baseTemplate === "function" ? mod.baseTemplate : null) ||
@@ -176,6 +196,151 @@ try {
 } catch {
   baseTemplateFn = null;
 }
+
+/* ===========================================================
+   ✅ Boas-vindas (com PDF opcional em /assets)
+   =========================================================== */
+
+// Nome do PDF (você pode trocar depois sem mudar código)
+const WELCOME_PDF_FILENAME = String(
+  process.env.WELCOME_PDF_FILENAME || "pelo-caramelo-dicas.pdf"
+).trim();
+
+// Caminho do PDF: backend/assets/<arquivo>
+function getWelcomePdfPath() {
+  // __dirname = backend/src/services
+  // sobe 2 níveis -> backend/src -> backend
+  // entra em assets
+  return path.resolve(__dirname, "..", "..", "assets", WELCOME_PDF_FILENAME);
+}
+
+function tryReadWelcomePdfAsAttachment() {
+  try {
+    const pdfPath = getWelcomePdfPath();
+    if (!fs.existsSync(pdfPath)) return null;
+
+    const buf = fs.readFileSync(pdfPath);
+    const base64 = buf.toString("base64");
+
+    // Resend espera base64 puro
+    return {
+      filename: WELCOME_PDF_FILENAME || "arquivo.pdf",
+      content: base64,
+    };
+  } catch (err) {
+    console.warn("[emailService] Falha ao preparar PDF de boas-vindas:", err?.message || err);
+    return null;
+  }
+}
+
+function renderWelcomeHtml({ name, role }) {
+  const safeName = escapeHtml(name || ""); // opcional
+  const roleLabel = role === "caregiver" ? "Cuidador" : "Tutor";
+
+  const bodyHtml = `
+    <h2 style="margin:0 0 12px;">Bem-vindo(a) à PeloCaramelo 🐾</h2>
+    <p style="margin:0 0 14px;">
+      Oi${safeName ? `, <b>${safeName}</b>` : ""}! Que bom ter você com a gente.
+    </p>
+    <p style="margin:0 0 14px;">
+      Seu perfil foi criado como <b>${escapeHtml(roleLabel)}</b>. A partir de agora você já pode:
+    </p>
+    <ul style="margin:0 0 14px; padding-left:18px;">
+      ${
+        role === "caregiver"
+          ? `
+            <li>Configurar seus <b>serviços</b>, <b>preços</b> e <b>disponibilidade</b>.</li>
+            <li>Receber e gerenciar <b>reservas</b>.</li>
+            <li>Conversar com tutores pelo <b>chat</b> após a reserva aceita.</li>
+          `
+          : `
+            <li>Buscar cuidadores e fazer <b>reservas</b>.</li>
+            <li>Gerenciar seus pedidos no <b>painel</b>.</li>
+            <li>Avaliar após a reserva concluída.</li>
+          `
+      }
+    </ul>
+    <p style="margin:0 0 14px;">
+      Qualquer dúvida, é só responder este e-mail 🙂
+    </p>
+    <p style="margin:16px 0 0;color:#666;font-size:12px;">
+      Se você receber um PDF anexado, ele contém dicas rápidas para começar com o pé direito.
+    </p>
+  `;
+
+  if (typeof baseTemplateFn === "function") {
+    return baseTemplateFn({
+      title: "Boas-vindas",
+      preheader: "Sua conta foi criada com sucesso na PeloCaramelo 🐾",
+      bodyHtml,
+      cta: null,
+    });
+  }
+
+  return `
+    <div style="font-family:Arial,sans-serif;line-height:1.5;color:#333">
+      ${bodyHtml}
+    </div>
+  `;
+}
+
+function renderWelcomeText({ name, role }) {
+  const roleLabel = role === "caregiver" ? "Cuidador" : "Tutor";
+  const lines = [
+    "Bem-vindo(a) à PeloCaramelo 🐾",
+    "",
+    `Oi${name ? `, ${name}` : ""}! Que bom ter você com a gente.`,
+    `Seu perfil foi criado como: ${roleLabel}.`,
+    "",
+    "A partir de agora você já pode:",
+    role === "caregiver"
+      ? "- Configurar serviços, preços e disponibilidade\n- Receber e gerenciar reservas\n- Conversar com tutores pelo chat após a reserva aceita"
+      : "- Buscar cuidadores e fazer reservas\n- Gerenciar seus pedidos no painel\n- Avaliar após a reserva concluída",
+    "",
+    "Qualquer dúvida, é só responder este e-mail 🙂",
+    "",
+    "Obs.: Se você receber um PDF anexado, ele contém dicas rápidas para começar.",
+  ];
+
+  return lines.join("\n");
+}
+
+/**
+ * Envia e-mail de boas-vindas para o usuário
+ * - anexa PDF de /assets se existir
+ * @param {Object} user
+ * @param {string} user.email
+ * @param {string=} user.name
+ * @param {string=} user.role ("tutor" | "caregiver")
+ */
+async function sendWelcomeEmail(user) {
+  const email = String(user?.email || "").trim();
+  if (!email) throw new Error("sendWelcomeEmail: user.email ausente.");
+
+  const name = String(user?.name || "").trim();
+  const role = String(user?.role || "tutor").trim().toLowerCase();
+  const safeRole = role === "caregiver" ? "caregiver" : "tutor";
+
+  const attachment = tryReadWelcomePdfAsAttachment();
+  const attachments = attachment ? [attachment] : [];
+
+  const subject = "Bem-vindo(a) à PeloCaramelo 🐾";
+
+  return sendEmail({
+    to: email,
+    subject,
+    html: renderWelcomeHtml({ name, role: safeRole }),
+    text: renderWelcomeText({ name, role: safeRole }),
+    // replyTo padrão já está resolvido no sendEmail()
+    ...(attachments.length ? { attachments } : {}),
+  });
+}
+
+/* ===========================================================
+   ✅ Orçamento de palestra (Comportamento)
+   - Envia para contato@pelocaramelo.com.br
+   - Reply-To = email do lead (pra responder direto)
+   =========================================================== */
 
 function renderPalestraHtml(lead) {
   const rows = [
@@ -284,4 +449,4 @@ async function sendPalestraQuoteEmail(lead) {
   });
 }
 
-module.exports = { sendEmail, sendPalestraQuoteEmail };
+module.exports = { sendEmail, sendPalestraQuoteEmail, sendWelcomeEmail };
