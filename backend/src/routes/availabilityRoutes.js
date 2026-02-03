@@ -14,18 +14,31 @@ function requireAuth(req, res, next) {
 }
 
 // ---------------------------------------------------------
-// ✅ Auth garantido aqui
+// ✅ Rotas
 // ---------------------------------------------------------
 
 // 🔒 Privado (Cuidador gerencia a própria agenda)
-// ✅ Multi-perfil: exige login + perfil cuidador (caregiver_profiles)
+// ✅ Multi-perfil: exige login + perfil cuidador (caregiver_profiles/caregivers)
 // Admin/admin_master também passa pelo requireCaregiverProfile
-router.get("/me", requireAuth, requireCaregiverProfile, availabilityController.getMyAvailability);
+router.get(
+  "/me",
+  requireAuth,
+  requireCaregiverProfile,
+  availabilityController.getMyAvailability
+);
 
-router.put("/me", requireAuth, requireCaregiverProfile, availabilityController.updateMyAvailability);
+router.put(
+  "/me",
+  requireAuth,
+  requireCaregiverProfile,
+  availabilityController.updateMyAvailability
+);
 
 // ✅ Público (Tutor precisa ver dias disponíveis para reservar)
-router.get("/caregiver/:caregiverId", availabilityController.getCaregiverAvailability);
+router.get(
+  "/caregiver/:caregiverId",
+  availabilityController.getCaregiverAvailability
+);
 
 // ✅ Público (LEGADO) — compatibilidade com front antigo que chama /availability/:id
 router.get("/:caregiverId", availabilityController.getCaregiverAvailability);

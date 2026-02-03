@@ -4,18 +4,30 @@ const pool = require("../config/db");
 /**
  * Garante que o usuário tenha "perfil de cuidador".
  *
+ * ✅ Multi-schema tolerante:
+ * - caregiver_profiles pode ter user_id, caregiver_id ou id
+ * - alguns ambientes usam tabela caregivers (user_id)
+ *
  * ✅ Fix importante:
- * - NÃO tentar caregiver_id se a coluna não existir (evita: column "caregiver_id" does not exist)
- * - Fallback adicional: algumas bases antigas usam caregiver_profiles.id == users.id
+ * - NÃO tentar coluna inexistente (evita: column does not exist)
+ * - fallback seguro: aceita "caregivers" caso exista e tenha vínculo com user_id
  */
 
+// ------------------------------
 // cache em memória (reduz consultas no information_schema)
-let cachedCols = null; // { hasUserId: boolean, hasCaregiverId: boolean, hasId: boolean }
-let cachedAt = 0;
+// ------------------------------
+let cachedCpCols = null; // { hasUserId: boolean, hasCaregiverId: boolean, hasId: boolean }
+let cachedCpAt = 0;
 
+let cachedCaregiversTable = null; // { exists: boolean, hasUserId: boolean }
+let cachedCaregiversAt = 0;
+
+// ------------------------------
+// caregiver_profiles detection
+// ------------------------------
 async function detectCaregiverProfilesColumns() {
   const now = Date.now();
-  if (cachedCols && now - cachedAt < 5 * 60 * 1000) return cachedCols;
+  if (cachedCpCols && now - cachedCpAt < 5 * 60 * 1000) return cachedCpCols;
 
   const cols = { hasUserId: false, hasCaregiverId: false, hasId: false };
 
@@ -34,12 +46,12 @@ async function detectCaregiverProfilesColumns() {
     cols.hasCaregiverId = set.has("caregiver_id");
     cols.hasId = set.has("id");
 
-    cachedCols = cols;
-    cachedAt = now;
+    cachedCpCols = cols;
+    cachedCpAt = now;
     return cols;
   } catch {
-    cachedCols = null;
-    cachedAt = now;
+    cachedCpCols = null;
+    cachedCpAt = now;
     return null;
   }
 }
@@ -47,7 +59,7 @@ async function detectCaregiverProfilesColumns() {
 async function existsCaregiverProfileByUserId(userId) {
   const idStr = String(userId);
 
-  // 1) se conseguimos detectar colunas, usamos SÓ as que existem
+  // 1) se detectou colunas, usa SÓ as que existem
   const detected = await detectCaregiverProfilesColumns();
   if (detected) {
     if (detected.hasUserId) {
@@ -122,6 +134,105 @@ async function existsCaregiverProfileByUserId(userId) {
   return false;
 }
 
+// ------------------------------
+// caregivers table fallback detection
+// ------------------------------
+async function detectCaregiversTable() {
+  const now = Date.now();
+  if (cachedCaregiversTable && now - cachedCaregiversAt < 5 * 60 * 1000) {
+    return cachedCaregiversTable;
+  }
+
+  // default: não existe
+  const info = { exists: false, hasUserId: false };
+
+  try {
+    // 1) checa se tabela existe
+    const { rows: tRows } = await pool.query(
+      `
+      SELECT 1
+      FROM information_schema.tables
+      WHERE table_schema = 'public'
+        AND table_name = 'caregivers'
+      LIMIT 1
+      `
+    );
+
+    if (!tRows?.length) {
+      cachedCaregiversTable = info;
+      cachedCaregiversAt = now;
+      return info;
+    }
+
+    info.exists = true;
+
+    // 2) checa se tem user_id
+    const { rows: cRows } = await pool.query(
+      `
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'caregivers'
+        AND column_name IN ('user_id')
+      `
+    );
+
+    const set = new Set((cRows || []).map((r) => String(r.column_name)));
+    info.hasUserId = set.has("user_id");
+
+    cachedCaregiversTable = info;
+    cachedCaregiversAt = now;
+    return info;
+  } catch {
+    cachedCaregiversTable = info;
+    cachedCaregiversAt = now;
+    return info;
+  }
+}
+
+async function existsCaregiverInCaregiversByUserId(userId) {
+  const idStr = String(userId ?? "").trim();
+  if (!idStr) return false;
+
+  const detected = await detectCaregiversTable();
+
+  // se não existe, não bloqueia — só retorna false
+  if (!detected?.exists) return false;
+
+  // se existe mas não tem user_id, tenta fallback por tentativa/erro
+  if (detected.hasUserId) {
+    try {
+      const { rows } = await pool.query(
+        `SELECT 1 FROM caregivers WHERE user_id::text = $1 LIMIT 1`,
+        [idStr]
+      );
+      return rows?.length > 0;
+    } catch (e) {
+      // se a coluna sumiu, só falha como false
+      if (e?.code === "42703") return false;
+      // se a tabela sumiu, false
+      if (e?.code === "42P01") return false;
+      throw e;
+    }
+  }
+
+  // fallback tentativa/erro
+  try {
+    const { rows } = await pool.query(
+      `SELECT 1 FROM caregivers WHERE user_id::text = $1 LIMIT 1`,
+      [idStr]
+    );
+    return rows?.length > 0;
+  } catch (e) {
+    if (e?.code === "42703") return false;
+    if (e?.code === "42P01") return false;
+    return false;
+  }
+}
+
+// ------------------------------
+// middleware principal
+// ------------------------------
 async function requireCaregiverProfile(req, res, next) {
   try {
     const userId = req.user?.id;
@@ -140,7 +251,24 @@ async function requireCaregiverProfile(req, res, next) {
     // ✅ fast-path: se authMiddleware injetou a flag
     if (req.user?.hasCaregiverProfile === true) return next();
 
-    const ok = await existsCaregiverProfileByUserId(userId);
+    // ✅ 1) tenta caregiver_profiles (multi-schema)
+    let ok = false;
+    try {
+      ok = await existsCaregiverProfileByUserId(userId);
+    } catch (e) {
+      console.error("[requireCaregiverProfile] caregiver_profiles check error:", e?.message || e);
+      ok = false;
+    }
+
+    // ✅ 2) fallback: tabela caregivers (se existir)
+    if (!ok) {
+      try {
+        ok = await existsCaregiverInCaregiversByUserId(userId);
+      } catch (e) {
+        console.error("[requireCaregiverProfile] caregivers check error:", e?.message || e);
+        ok = false;
+      }
+    }
 
     if (!ok) {
       return res.status(403).json({
@@ -150,6 +278,7 @@ async function requireCaregiverProfile(req, res, next) {
       });
     }
 
+    // ✅ cache no req.user (ajuda nas próximas rotas no mesmo request-chain)
     req.user.hasCaregiverProfile = true;
     return next();
   } catch (err) {

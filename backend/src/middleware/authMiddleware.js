@@ -163,10 +163,107 @@ async function existsCaregiverProfileForUserId(userId) {
   }
 }
 
+/* ============================================================
+   ✅ Fallback adicional: tabela caregivers (se existir)
+   - Muitos projetos ligam cuidador por caregivers.user_id
+   ============================================================ */
+
+// cache simples (5 min)
+let cachedCaregiversInfo = null; // { exists: boolean, hasUserId: boolean }
+let cachedCaregiversInfoAt = 0;
+
+async function detectCaregiversTableInfo() {
+  const now = Date.now();
+  if (cachedCaregiversInfo && now - cachedCaregiversInfoAt < 5 * 60 * 1000) {
+    return cachedCaregiversInfo;
+  }
+
+  const info = { exists: false, hasUserId: false };
+
+  try {
+    const { rows: tRows } = await pool.query(
+      `
+      SELECT 1
+      FROM information_schema.tables
+      WHERE table_schema = 'public'
+        AND table_name = 'caregivers'
+      LIMIT 1
+      `
+    );
+
+    if (!tRows?.length) {
+      cachedCaregiversInfo = info;
+      cachedCaregiversInfoAt = now;
+      return info;
+    }
+
+    info.exists = true;
+
+    const { rows: cRows } = await pool.query(
+      `
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'caregivers'
+        AND column_name IN ('user_id')
+      `
+    );
+
+    const set = new Set((cRows || []).map((r) => String(r.column_name)));
+    info.hasUserId = set.has("user_id");
+
+    cachedCaregiversInfo = info;
+    cachedCaregiversInfoAt = now;
+    return info;
+  } catch {
+    cachedCaregiversInfo = info;
+    cachedCaregiversInfoAt = now;
+    return info;
+  }
+}
+
+async function existsCaregiverRowForUserId(userId) {
+  const idStr = String(userId ?? "").trim();
+  if (!idStr) return false;
+
+  const info = await detectCaregiversTableInfo();
+  if (!info?.exists) return false;
+
+  // melhor caminho: tem user_id
+  if (info.hasUserId) {
+    try {
+      const { rows } = await pool.query(
+        `SELECT 1 FROM caregivers c WHERE c.user_id::text = $1::text LIMIT 1`,
+        [idStr]
+      );
+      return rows?.length > 0;
+    } catch (err) {
+      // se a coluna não existe (schema mudou), cai no fallback
+      if (err?.code === "42703") return false;
+      // se a tabela não existe, false
+      if (err?.code === "42P01") return false;
+      return false;
+    }
+  }
+
+  // fallback tentativa/erro
+  try {
+    const { rows } = await pool.query(
+      `SELECT 1 FROM caregivers c WHERE c.user_id::text = $1::text LIMIT 1`,
+      [idStr]
+    );
+    return rows?.length > 0;
+  } catch (err) {
+    if (err?.code === "42703") return false;
+    if (err?.code === "42P01") return false;
+    return false;
+  }
+}
+
 /**
  * ✅ Busca info de bloqueio + multi-perfil
  * - blocked / blocked_reason / blocked_until (se existirem)
- * - hasCaregiverProfile (EXISTS caregiver_profiles com schema tolerante)
+ * - hasCaregiverProfile (EXISTS caregiver_profiles OU caregivers) - schema tolerante
  */
 async function fetchUserSecurityAndProfiles(userId) {
   const id = String(userId);
@@ -193,11 +290,23 @@ async function fetchUserSecurityAndProfiles(userId) {
 
     // 2) checa perfil cuidador com schema tolerante (best-effort)
     let hasCaregiverProfile = false;
+
+    // 2a) caregiver_profiles
     try {
       hasCaregiverProfile = await existsCaregiverProfileForUserId(id);
     } catch (e) {
       console.error("[authMiddleware] existsCaregiverProfileForUserId error:", e?.message || e);
       hasCaregiverProfile = false;
+    }
+
+    // 2b) fallback caregivers
+    if (!hasCaregiverProfile) {
+      try {
+        hasCaregiverProfile = await existsCaregiverRowForUserId(id);
+      } catch (e) {
+        console.error("[authMiddleware] existsCaregiverRowForUserId error:", e?.message || e);
+        hasCaregiverProfile = false;
+      }
     }
 
     return {
@@ -224,11 +333,21 @@ async function fetchUserSecurityAndProfiles(userId) {
       const blockInfo = pickBlockedPayload(row);
 
       let hasCaregiverProfile = false;
+
       try {
         hasCaregiverProfile = await existsCaregiverProfileForUserId(id);
       } catch (e) {
         console.error("[authMiddleware] existsCaregiverProfileForUserId error:", e?.message || e);
         hasCaregiverProfile = false;
+      }
+
+      if (!hasCaregiverProfile) {
+        try {
+          hasCaregiverProfile = await existsCaregiverRowForUserId(id);
+        } catch (e) {
+          console.error("[authMiddleware] existsCaregiverRowForUserId error:", e?.message || e);
+          hasCaregiverProfile = false;
+        }
       }
 
       return {
