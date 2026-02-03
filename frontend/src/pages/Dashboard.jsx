@@ -2480,7 +2480,7 @@ export default function Dashboard() {
               className="px-2 py-2 rounded-2xl bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22] font-semibold shadow text-[11px] leading-tight flex items-center justify-center"
               title="Ver minhas avaliações"
             >
-              ⭐
+              Avaliações
             </Link>
           </div>
 
