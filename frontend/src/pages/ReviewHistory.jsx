@@ -19,17 +19,17 @@ function toBool(v) {
 function getIsHidden(ev) {
   return toBool(
     ev?.is_hidden ??
-      ev?.isHidden ??
-      ev?.review_is_hidden ??
-      ev?.reviewIsHidden ??
-      ev?.hidden ??
-      ev?.oculta ??
-      ev?.is_oculta ??
-      // campos que podem vir do listCaregiver/listTutor
-      ev?.tutor_review_is_hidden ??
-      ev?.caregiver_review_is_hidden ??
-      ev?.caregiver_review_hidden ??
-      ev?.tutor_review_hidden
+    ev?.isHidden ??
+    ev?.review_is_hidden ??
+    ev?.reviewIsHidden ??
+    ev?.hidden ??
+    ev?.oculta ??
+    ev?.is_oculta ??
+    // campos que podem vir do listCaregiver/listTutor
+    ev?.tutor_review_is_hidden ??
+    ev?.caregiver_review_is_hidden ??
+    ev?.caregiver_review_hidden ??
+    ev?.tutor_review_hidden
   );
 }
 
@@ -147,8 +147,8 @@ export default function ReviewHistory() {
         const raw = Array.isArray(data?.evaluations)
           ? data.evaluations
           : Array.isArray(data?.reviews)
-          ? data.reviews
-          : [];
+            ? data.reviews
+            : [];
 
         // normalize: flags + motivo + data (sem side)
         const normalized = raw.map((ev) => {
@@ -233,11 +233,10 @@ export default function ReviewHistory() {
             type="button"
             onClick={() => setRevPage((p) => Math.max(1, Number(p || 1) - 1))}
             disabled={!canPrev}
-            className={`px-3 py-2 rounded-lg text-xs font-semibold shadow ${
-              canPrev
+            className={`px-3 py-2 rounded-lg text-xs font-semibold shadow ${canPrev
                 ? "bg-[#D2A679] hover:bg-[#B25B38] text-[#5A3A22]"
                 : "bg-gray-200 text-[#5A3A22]/50 cursor-not-allowed"
-            }`}
+              }`}
           >
             ← Anterior
           </button>
@@ -246,11 +245,10 @@ export default function ReviewHistory() {
             type="button"
             onClick={() => setRevPage((p) => Math.min(totalPages, Number(p || 1) + 1))}
             disabled={!canNext}
-            className={`px-3 py-2 rounded-lg text-xs font-semibold shadow ${
-              canNext
+            className={`px-3 py-2 rounded-lg text-xs font-semibold shadow ${canNext
                 ? "bg-[#D2A679] hover:bg-[#B25B38] text-[#5A3A22]"
                 : "bg-gray-200 text-[#5A3A22]/50 cursor-not-allowed"
-            }`}
+              }`}
           >
             Próxima →
           </button>
@@ -313,8 +311,7 @@ export default function ReviewHistory() {
             {paginated.map((ev) => {
               const key =
                 ev.reservation_id ??
-                `${ev.from_user_id || "u"}_${ev.from_user_name || "name"}_${ev.start_date || ""}_${
-                  ev.end_date || ""
+                `${ev.from_user_id || "u"}_${ev.from_user_name || "name"}_${ev.start_date || ""}_${ev.end_date || ""
                 }`;
 
               const dateLabel = getDateLabel(ev);
@@ -323,9 +320,8 @@ export default function ReviewHistory() {
               return (
                 <div
                   key={key}
-                  className={`border rounded-lg p-4 mb-3 text-[#5A3A22] shadow-sm ${
-                    isAdmin && ev.__isHidden ? "bg-[#FFF7D6]" : "bg-white"
-                  }`}
+                  className={`border rounded-lg p-4 mb-3 text-[#5A3A22] shadow-sm ${isAdmin && ev.__isHidden ? "bg-[#FFF7D6]" : "bg-white"
+                    }`}
                 >
                   <p className="text-sm text-[#5A3A22]/80">
                     <b>{ev.from_user_name || "Usuário"}</b> — ⭐ {ev.rating}/5
@@ -338,7 +334,7 @@ export default function ReviewHistory() {
                     <p className="mt-1 text-xs opacity-70">Serviço: {ev.service}</p>
                   ) : null}
 
-                  {ev.reservation_id ? (
+                  {isAdmin && ev.reservation_id ? (
                     <p className="mt-1 text-xs opacity-70">Reserva: #{ev.reservation_id}</p>
                   ) : null}
 
