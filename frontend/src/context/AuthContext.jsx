@@ -648,6 +648,13 @@ export function AuthProvider({ children }) {
     }
 
     emitAuthChanged("logged_out");
+
+    // ✅ garante que após logout volta para a Home (vence ProtectedRoute -> /login)
+    try {
+      window.location.replace("/");
+    } catch {
+      // ignore
+    }
   }
 
   /**
