@@ -66,6 +66,11 @@ function coerceHasCaregiverProfile(res) {
     res?.user?.hasCaregiverProfile ??
     res?.user?.has_caregiver_profile ??
     false;
+
+  // ✅ se o backend diz role=caregiver, consideramos que "pode ser caregiver"
+  const role = String(res?.user?.role || "").toLowerCase().trim();
+  if (role === "caregiver") return true;
+
   return Boolean(v);
 }
 
@@ -86,8 +91,11 @@ function normalizeRole(role) {
  * OBS: role NÃO força modo.
  */
 function decideMode({ role, savedMode, hasCaregiverProfile, preferCaregiver = false }) {
-  normalizeRole(role); // lido (sem forçar modo)
+  const r = normalizeRole(role);
   const s = normalizeMode(savedMode);
+
+  // ✅ se o usuário é caregiver no backend, o modo padrão tem que ser caregiver
+  if (r === "caregiver") return "caregiver";
 
   if (preferCaregiver && hasCaregiverProfile) return "caregiver";
   if (s === "caregiver" && hasCaregiverProfile) return "caregiver";
@@ -654,8 +662,13 @@ export function AuthProvider({ children }) {
 
     // ✅ fonte mais confiável no clique: saved.hasCaregiverProfile (se existir),
     // senão cai no state atual.
+    const currentRole = normalizeRole(saved?.user?.role ?? user?.role);
+
+    // ✅ caregiver é permitido se:
+    // - tem caregiver_profile OU
+    // - o role do usuário já é caregiver
     const canCaregiver = Boolean(
-      saved?.hasCaregiverProfile ?? hasCaregiverProfile ?? false
+      (saved?.hasCaregiverProfile ?? hasCaregiverProfile ?? false) || currentRole === "caregiver"
     );
 
     const finalMode = desired === "caregiver" && !canCaregiver ? "tutor" : desired;
