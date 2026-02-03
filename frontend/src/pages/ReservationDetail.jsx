@@ -117,9 +117,9 @@ const normalizePetObject = (p) => {
     ? adjectivesRaw.filter(Boolean).map(String)
     : typeof adjectivesRaw === "string"
       ? adjectivesRaw
-        .split(/[,•|]/g)
-        .map((s) => s.trim())
-        .filter(Boolean)
+          .split(/[,•|]/g)
+          .map((s) => s.trim())
+          .filter(Boolean)
       : [];
 
   const image = pickPetImage(p);
@@ -211,22 +211,22 @@ const normalizeReservationFromApi = (r) => {
 
   const pricePerDay = toNumSafe(
     r.price_per_day ?? // 👈 principal (backend)
-    r.pricePerDay ??
-    r.daily_price ??
-    r.dailyPrice ??
-    r.price_day ??
-    r.priceDay ??
-    r.price ??
-    null
+      r.pricePerDay ??
+      r.daily_price ??
+      r.dailyPrice ??
+      r.price_day ??
+      r.priceDay ??
+      r.price ??
+      null
   );
 
   const total = toNumSafe(
     r.total ??
-    r.total_price ??
-    r.totalPrice ??
-    r.total_value ??
-    r.totalValue ??
-    null
+      r.total_price ??
+      r.totalPrice ??
+      r.total_value ??
+      r.totalValue ??
+      null
   );
 
   return {
@@ -610,21 +610,21 @@ export default function ReservationDetail() {
         const fallbackCaregiver =
           finalReservation
             ? {
-              id: finalReservation.caregiverId,
-              name: finalReservation.caregiverName,
-              email: finalReservation.caregiverEmail ?? finalReservation?.caregiverObj?.email ?? null,
-              phone: finalReservation.caregiverPhone ?? finalReservation?.caregiverObj?.phone ?? null,
-            }
+                id: finalReservation.caregiverId,
+                name: finalReservation.caregiverName,
+                email: finalReservation.caregiverEmail ?? finalReservation?.caregiverObj?.email ?? null,
+                phone: finalReservation.caregiverPhone ?? finalReservation?.caregiverObj?.phone ?? null,
+              }
             : null;
 
         const fallbackTutor =
           finalReservation
             ? {
-              id: finalReservation.tutorId,
-              name: finalReservation.tutorName,
-              email: finalReservation.tutorEmail ?? finalReservation?.tutorObj?.email ?? null,
-              phone: finalReservation.tutorPhone ?? finalReservation?.tutorObj?.phone ?? null,
-            }
+                id: finalReservation.tutorId,
+                name: finalReservation.tutorName,
+                email: finalReservation.tutorEmail ?? finalReservation?.tutorObj?.email ?? null,
+                phone: finalReservation.tutorPhone ?? finalReservation?.tutorObj?.phone ?? null,
+              }
             : null;
 
         setCaregiver(currentCaregiverFromUsers || fallbackCaregiver);
@@ -983,7 +983,7 @@ export default function ReservationDetail() {
       console.error("Erro ao sincronizar status no servidor:", err);
       showToast(
         err?.message ||
-        "Não foi possível sincronizar o status com o servidor. Ele foi atualizado apenas localmente por enquanto.",
+          "Não foi possível sincronizar o status com o servidor. Ele foi atualizado apenas localmente por enquanto.",
         "error"
       );
       return false;
@@ -1476,199 +1476,197 @@ export default function ReservationDetail() {
           </div>
         </div>
 
-        <div className="flex flex-col items-start gap-1 mb-2 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            Pets que serão cuidados 🐾
-          </h2>
+        <div className="mt-8 text-[#5A3A22]">
+          {/* ✅ FIX MOBILE: empilha no mobile, volta lado a lado no sm+ */}
+          <div className="flex flex-col items-start gap-1 mb-2 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
+            <h2 className="text-lg font-semibold flex items-center gap-2">Pets que serão cuidados 🐾</h2>
 
-          {isTutor && (
-            <Link
-              to="/dashboard"
-              state={{ initialTab: "pets" }}
-              className="text-xs underline text-[#5A3A22] hover:text-[#95301F] sm:text-sm whitespace-nowrap"
-            >
-              Gerenciar Meus Pets
-            </Link>
-          )}
-        </div>
+            {isTutor && (
+              <Link
+                to="/dashboard"
+                state={{ initialTab: "pets" }}
+                className="text-xs underline text-[#5A3A22] hover:text-[#95301F] sm:text-sm whitespace-nowrap"
+              >
+                Gerenciar Meus Pets
+              </Link>
+            )}
+          </div>
 
-        {displayPets.length ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {displayPets.map((rawPet) => {
-              const pet = normalizePetObject(rawPet) || rawPet;
+          {displayPets.length ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {displayPets.map((rawPet) => {
+                const pet = normalizePetObject(rawPet) || rawPet;
 
-              const petName = pet?.name || "Pet";
-              const specie = pet?.specie || pet?.species || "Espécie não informada";
-              const breed = pet?.breed ? "• " + pet.breed : "";
-              const porte = pet?.porte || pet?.port || pet?.size || pet?.portePet || null;
+                const petName = pet?.name || "Pet";
+                const specie = pet?.specie || pet?.species || "Espécie não informada";
+                const breed = pet?.breed ? "• " + pet.breed : "";
+                const porte = pet?.porte || pet?.port || pet?.size || pet?.portePet || null;
 
-              const petImg = pickPetImage(pet) || DEFAULT_PET_IMG;
+                const petImg = pickPetImage(pet) || DEFAULT_PET_IMG;
 
-              return (
-                <div
-                  key={pet?.id || petName}
-                  className="flex gap-3 items-center border rounded-xl p-3 bg-[#FFF8F0] shadow-sm"
-                >
-                  <img
-                    src={petImg}
-                    alt={petName}
-                    className="w-16 h-16 rounded-full object-cover border-2 border-[#FFD700]"
-                  />
-                  <div className="text-xs md:text-sm">
-                    <p className="font-semibold text-sm md:text-base">{petName}</p>
-                    <p className="opacity-80">
-                      {specie} {breed}
-                    </p>
-                    {porte && <p className="opacity-80">Porte: {String(porte)}</p>}
-                    {pet?.approxAge && <p className="opacity-80">Idade aproximada: {pet.approxAge}</p>}
-                    {!!pet?.adjectives?.length && (
-                      <p className="mt-1 text-[11px] opacity-90">{pet.adjectives.join(" • ")}</p>
-                    )}
+                return (
+                  <div
+                    key={pet?.id || petName}
+                    className="flex gap-3 items-center border rounded-xl p-3 bg-[#FFF8F0] shadow-sm"
+                  >
+                    <img
+                      src={petImg}
+                      alt={petName}
+                      className="w-16 h-16 rounded-full object-cover border-2 border-[#FFD700]"
+                    />
+                    <div className="text-xs md:text-sm">
+                      <p className="font-semibold text-sm md:text-base">{petName}</p>
+                      <p className="opacity-80">
+                        {specie} {breed}
+                      </p>
+                      {porte && <p className="opacity-80">Porte: {String(porte)}</p>}
+                      {pet?.approxAge && <p className="opacity-80">Idade aproximada: {pet.approxAge}</p>}
+                      {!!pet?.adjectives?.length && (
+                        <p className="mt-1 text-[11px] opacity-90">{pet.adjectives.join(" • ")}</p>
+                      )}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <p className="text-sm md:text-base opacity-80 bg-[#FFF8F0] rounded-xl p-3">
-            Pets desta reserva não informados.
-          </p>
-        )}
-      </div>
-
-      {(isTutor || isCaregiver) && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8 text-[#5A3A22]">
-          <div className="pc-card pc-card-accent">
-            <h2 className="font-semibold mb-2">Sua avaliação</h2>
-
-            {alreadyRatedByUser ? (
-              <p className="text-sm opacity-80">
-                Você avaliou esta reserva com{" "}
-                <b>⭐ {isTutor ? reservation.tutorRating : reservation.caregiverRating}/5</b>
-                {isTutor && reservation.tutorReview ? ' — "' + reservation.tutorReview + '"' : ""}
-                {isCaregiver && reservation.caregiverReview ? ' — "' + reservation.caregiverReview + '"' : ""}
-              </p>
-            ) : (
-              <p className="text-sm opacity-70 mb-2">
-                Após a reserva ser <b>concluída</b>, você poderá avaliar a experiência.
-              </p>
-            )}
-
-            {canRate && (
-              <button
-                type="button"
-                onClick={openRatingModal}
-                disabled={ratingBusy}
-                className={
-                  "mt-3 px-4 py-2 rounded-lg font-semibold shadow-md text-sm " +
-                  (ratingBusy
-                    ? "bg-[#FFD700]/60 cursor-not-allowed text-[#5A3A22]"
-                    : "bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22]")
-                }
-              >
-                {ratingBusy ? "Enviando..." : isTutor ? "Avaliar cuidador" : "Avaliar tutor"}
-              </button>
-            )}
-          </div>
-
-          <div className="pc-card pc-card-accent">
-            <h2 className="font-semibold mb-2">Avaliação da outra parte</h2>
-
-            {counterpartRating && counterpartRating.rating != null ? (
-              <p className="text-sm opacity-80">
-                {counterpartRating.roleLabel} avaliou esta reserva com <b>⭐ {counterpartRating.rating}/5</b>
-                {counterpartRating.review ? ' — "' + counterpartRating.review + '"' : ""}
-              </p>
-            ) : (
-              <p className="text-sm opacity-70">Ainda não há avaliação registrada pela outra parte.</p>
-            )}
-          </div>
-        </div>
-      )}
-
-      {(isTutor || isCaregiver) && (
-        <div className="mt-8" ref={chatSectionRef} id="chat">
-          {canChatNow ? (
-            <ChatErrorBoundary>
-              <ChatBox
-                reservationId={reservation.id}
-                token={effectiveToken}
-                currentUserId={myUserId}
-                otherUserName={otherUserName}
-                canChat={true}
-                reservationStatus={reservation.status}
-              />
-            </ChatErrorBoundary>
-          ) : (
-            <div className="pc-card pc-card-accent text-[#5A3A22]">
-              O chat fica disponível apenas enquanto a reserva estiver <b>Aceita</b>.
+                );
+              })}
             </div>
+          ) : (
+            <p className="text-sm md:text-base opacity-80 bg-[#FFF8F0] rounded-xl p-3">Pets desta reserva não informados.</p>
           )}
         </div>
-      )}
 
-      {/* ✅ MOBILE: botões com a mesma largura (w-full) e alinhamento limpo */}
-      <div className="mt-6 grid grid-cols-1 gap-3 sm:flex sm:flex-wrap sm:gap-3">
-        {isCaregiver && reservation.status === "Pendente" && (
-          <div className="flex flex-col gap-2 w-full sm:w-auto">
-            <div className="grid grid-cols-1 gap-3 sm:flex sm:flex-wrap sm:gap-3">
-              <button
-                type="button"
-                onClick={caregiverAccept}
-                className="w-full sm:w-auto px-4 py-2 rounded-lg font-semibold text-white bg-green-600 hover:bg-green-700"
-              >
-                Aceitar
-              </button>
-              <button
-                type="button"
-                onClick={caregiverReject}
-                className="w-full sm:w-auto bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-semibold"
-              >
-                Recusar
-              </button>
+        {(isTutor || isCaregiver) && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8 text-[#5A3A22]">
+            <div className="pc-card pc-card-accent">
+              <h2 className="font-semibold mb-2">Sua avaliação</h2>
+
+              {alreadyRatedByUser ? (
+                <p className="text-sm opacity-80">
+                  Você avaliou esta reserva com{" "}
+                  <b>⭐ {isTutor ? reservation.tutorRating : reservation.caregiverRating}/5</b>
+                  {isTutor && reservation.tutorReview ? ' — "' + reservation.tutorReview + '"' : ""}
+                  {isCaregiver && reservation.caregiverReview ? ' — "' + reservation.caregiverReview + '"' : ""}
+                </p>
+              ) : (
+                <p className="text-sm opacity-70 mb-2">
+                  Após a reserva ser <b>concluída</b>, você poderá avaliar a experiência.
+                </p>
+              )}
+
+              {canRate && (
+                <button
+                  type="button"
+                  onClick={openRatingModal}
+                  disabled={ratingBusy}
+                  className={
+                    "mt-3 px-4 py-2 rounded-lg font-semibold shadow-md text-sm " +
+                    (ratingBusy
+                      ? "bg-[#FFD700]/60 cursor-not-allowed text-[#5A3A22]"
+                      : "bg-[#FFD700]/90 hover:bg-[#FFD700] text-[#5A3A22]")
+                  }
+                >
+                  {ratingBusy ? "Enviando..." : isTutor ? "Avaliar cuidador" : "Avaliar tutor"}
+                </button>
+              )}
+            </div>
+
+            <div className="pc-card pc-card-accent">
+              <h2 className="font-semibold mb-2">Avaliação da outra parte</h2>
+
+              {counterpartRating && counterpartRating.rating != null ? (
+                <p className="text-sm opacity-80">
+                  {counterpartRating.roleLabel} avaliou esta reserva com <b>⭐ {counterpartRating.rating}/5</b>
+                  {counterpartRating.review ? ' — "' + counterpartRating.review + '"' : ""}
+                </p>
+              ) : (
+                <p className="text-sm opacity-70">Ainda não há avaliação registrada pela outra parte.</p>
+              )}
             </div>
           </div>
         )}
 
-        {isTutor && ["Pendente", "Aceita"].includes(reservation.status) && (
-          <button
-            type="button"
-            onClick={tutorCancel}
-            className="w-full sm:w-auto bg-gray-400 hover:bg-gray-500 text-white px-4 py-2 rounded-lg font-semibold"
-          >
-            Cancelar
-          </button>
+        {(isTutor || isCaregiver) && (
+          <div className="mt-8" ref={chatSectionRef} id="chat">
+            {canChatNow ? (
+              <ChatErrorBoundary>
+                <ChatBox
+                  reservationId={reservation.id}
+                  token={effectiveToken}
+                  currentUserId={myUserId}
+                  otherUserName={otherUserName}
+                  canChat={true}
+                  reservationStatus={reservation.status}
+                />
+              </ChatErrorBoundary>
+            ) : (
+              <div className="pc-card pc-card-accent text-[#5A3A22]">
+                O chat fica disponível apenas enquanto a reserva estiver <b>Aceita</b>.
+              </div>
+            )}
+          </div>
         )}
 
-        {isCaregiver && canMarkCompleted && (
+        {/* ✅ MOBILE: botões com a mesma largura (w-full) e alinhamento limpo */}
+        <div className="mt-6 grid grid-cols-1 gap-3 sm:flex sm:flex-wrap sm:gap-3">
+          {isCaregiver && reservation.status === "Pendente" && (
+            <div className="flex flex-col gap-2 w-full sm:w-auto">
+              <div className="grid grid-cols-1 gap-3 sm:flex sm:flex-wrap sm:gap-3">
+                <button
+                  type="button"
+                  onClick={caregiverAccept}
+                  className="w-full sm:w-auto px-4 py-2 rounded-lg font-semibold text-white bg-green-600 hover:bg-green-700"
+                >
+                  Aceitar
+                </button>
+                <button
+                  type="button"
+                  onClick={caregiverReject}
+                  className="w-full sm:w-auto bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-semibold"
+                >
+                  Recusar
+                </button>
+              </div>
+            </div>
+          )}
+
+          {isTutor && ["Pendente", "Aceita"].includes(reservation.status) && (
+            <button
+              type="button"
+              onClick={tutorCancel}
+              className="w-full sm:w-auto bg-gray-400 hover:bg-gray-500 text-white px-4 py-2 rounded-lg font-semibold"
+            >
+              Cancelar
+            </button>
+          )}
+
+          {isCaregiver && canMarkCompleted && (
+            <button
+              type="button"
+              onClick={caregiverMarkCompleted}
+              className="w-full sm:w-auto bg-[#FFD700] hover:bg-[#f5c400] text-[#5A3A22] px-4 py-2 rounded-lg font-semibold"
+            >
+              {/* ✅ texto menor APENAS no mobile */}
+              <span className="sm:hidden">Concluir reserva</span>
+              <span className="hidden sm:inline">Marcar reserva como concluída</span>
+            </button>
+          )}
+
           <button
             type="button"
-            onClick={caregiverMarkCompleted}
-            className="w-full sm:w-auto bg-[#FFD700] hover:bg-[#f5c400] text-[#5A3A22] px-4 py-2 rounded-lg font-semibold"
+            onClick={() => navigate(-1)}
+            className="w-full sm:w-auto bg-[#5A3A22] hover:bg-[#95301F] text-white px-4 py-2 rounded-lg font-semibold"
           >
-            {/* ✅ texto menor APENAS no mobile */}
-            <span className="sm:hidden">Concluir reserva</span>
-            <span className="hidden sm:inline">Marcar reserva como concluída</span>
+            Voltar
           </button>
-        )}
+        </div>
 
-        <button
-          type="button"
-          onClick={() => navigate(-1)}
-          className="w-full sm:w-auto bg-[#5A3A22] hover:bg-[#95301F] text-white px-4 py-2 rounded-lg font-semibold"
-        >
-          Voltar
-        </button>
+        <RatingModal
+          isOpen={ratingOpen}
+          title={ratingTitle || "Avaliar"}
+          onClose={closeRatingModal}
+          onSubmit={handleSubmitRating}
+          busy={ratingBusy}
+        />
       </div>
-
-      <RatingModal
-        isOpen={ratingOpen}
-        title={ratingTitle || "Avaliar"}
-        onClose={closeRatingModal}
-        onSubmit={handleSubmitRating}
-        busy={ratingBusy}
-      />
     </div>
-    </div >
   );
 }
