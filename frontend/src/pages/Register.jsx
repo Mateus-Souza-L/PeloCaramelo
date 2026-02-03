@@ -136,14 +136,21 @@ export default function Register() {
 
       login(user, token);
 
-      // ✅ Mostra o toast principal na próxima tela (Dashboard) apenas 1 vez
+      // ✅ dispara o WelcomeModal no Dashboard (1x por sessão)
       try {
+        sessionStorage.setItem("pc_welcome_toast", "1");
+
+        // fallback (se você ainda tiver o effect antigo em algum lugar)
         localStorage.setItem("pc_showWelcomeToast", "1");
-        localStorage.setItem("pc_showWelcomeToast_role", String(user?.role || role || ""));
+        localStorage.setItem(
+          "pc_showWelcomeToast_role",
+          String(user?.role || role || "")
+        );
       } catch {
         // ignore
       }
 
+      // ✅ navega para o mesmo painel que você já usa hoje
       if (user.role === "caregiver") navigate("/painel-cuidador", { replace: true });
       else navigate("/dashboard", { replace: true });
     } catch (err) {

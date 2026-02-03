@@ -8,6 +8,7 @@ import { useToast } from "../components/ToastProvider";
 import { formatDateBR, toLocalKey, parseLocalKey } from "../utils/date";
 import RatingModal from "../components/RatingModal";
 import TutorPets from "../components/TutorPets";
+import WelcomeModal from "../components/WelcomeModal";
 import { authRequest } from "../services/api";
 
 import {
@@ -385,27 +386,55 @@ export default function Dashboard() {
   const location = useLocation();
 
   /* ===========================================================
-   ✅ Toast principal pós-cadastro (aparece 1x no Dashboard)
-   - setado no Register.jsx: pc_showWelcomeToast = "1"
-   - remove após mostrar para não repetir
+   ✅ Welcome Modal (pós-cadastro) — aparece 1x por sessão
+   - flag vem do Register (sessionStorage ou localStorage)
    =========================================================== */
+  const [showWelcome, setShowWelcome] = useState(false);
+  const [resendingGuide, setResendingGuide] = useState(false);
+  const [resendState, setResendState] = useState("idle"); // "idle" | "ok" | "error"
+
   useEffect(() => {
     try {
-      const flag = localStorage.getItem("pc_showWelcomeToast");
-      if (flag !== "1") return;
+      // ✅ prioridade: session (recomendado)
+      const flagSession = sessionStorage.getItem("pc_welcome_toast");
+      if (flagSession === "1") {
+        sessionStorage.removeItem("pc_welcome_toast");
+        setShowWelcome(true);
+        return;
+      }
 
-      // opcional: se quiser personalizar por role no futuro
-      // const role = localStorage.getItem("pc_showWelcomeToast_role");
-
-      // limpa primeiro para garantir "1x" mesmo se der re-render
-      localStorage.removeItem("pc_showWelcomeToast");
-      localStorage.removeItem("pc_showWelcomeToast_role");
-
-      showToast("Cadastro concluído! 🎉 Bem-vindo(a) à PeloCaramelo.", "success");
+      // ✅ fallback: se você ainda estiver usando localStorage
+      const flagLocal = localStorage.getItem("pc_showWelcomeToast");
+      if (flagLocal === "1") {
+        localStorage.removeItem("pc_showWelcomeToast");
+        localStorage.removeItem("pc_showWelcomeToast_role");
+        setShowWelcome(true);
+      }
     } catch {
       // ignore
     }
-  }, [showToast]);
+  }, []);
+
+  const handleResendGuide = useCallback(async () => {
+    if (!token) return;
+
+    try {
+      setResendState("idle");
+      setResendingGuide(true);
+
+      // ✅ endpoint sugerido (backend)
+      await authRequest("/auth/resend-welcome-guide", token, {
+        method: "POST",
+      });
+
+      setResendState("ok");
+    } catch (e) {
+      console.error("Erro ao reenviar guia:", e);
+      setResendState("error");
+    } finally {
+      setResendingGuide(false);
+    }
+  }, [token]);
 
   // ===========================================================
   // ✅ Troca de perfil (tutor/caregiver) sem trocar usuário
@@ -2162,6 +2191,17 @@ export default function Dashboard() {
 
     return (
       <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] p-3 md:p-6">
+        {showWelcome && (
+          <WelcomeModal
+            role={activeRole}              // "tutor" ou "caregiver"
+            userName={user?.name || ""}    // se seu user usar outro campo, ajuste aqui
+            onClose={() => setShowWelcome(false)}
+            onResendGuide={handleResendGuide}
+            resending={resendingGuide}
+            resendState={resendState}
+          />
+        )}
+
         {/* Header (MOBILE: 3 ações na mesma linha | DESKTOP: mantém como antes) */}
         <div className="max-w-[1400px] mx-auto mb-4">
           {/* ✅ Mobile: 3 colunas */}
@@ -2506,6 +2546,17 @@ export default function Dashboard() {
 
     return (
       <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] p-3 md:p-6">
+        {showWelcome && (
+          <WelcomeModal
+            role={activeRole}
+            userName={user?.name || ""}
+            onClose={() => setShowWelcome(false)}
+            onResendGuide={handleResendGuide}
+            resending={resendingGuide}
+            resendState={resendState}
+          />
+        )}
+
         {/* Header (MOBILE: 3 ações na mesma linha | DESKTOP: mantém como antes) */}
         <div className="max-w-[1400px] mx-auto mb-4">
           {/* ✅ Mobile: 3 colunas */}
