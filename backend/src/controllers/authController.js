@@ -28,7 +28,6 @@ const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-trocar-em-producao";
    ============================================================ */
 
 function generateToken(user) {
-  // ✅ token sempre reflete o role do DB (mas agora o register garante tutor)
   return jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: "7d" });
 }
 
@@ -69,6 +68,41 @@ function pickBlockInfo(user) {
 function isStrongPassword(pw) {
   const s = String(pw || "");
   return /^(?=.*[A-Za-z])(?=.*\d).{8,}$/.test(s);
+}
+
+/* ============================================================
+   ✅ NORMALIZAÇÃO DE ROLE NO REGISTER (FIX DO SEU BUG)
+   - Aceita variações comuns do front ("Cuidador", "cuidador(a)", etc.)
+   - Só permite "tutor" ou "caregiver"
+   - Nunca permite admin via register
+   ============================================================ */
+
+function normalizeRegisterRole(input) {
+  const raw = String(input || "").trim().toLowerCase();
+
+  // variações que significam cuidador
+  const caregiverAliases = new Set([
+    "caregiver",
+    "cuidador",
+    "cuidadora",
+    "cuidador(a)",
+    "cuidador(a) ",
+    "cuidador (a)",
+    "cuidador - cuidadora",
+    "cuidadores",
+  ]);
+
+  // variações que significam tutor
+  const tutorAliases = new Set(["tutor", "tutora", "tutores"]);
+
+  if (caregiverAliases.has(raw)) return "caregiver";
+  if (tutorAliases.has(raw)) return "tutor";
+
+  // se vier vazio, cai no padrão tutor (comportamento seguro)
+  if (!raw) return "tutor";
+
+  // qualquer outra coisa: inválido (evita você criar “tutor” sem querer por default silencioso)
+  return null;
 }
 
 /* ============================================================
@@ -152,7 +186,7 @@ async function hasCaregiverProfileByUserId(userId) {
     }
 
     // 2) fallback sem information_schema:
-    // ✅ tenta user_id, depois id. NÃO tenta caregiver_id aqui (pra não quebrar seu schema).
+    // ✅ tenta user_id, depois id. NÃO tenta caregiver_id aqui.
     try {
       const { rows } = await pool.query(
         `SELECT 1 FROM caregiver_profiles WHERE user_id::text = $1 LIMIT 1`,
@@ -209,62 +243,6 @@ function escapeHtml(s) {
     .replace(/'/g, "&#039;");
 }
 
-function buildResetEmail({ link, minutes }) {
-  const safeLink = String(link || "");
-  const safeMinutes = Number.isFinite(Number(minutes)) ? Number(minutes) : 60;
-
-  const subject = "Recuperação de senha – PeloCaramelo";
-
-  const text =
-    `Você solicitou a redefinição de senha no PeloCaramelo.\n\n` +
-    `Para criar uma nova senha, acesse o link:\n${safeLink}\n\n` +
-    `Este link expira em aproximadamente ${safeMinutes} minutos.\n\n` +
-    `Se você não solicitou isso, ignore este e-mail.`;
-
-  const html = `
-  <div style="font-family: Arial, sans-serif; background:#fff; color:#1f2937; line-height:1.4; padding: 8px 0;">
-    <div style="max-width: 560px; margin: 0 auto; padding: 20px; border:1px solid #e5e7eb; border-radius: 10px;">
-      <h2 style="margin:0 0 12px; font-size:20px;">Recuperação de senha</h2>
-
-      <p style="margin:0 0 12px; font-size:14px;">
-        Recebemos uma solicitação para redefinir a senha da sua conta no <strong>PeloCaramelo</strong>.
-      </p>
-
-      <p style="margin:0 0 16px; font-size:14px;">
-        Clique no botão abaixo para criar uma nova senha (o link expira em aproximadamente <strong>${escapeHtml(
-          String(safeMinutes)
-        )} minutos</strong>).
-      </p>
-
-      <p style="margin:0 0 18px;">
-        <a href="${escapeHtml(safeLink)}"
-           style="display:inline-block; padding:12px 18px; background:#FFD700; color:#5A3A22; text-decoration:none; border-radius:8px; font-weight:700;">
-          Criar nova senha
-        </a>
-      </p>
-
-      <p style="margin:0 0 10px; font-size:12px; color:#6b7280;">
-        Se o botão não funcionar, copie e cole este link no navegador:
-      </p>
-
-      <p style="margin:0 0 18px; font-size:12px; word-break:break-all;">
-        <a href="${escapeHtml(safeLink)}" style="color:#2563eb; text-decoration:underline;">
-          ${escapeHtml(safeLink)}
-        </a>
-      </p>
-
-      <hr style="border:none; border-top:1px solid #e5e7eb; margin: 16px 0;" />
-
-      <p style="margin:0; font-size:12px; color:#6b7280;">
-        Se você não solicitou essa recuperação, pode ignorar este e-mail com segurança.
-      </p>
-    </div>
-  </div>
-  `;
-
-  return { subject, text, html };
-}
-
 /* ============================================================
    REGISTER
    ============================================================ */
@@ -276,12 +254,17 @@ async function register(req, res) {
     const email = String(body?.email || "").trim();
     const password = String(body?.password || "");
 
-    // ✅ CORREÇÃO DEFINITIVA:
-    // Nunca aceitar "role" vindo do front no cadastro.
-    // Usuário nasce como tutor e "ser cuidador" depende do caregiver_profile.
-    const role = "tutor";
+    // ✅ FIX: normaliza e valida role
+    const roleNorm = normalizeRegisterRole(body?.role);
+    if (roleNorm == null) {
+      return res.status(400).json({
+        error: "Tipo de perfil inválido. Escolha Tutor ou Cuidador.",
+        code: "INVALID_ROLE",
+      });
+    }
+    const role = roleNorm;
 
-    // ✅ obrigatórios
+    // ✅ agora são obrigatórios
     const city = String(body?.city || "").trim();
     const neighborhood = String(body?.neighborhood || "").trim();
 
@@ -293,6 +276,7 @@ async function register(req, res) {
       return res.status(400).json({ error: "Nome, e-mail e senha são obrigatórios." });
     }
 
+    // ✅ city + neighborhood obrigatórios (e não aceitam vazio)
     if (!city) {
       return res.status(400).json({
         error: "Cidade é obrigatória.",
@@ -327,7 +311,7 @@ async function register(req, res) {
       name,
       email: normalizedEmail,
       passwordHash,
-      role,
+      role, // ✅ agora vem sempre "tutor" ou "caregiver"
       city,
       neighborhood,
       phone: phone ? String(phone).trim() : null,
@@ -379,6 +363,7 @@ async function login(req, res) {
     }
 
     const token = generateToken(user);
+
     const hasCaregiverProfile = await hasCaregiverProfileByUserId(user.id);
 
     return res.json({ user, token, hasCaregiverProfile });
