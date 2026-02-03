@@ -55,8 +55,8 @@ function usersDailyCapacitySelectExpr() {
 const SERVICE_OPTIONS = [
   { key: "hospedagem", label: "Hospedagem" },
   { key: "creche", label: "Creche" },
-  { key: "passeio", label: "Passeio" },
-  { key: "visita", label: "Visita / Pet Sitter" },
+  { key: "passeios", label: "Passeios" }, // ✅ IMPORTANTE: alinhar com o front (Search usa "passeios")
+  { key: "petSitter", label: "Visita / Pet Sitter" },
   { key: "banho", label: "Banho & Tosa" },
 ];
 
@@ -71,7 +71,6 @@ const SERVICE_TOKEN_TO_KEY = (() => {
 })();
 
 function normalizeServicesToKeys(input) {
-  // aceita array, string única, ou null
   if (input == null) return null;
 
   const arr = Array.isArray(input) ? input : [input];
@@ -85,7 +84,7 @@ function normalizeServicesToKeys(input) {
   for (const s of cleaned) {
     const token = s.toLowerCase();
     const key = SERVICE_TOKEN_TO_KEY.get(token);
-    if (!key) continue; // ignora serviços desconhecidos
+    if (!key) continue;
     if (seen.has(key)) continue;
     seen.add(key);
     keys.push(key);
@@ -94,7 +93,6 @@ function normalizeServicesToKeys(input) {
 }
 
 function buildServicesObjectFromKeys(keys) {
-  // gera objeto no formato esperado pelo sistema: { hospedagem: true, ... }
   const obj = {};
   for (const opt of SERVICE_OPTIONS) obj[opt.key] = false;
   for (const k of keys || []) {
@@ -109,20 +107,18 @@ function normalizeDailyCapacity(input) {
   if (!Number.isFinite(n)) return null;
   const v = Math.floor(n);
   if (v < 1) return null;
-  if (v > 1000) return 1000; // guarda
+  if (v > 1000) return 1000;
   return v;
 }
 
 /* ============================================================
    ✅ Helpers: filtro de cuidador
-   - Compatível com jsonb OU string JSON
-   - REGRA (BUSCA): precisa ter pelo menos 1 serviço true
-   - (Preço pode ser vazio — UI mostra "Preço não definido")
+   - Regra: precisa ter pelo menos 1 serviço true
    ============================================================ */
 
 function safeParseJson(v, fallback) {
   if (v == null) return fallback;
-  if (typeof v === "object") return v; // json/jsonb já parseado
+  if (typeof v === "object") return v;
   if (typeof v === "string") {
     try {
       const parsed = JSON.parse(v);
@@ -139,13 +135,13 @@ function hasAtLeastOneEnabledService(servicesRaw) {
   if (!services || typeof services !== "object") return false;
 
   for (const enabled of Object.values(services)) {
-    if (enabled === true) return true;
+    if (enabled) return true;
   }
   return false;
 }
 
 /* ============================================================
-   ✅ BASE FIELDS (com daily_capacity tolerante)
+   ✅ BASE FIELDS
    ============================================================ */
 
 function baseFieldsSql() {
@@ -171,7 +167,6 @@ function baseFieldsSql() {
 const RATING_LATERAL = `
 LEFT JOIN LATERAL (
   WITH union_ratings AS (
-    -- 1) reviews reais (fonte de verdade)
     SELECT rv.rating::numeric AS rating
     FROM reviews rv
     WHERE rv.reviewed_id = u.id
@@ -179,7 +174,6 @@ LEFT JOIN LATERAL (
 
     UNION ALL
 
-    -- 2) fallback legado: tutor_rating na reservations (se ainda NÃO existe review equivalente)
     SELECT r.tutor_rating::numeric AS rating
     FROM reservations r
     LEFT JOIN reviews rv2
@@ -292,15 +286,10 @@ async function hasCaregiverProfile(userId) {
   }
 }
 
-function joinOnCaregiverProfiles(linkCol) {
-  if (linkCol === "caregiver_id") return "cp.caregiver_id = u.id";
-  return "cp.user_id = u.id";
-}
-
 /* ============================================================
    ✅ POST /caregivers/me (idempotente)
-   - cria perfil se não existe
-   - ✅ salva services (como OBJETO) + daily_capacity (quando enviados)
+   - cria caregiver_profile se não existe
+   - salva services (OBJETO) + daily_capacity
    ============================================================ */
 router.post("/me", authMiddleware, async (req, res) => {
   const userId = req.user?.id;
@@ -314,12 +303,10 @@ router.post("/me", authMiddleware, async (req, res) => {
 
     const linkCol = (await detectLinkColumn()) || "user_id";
 
-    // ✅ lê body vindo do front
     const body = req.body || {};
     const serviceKeys = normalizeServicesToKeys(body.services);
     const dailyCapNorm = normalizeDailyCapacity(body.daily_capacity);
 
-    // ✅ validações: se mandou algo, precisa estar ok
     if (body.services !== undefined) {
       if (!serviceKeys || serviceKeys.length === 0) {
         return res.status(400).json({
@@ -338,7 +325,6 @@ router.post("/me", authMiddleware, async (req, res) => {
       }
     }
 
-    // ✅ cria caregiver_profile se necessário (idempotente)
     const already = await hasCaregiverProfile(userId);
     if (!already) {
       if (linkCol === "caregiver_id") {
@@ -348,19 +334,16 @@ router.post("/me", authMiddleware, async (req, res) => {
       }
     }
 
-    // ✅ salva campos no users (se vieram no body)
     const updates = [];
     const values = [];
     let idx = 1;
 
-    // ✅ services: salva como OBJETO { hospedagem:true, ... } (jsonb)
     if (serviceKeys != null) {
       const servicesObj = buildServicesObjectFromKeys(serviceKeys);
       updates.push(`services = $${idx++}::jsonb`);
       values.push(JSON.stringify(servicesObj));
     }
 
-    // daily_capacity só atualiza se a coluna existir
     if (_hasDailyCapacityCol && dailyCapNorm != null) {
       updates.push(`daily_capacity = $${idx++}::int`);
       values.push(dailyCapNorm);
@@ -378,7 +361,6 @@ router.post("/me", authMiddleware, async (req, res) => {
       );
     }
 
-    // devolve campos para a UI renderizar/confirmar
     const { rows } = await pool.query(
       `
       SELECT
@@ -421,16 +403,17 @@ router.post("/me", authMiddleware, async (req, res) => {
 
 /* ============================================================
    ✅ GET /caregivers
-   Lista cuidadores via caregiver_profiles (multi-perfil)
-   ✅ inclui services + daily_capacity
-   ✅ REGRA: retorna cuidadores com pelo menos 1 serviço ativo
+   ✅ FIX PRINCIPAL:
+   - NÃO depende mais de caregiver_profiles para quem já é role='caregiver'
+   - ainda suporta multi-perfil (cp existe mesmo se role != caregiver)
+   - filtro: só retorna cuidadores com pelo menos 1 serviço ativo
    ============================================================ */
 router.get("/", async (req, res) => {
   try {
     await detectUsersColumnsOnce();
 
     const linkCol = (await detectLinkColumn()) || "user_id";
-    const joinExpr = joinOnCaregiverProfiles(linkCol);
+    const joinExpr = linkCol === "caregiver_id" ? "cp.caregiver_id = u.id" : "cp.user_id = u.id";
 
     const query = `
       SELECT
@@ -440,17 +423,20 @@ router.get("/", async (req, res) => {
         COALESCE(rs.rating_count, 0) AS rating_count,
         COALESCE(done.completed_reservations, 0) AS completed_reservations
       FROM users u
-      INNER JOIN caregiver_profiles cp
+      LEFT JOIN caregiver_profiles cp
         ON ${joinExpr}
       ${RATING_LATERAL}
       ${COMPLETED_LATERAL}
       WHERE (u.blocked IS NOT TRUE)
+        AND (
+          lower(coalesce(u.role,'')) = 'caregiver'
+          OR cp.created_at IS NOT NULL
+        )
       ORDER BY u.id DESC;
     `;
 
     const { rows } = await pool.query(query);
 
-    // ✅ filtro: exige ao menos 1 serviço ativo (preço pode ser vazio)
     const filtered = (rows || []).filter((c) => hasAtLeastOneEnabledService(c.services));
 
     return res.json({ caregivers: filtered });
@@ -462,9 +448,9 @@ router.get("/", async (req, res) => {
 
 /* ============================================================
    ✅ GET /caregivers/:id
-   Detalhe do cuidador via caregiver_profiles (multi-perfil)
-   ✅ inclui services + daily_capacity
-   ✅ REGRA: se não tiver serviço ativo, responde 404
+   ✅ mesma regra do list:
+   - aceita role caregiver OU cp existe
+   - se não tiver serviço ativo, responde 404
    ============================================================ */
 router.get("/:id", async (req, res) => {
   try {
@@ -476,7 +462,7 @@ router.get("/:id", async (req, res) => {
     }
 
     const linkCol = (await detectLinkColumn()) || "user_id";
-    const joinExpr = joinOnCaregiverProfiles(linkCol);
+    const joinExpr = linkCol === "caregiver_id" ? "cp.caregiver_id = u.id" : "cp.user_id = u.id";
 
     const query = `
       SELECT
@@ -486,12 +472,16 @@ router.get("/:id", async (req, res) => {
         COALESCE(rs.rating_count, 0) AS rating_count,
         COALESCE(done.completed_reservations, 0) AS completed_reservations
       FROM users u
-      INNER JOIN caregiver_profiles cp
+      LEFT JOIN caregiver_profiles cp
         ON ${joinExpr}
       ${RATING_LATERAL}
       ${COMPLETED_LATERAL}
       WHERE (u.blocked IS NOT TRUE)
         AND u.id = $1
+        AND (
+          lower(coalesce(u.role,'')) = 'caregiver'
+          OR cp.created_at IS NOT NULL
+        )
       LIMIT 1;
     `;
 
@@ -503,7 +493,6 @@ router.get("/:id", async (req, res) => {
 
     const caregiver = rows[0];
 
-    // ✅ regra: se não tiver ao menos 1 serviço ativo, não exibe o perfil
     if (!hasAtLeastOneEnabledService(caregiver.services)) {
       return res.status(404).json({ error: "Cuidador não encontrado." });
     }
