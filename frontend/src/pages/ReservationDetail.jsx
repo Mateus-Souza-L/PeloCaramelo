@@ -117,9 +117,9 @@ const normalizePetObject = (p) => {
     ? adjectivesRaw.filter(Boolean).map(String)
     : typeof adjectivesRaw === "string"
       ? adjectivesRaw
-        .split(/[,•|]/g)
-        .map((s) => s.trim())
-        .filter(Boolean)
+          .split(/[,•|]/g)
+          .map((s) => s.trim())
+          .filter(Boolean)
       : [];
 
   const image = pickPetImage(p);
@@ -211,22 +211,22 @@ const normalizeReservationFromApi = (r) => {
 
   const pricePerDay = toNumSafe(
     r.price_per_day ?? // 👈 principal (backend)
-    r.pricePerDay ??
-    r.daily_price ??
-    r.dailyPrice ??
-    r.price_day ??
-    r.priceDay ??
-    r.price ??
-    null
+      r.pricePerDay ??
+      r.daily_price ??
+      r.dailyPrice ??
+      r.price_day ??
+      r.priceDay ??
+      r.price ??
+      null
   );
 
   const total = toNumSafe(
     r.total ??
-    r.total_price ??
-    r.totalPrice ??
-    r.total_value ??
-    r.totalValue ??
-    null
+      r.total_price ??
+      r.totalPrice ??
+      r.total_value ??
+      r.totalValue ??
+      null
   );
 
   return {
@@ -610,21 +610,21 @@ export default function ReservationDetail() {
         const fallbackCaregiver =
           finalReservation
             ? {
-              id: finalReservation.caregiverId,
-              name: finalReservation.caregiverName,
-              email: finalReservation.caregiverEmail ?? finalReservation?.caregiverObj?.email ?? null,
-              phone: finalReservation.caregiverPhone ?? finalReservation?.caregiverObj?.phone ?? null,
-            }
+                id: finalReservation.caregiverId,
+                name: finalReservation.caregiverName,
+                email: finalReservation.caregiverEmail ?? finalReservation?.caregiverObj?.email ?? null,
+                phone: finalReservation.caregiverPhone ?? finalReservation?.caregiverObj?.phone ?? null,
+              }
             : null;
 
         const fallbackTutor =
           finalReservation
             ? {
-              id: finalReservation.tutorId,
-              name: finalReservation.tutorName,
-              email: finalReservation.tutorEmail ?? finalReservation?.tutorObj?.email ?? null,
-              phone: finalReservation.tutorPhone ?? finalReservation?.tutorObj?.phone ?? null,
-            }
+                id: finalReservation.tutorId,
+                name: finalReservation.tutorName,
+                email: finalReservation.tutorEmail ?? finalReservation?.tutorObj?.email ?? null,
+                phone: finalReservation.tutorPhone ?? finalReservation?.tutorObj?.phone ?? null,
+              }
             : null;
 
         setCaregiver(currentCaregiverFromUsers || fallbackCaregiver);
@@ -983,7 +983,7 @@ export default function ReservationDetail() {
       console.error("Erro ao sincronizar status no servidor:", err);
       showToast(
         err?.message ||
-        "Não foi possível sincronizar o status com o servidor. Ele foi atualizado apenas localmente por enquanto.",
+          "Não foi possível sincronizar o status com o servidor. Ele foi atualizado apenas localmente por enquanto.",
         "error"
       );
       return false;
@@ -1253,7 +1253,8 @@ export default function ReservationDetail() {
       : "";
 
   return (
-    <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] py-8 px-6">
+    // ✅ MOBILE: menos “aperto” lateral e card mais largo
+    <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] py-6 sm:py-8 px-3 sm:px-6">
       <PcModal open={cancelConfirmOpen} title="Cancelar reserva?" onClose={closeCancelConfirm} disableClose={cancelBusy}>
         <p className="text-sm opacity-90">Você tem certeza que deseja cancelar esta reserva?</p>
 
@@ -1337,7 +1338,8 @@ export default function ReservationDetail() {
         </div>
       </PcModal>
 
-      <div className="max-w-[1400px] mx-auto bg-white rounded-2xl shadow p-6 border-l-4 border-[#FFD700]/80">
+      {/* ✅ MOBILE: w-full + padding menor; desktop mantém */}
+      <div className="w-full max-w-[1400px] mx-auto bg-white rounded-2xl shadow p-4 sm:p-6 border-l-4 border-[#FFD700]/80">
         <h1 className="text-2xl md:text-3xl font-bold text-[#5A3A22] mb-4">{headerTitle}</h1>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-[#5A3A22]">
@@ -1604,21 +1606,22 @@ export default function ReservationDetail() {
           </div>
         )}
 
-        <div className="flex flex-wrap gap-3 mt-6">
+        {/* ✅ MOBILE: botões com a mesma largura (w-full) e alinhamento limpo */}
+        <div className="mt-6 grid grid-cols-1 gap-3 sm:flex sm:flex-wrap sm:gap-3">
           {isCaregiver && reservation.status === "Pendente" && (
-            <div className="flex flex-col gap-2">
-              <div className="flex flex-wrap gap-3">
+            <div className="flex flex-col gap-2 w-full sm:w-auto">
+              <div className="grid grid-cols-1 gap-3 sm:flex sm:flex-wrap sm:gap-3">
                 <button
                   type="button"
                   onClick={caregiverAccept}
-                  className="px-4 py-2 rounded-lg font-semibold text-white bg-green-600 hover:bg-green-700"
+                  className="w-full sm:w-auto px-4 py-2 rounded-lg font-semibold text-white bg-green-600 hover:bg-green-700"
                 >
                   Aceitar
                 </button>
                 <button
                   type="button"
                   onClick={caregiverReject}
-                  className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-semibold"
+                  className="w-full sm:w-auto bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-semibold"
                 >
                   Recusar
                 </button>
@@ -1630,7 +1633,7 @@ export default function ReservationDetail() {
             <button
               type="button"
               onClick={tutorCancel}
-              className="bg-gray-400 hover:bg-gray-500 text-white px-4 py-2 rounded-lg font-semibold"
+              className="w-full sm:w-auto bg-gray-400 hover:bg-gray-500 text-white px-4 py-2 rounded-lg font-semibold"
             >
               Cancelar
             </button>
@@ -1640,16 +1643,18 @@ export default function ReservationDetail() {
             <button
               type="button"
               onClick={caregiverMarkCompleted}
-              className="bg-[#FFD700] hover:bg-[#f5c400] text-[#5A3A22] px-4 py-2 rounded-lg font-semibold"
+              className="w-full sm:w-auto bg-[#FFD700] hover:bg-[#f5c400] text-[#5A3A22] px-4 py-2 rounded-lg font-semibold"
             >
-              Marcar reserva como concluída
+              {/* ✅ texto menor APENAS no mobile */}
+              <span className="sm:hidden">Concluir reserva</span>
+              <span className="hidden sm:inline">Marcar reserva como concluída</span>
             </button>
           )}
 
           <button
             type="button"
             onClick={() => navigate(-1)}
-            className="bg-[#5A3A22] hover:bg-[#95301F] text-white px-4 py-2 rounded-lg font-semibold"
+            className="w-full sm:w-auto bg-[#5A3A22] hover:bg-[#95301F] text-white px-4 py-2 rounded-lg font-semibold"
           >
             Voltar
           </button>
