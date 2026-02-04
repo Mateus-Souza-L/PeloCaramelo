@@ -113,7 +113,8 @@ function normalizeDailyCapacity(input) {
 
 /* ============================================================
    ✅ Helpers: filtro de cuidador
-   - Regra: precisa ter pelo menos 1 serviço true
+   - Regra NOVA (fix do bug):
+     precisa ter pelo menos 1 serviço true E preço válido (>0)
    ============================================================ */
 
 function safeParseJson(v, fallback) {
@@ -130,13 +131,38 @@ function safeParseJson(v, fallback) {
   return fallback;
 }
 
-function hasAtLeastOneEnabledService(servicesRaw) {
+function normalizePriceValue(raw) {
+  if (raw == null) return null;
+
+  // aceita número, "55", "55.00", "55,00", "R$ 55,00"
+  const s = String(raw).trim();
+  if (!s) return null;
+
+  const cleaned = s
+    .replace(/[^\d,.\-]/g, "") // remove "R$" e outros
+    .replace(",", "."); // pt-br -> en
+
+  const n = Number(cleaned);
+  if (!Number.isFinite(n)) return null;
+  if (n <= 0) return null;
+  return n;
+}
+
+function hasAtLeastOneEnabledServiceWithValidPrice(servicesRaw, pricesRaw) {
   const services = safeParseJson(servicesRaw, {});
+  const prices = safeParseJson(pricesRaw, {});
+
   if (!services || typeof services !== "object") return false;
 
-  for (const enabled of Object.values(services)) {
-    if (enabled) return true;
+  // precisa haver pelo menos 1 serviço habilitado com preço > 0
+  for (const [serviceKey, enabled] of Object.entries(services)) {
+    if (!enabled) continue;
+
+    // preço pode estar em prices[serviceKey]
+    const price = normalizePriceValue(prices?.[serviceKey]);
+    if (price != null) return true;
   }
+
   return false;
 }
 
@@ -406,7 +432,7 @@ router.post("/me", authMiddleware, async (req, res) => {
    ✅ FIX PRINCIPAL:
    - NÃO depende mais de caregiver_profiles para quem já é role='caregiver'
    - ainda suporta multi-perfil (cp existe mesmo se role != caregiver)
-   - filtro: só retorna cuidadores com pelo menos 1 serviço ativo
+   - filtro (FIX): só retorna cuidadores com pelo menos 1 serviço ativo E preço válido
    ============================================================ */
 router.get("/", async (req, res) => {
   try {
@@ -437,7 +463,10 @@ router.get("/", async (req, res) => {
 
     const { rows } = await pool.query(query);
 
-    const filtered = (rows || []).filter((c) => hasAtLeastOneEnabledService(c.services));
+    // ✅ FIX: precisa ter serviço ativo + preço válido
+    const filtered = (rows || []).filter((c) =>
+      hasAtLeastOneEnabledServiceWithValidPrice(c.services, c.prices)
+    );
 
     return res.json({ caregivers: filtered });
   } catch (err) {
@@ -450,7 +479,7 @@ router.get("/", async (req, res) => {
    ✅ GET /caregivers/:id
    ✅ mesma regra do list:
    - aceita role caregiver OU cp existe
-   - se não tiver serviço ativo, responde 404
+   - se não tiver serviço ativo + preço válido, responde 404
    ============================================================ */
 router.get("/:id", async (req, res) => {
   try {
@@ -493,7 +522,8 @@ router.get("/:id", async (req, res) => {
 
     const caregiver = rows[0];
 
-    if (!hasAtLeastOneEnabledService(caregiver.services)) {
+    // ✅ FIX: precisa ter serviço ativo + preço válido
+    if (!hasAtLeastOneEnabledServiceWithValidPrice(caregiver.services, caregiver.prices)) {
       return res.status(404).json({ error: "Cuidador não encontrado." });
     }
 
