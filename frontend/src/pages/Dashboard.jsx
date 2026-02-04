@@ -2177,7 +2177,13 @@ export default function Dashboard() {
   // ------------------ TUTOR ------------------
   if (isTutor) {
     const myRes = (reservationsForDisplay || [])
-      .filter((r) => String(r.tutorId) === String(user.id))
+      .filter((r) => {
+        const tid = String(r?.tutorId || "");
+        // ✅ se veio tutorId, valida
+        if (tid) return tid === String(user.id);
+        // ✅ se o backend NÃO manda tutorId (comum no /reservations/tutor), não filtra fora
+        return true;
+      })
       .sort((a, b) => {
         const idA = String(a.id);
         const idB = String(b.id);
@@ -2530,7 +2536,12 @@ export default function Dashboard() {
   // ------------------ CUIDADOR ------------------
   if (isCaregiver) {
     const received = (reservationsForDisplay || [])
-      .filter((r) => String(r.caregiverId) === String(user.id))
+      .filter((r) => {
+        const cid = String(r?.caregiverId || "");
+        if (cid) return cid === String(user.id);
+        // ✅ se o backend NÃO manda caregiverId (comum no /reservations/caregiver), não filtra fora
+        return true;
+      })
       .sort((a, b) => {
         const idA = String(a.id);
         const idB = String(b.id);

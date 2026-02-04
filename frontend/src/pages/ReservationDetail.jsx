@@ -117,9 +117,9 @@ const normalizePetObject = (p) => {
     ? adjectivesRaw.filter(Boolean).map(String)
     : typeof adjectivesRaw === "string"
       ? adjectivesRaw
-          .split(/[,•|]/g)
-          .map((s) => s.trim())
-          .filter(Boolean)
+        .split(/[,•|]/g)
+        .map((s) => s.trim())
+        .filter(Boolean)
       : [];
 
   const image = pickPetImage(p);
@@ -211,22 +211,22 @@ const normalizeReservationFromApi = (r) => {
 
   const pricePerDay = toNumSafe(
     r.price_per_day ?? // 👈 principal (backend)
-      r.pricePerDay ??
-      r.daily_price ??
-      r.dailyPrice ??
-      r.price_day ??
-      r.priceDay ??
-      r.price ??
-      null
+    r.pricePerDay ??
+    r.daily_price ??
+    r.dailyPrice ??
+    r.price_day ??
+    r.priceDay ??
+    r.price ??
+    null
   );
 
   const total = toNumSafe(
     r.total ??
-      r.total_price ??
-      r.totalPrice ??
-      r.total_value ??
-      r.totalValue ??
-      null
+    r.total_price ??
+    r.totalPrice ??
+    r.total_value ??
+    r.totalValue ??
+    null
   );
 
   return {
@@ -428,13 +428,17 @@ export default function ReservationDetail() {
     return d;
   }, []);
 
-  const isTutor = user?.role === "tutor";
-  const isCaregiver = user?.role === "caregiver";
+  const { user, token, activeMode } = useAuth();
+
+  // ✅ quem manda na UI e no storage é o modo
+  const isTutor = activeMode === "tutor";
+  const isCaregiver = activeMode === "caregiver";
 
   const reservationsStorageKey = useMemo(() => {
-    if (!user?.id || !user?.role) return "reservations";
-    return "reservations_" + String(user.role) + "_" + String(user.id);
-  }, [user?.id, user?.role]);
+    if (!user?.id) return "reservations";
+    const mode = String(activeMode || user?.role || "tutor");
+    return "reservations_" + mode + "_" + String(user.id);
+  }, [user?.id, user?.role, activeMode]);
 
   const emitReservationUpdated = useCallback(
     (payload = {}) => {
@@ -610,21 +614,21 @@ export default function ReservationDetail() {
         const fallbackCaregiver =
           finalReservation
             ? {
-                id: finalReservation.caregiverId,
-                name: finalReservation.caregiverName,
-                email: finalReservation.caregiverEmail ?? finalReservation?.caregiverObj?.email ?? null,
-                phone: finalReservation.caregiverPhone ?? finalReservation?.caregiverObj?.phone ?? null,
-              }
+              id: finalReservation.caregiverId,
+              name: finalReservation.caregiverName,
+              email: finalReservation.caregiverEmail ?? finalReservation?.caregiverObj?.email ?? null,
+              phone: finalReservation.caregiverPhone ?? finalReservation?.caregiverObj?.phone ?? null,
+            }
             : null;
 
         const fallbackTutor =
           finalReservation
             ? {
-                id: finalReservation.tutorId,
-                name: finalReservation.tutorName,
-                email: finalReservation.tutorEmail ?? finalReservation?.tutorObj?.email ?? null,
-                phone: finalReservation.tutorPhone ?? finalReservation?.tutorObj?.phone ?? null,
-              }
+              id: finalReservation.tutorId,
+              name: finalReservation.tutorName,
+              email: finalReservation.tutorEmail ?? finalReservation?.tutorObj?.email ?? null,
+              phone: finalReservation.tutorPhone ?? finalReservation?.tutorObj?.phone ?? null,
+            }
             : null;
 
         setCaregiver(currentCaregiverFromUsers || fallbackCaregiver);
@@ -983,7 +987,7 @@ export default function ReservationDetail() {
       console.error("Erro ao sincronizar status no servidor:", err);
       showToast(
         err?.message ||
-          "Não foi possível sincronizar o status com o servidor. Ele foi atualizado apenas localmente por enquanto.",
+        "Não foi possível sincronizar o status com o servidor. Ele foi atualizado apenas localmente por enquanto.",
         "error"
       );
       return false;
