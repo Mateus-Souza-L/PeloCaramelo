@@ -1,6 +1,7 @@
 // src/context/AuthContext.jsx
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { meRequest, authRequest } from "../services/api";
+import { playSoundEvent } from "../utils/sound";
 
 const AuthContext = createContext();
 const STORAGE_KEY = "pelocaramelo_auth";
@@ -163,7 +164,9 @@ function BlockedModal({ open, info, onClose }) {
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div style={{ padding: 18, borderBottom: "1px solid #eee", background: "#fff" }}>
-          <div style={{ fontSize: 18, fontWeight: 1000, color: colors.red }}>Acesso bloqueado</div>
+          <div style={{ fontSize: 18, fontWeight: 1000, color: colors.red }}>
+            Acesso bloqueado
+          </div>
           <div style={{ marginTop: 8, color: "#333", lineHeight: 1.4 }}>
             Seu acesso à plataforma foi bloqueado pelo administrador.
           </div>
@@ -179,7 +182,9 @@ function BlockedModal({ open, info, onClose }) {
                 background: colors.beige,
               }}
             >
-              <div style={{ fontWeight: 1000, color: colors.brown, fontSize: 13 }}>Motivo</div>
+              <div style={{ fontWeight: 1000, color: colors.brown, fontSize: 13 }}>
+                Motivo
+              </div>
               <div style={{ marginTop: 6, color: "#222" }}>
                 {info?.reason ? String(info.reason) : "Não informado"}
               </div>
@@ -193,12 +198,15 @@ function BlockedModal({ open, info, onClose }) {
                 background: "#fff",
               }}
             >
-              <div style={{ fontWeight: 1000, color: colors.brown, fontSize: 13 }}>Até quando</div>
+              <div style={{ fontWeight: 1000, color: colors.brown, fontSize: 13 }}>
+                Até quando
+              </div>
               <div style={{ marginTop: 6, color: "#222" }}>{untilTxt}</div>
             </div>
 
             <div style={{ fontSize: 13, color: "#555", lineHeight: 1.4 }}>
-              Se você acredita que isso foi um engano, entre em contato com o suporte/administrador.
+              Se você acredita que isso foi um engano, entre em contato com o
+              suporte/administrador.
             </div>
           </div>
         </div>
@@ -630,6 +638,13 @@ export function AuthProvider({ children }) {
   }
 
   function handleLogout() {
+    // ✅ toca som de logout (somente aqui; toast não toca mais)
+    try {
+      playSoundEvent("logout");
+    } catch {
+      // ignore
+    }
+
     // ✅ limpa storage primeiro
     try {
       localStorage.removeItem(STORAGE_KEY);
@@ -979,6 +994,13 @@ export function AuthProvider({ children }) {
 
       emitAuthChanged("logged_in");
 
+      // ✅ som de login (somente aqui; toast não toca mais)
+      try {
+        playSoundEvent("login");
+      } catch {
+        // ignore
+      }
+
       // ✅ agora sim confirma no backend
       const res = await meRequest(newToken);
       const has = coerceHasCaregiverProfile(res);
@@ -1035,7 +1057,12 @@ export function AuthProvider({ children }) {
         activeMode: nextMode,
       });
 
-      return { user: immediateUser, token: newToken, activeMode: nextMode, hasCaregiverProfile: false };
+      return {
+        user: immediateUser,
+        token: newToken,
+        activeMode: nextMode,
+        hasCaregiverProfile: false,
+      };
     } finally {
       setLoading(false);
     }

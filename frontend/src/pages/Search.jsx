@@ -89,7 +89,6 @@ function normalizeServiceParam(raw) {
   // compat antiga do front
   if (x === "passeios") return "passeio";
   if (x === "petsitter") return "visita";
-  if (x === "petsitter") return "visita";
 
   return map[x] || v;
 }
@@ -173,6 +172,21 @@ function getRatingSummary(c) {
   }
 
   return { avg, count: Number.isFinite(count) ? count : 0 };
+}
+
+/**
+ * ✅ Filtro de avaliação:
+ * - "all" => não filtra
+ * - "rated" => somente com avaliações (count > 0)
+ * - "4" | "3" | "2" | "1" => avg >= N
+ */
+function ratingLabel(value) {
+  const v = String(value || "all");
+  if (v === "all") return "Avaliações: Todas";
+  if (v === "rated") return "Somente com avaliações";
+  const n = Number(v);
+  if (Number.isFinite(n)) return `${n}+ estrelas`;
+  return "Avaliações";
 }
 
 /**
@@ -331,7 +345,13 @@ export default function Search() {
   const [startDateKey, setStartDateKey] = useState("");
   const [endDateKey, setEndDateKey] = useState("");
   const [svc, setSvc] = useState("todos");
+
+  // ✅ Ordenação: preço | nome | avaliacao
   const [sort, setSort] = useState("preco");
+
+  // ✅ NOVO: filtro por avaliação
+  // all | rated | 4 | 3 | 2 | 1
+  const [ratingFilter, setRatingFilter] = useState("all");
 
   // ✅ MOBILE: sanduíche dos filtros (somente mobile)
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
@@ -441,9 +461,30 @@ export default function Search() {
     const svcRaw = normalizeServiceParam(sp.get("svc") || sp.get("service") || "");
     const sortRaw = (sp.get("sort") || "").trim();
 
-    // ✅ valores aceitos agora (backend)
+    // ✅ NOVO: avaliações por URL (opcional)
+    // aceita: minRating=4 (vira "4") | onlyRated=true (vira "rated") | rating=...
+    const onlyRatedRaw = sp.get("onlyRated") || "";
+    const minRatingRaw = sp.get("minRating") || "";
+    const ratingRaw = sp.get("rating") || "";
+
+    const onlyRated =
+      onlyRatedRaw === "1" || String(onlyRatedRaw).toLowerCase() === "true";
+
+    const minRating = toNum(minRatingRaw);
+    let nextRating = "all";
+    if (ratingRaw) {
+      const rr = String(ratingRaw).trim();
+      if (rr === "rated") nextRating = "rated";
+      else if (["1", "2", "3", "4", "5"].includes(rr)) nextRating = rr;
+    } else if (onlyRated) {
+      nextRating = "rated";
+    } else if (minRating != null && ["1", "2", "3", "4", "5"].includes(String(minRating))) {
+      nextRating = String(minRating);
+    }
+
     const allowedSvc = new Set(["todos", "hospedagem", "creche", "visita", "passeio", "banho"]);
-    const allowedSort = new Set(["preco", "nome"]);
+    const allowedSort = new Set(["preco", "nome", "avaliacao"]);
+    const allowedRating = new Set(["all", "rated", "4", "3", "2", "1", "5"]);
 
     const nextQuery = String(q).trim();
     const nextStart = isValidKey(s1) ? s1 : "";
@@ -451,13 +492,15 @@ export default function Search() {
 
     const nextSvc = allowedSvc.has(svcRaw) ? svcRaw : "todos";
     const nextSort = allowedSort.has(sortRaw) ? sortRaw : "preco";
+    const nextRatingFilter = allowedRating.has(nextRating) ? nextRating : "all";
 
     const hasAny =
       nextQuery ||
       nextStart ||
       nextEnd ||
       (svcRaw && allowedSvc.has(svcRaw)) ||
-      (sortRaw && allowedSort.has(sortRaw));
+      (sortRaw && allowedSort.has(sortRaw)) ||
+      nextRatingFilter !== "all";
 
     if (!hasAny) {
       setShowResultsHint(false);
@@ -483,6 +526,7 @@ export default function Search() {
 
     setSvc(nextSvc);
     setSort(nextSort);
+    setRatingFilter(nextRatingFilter);
   }, [location.search]);
 
   const refresh = useCallback(async () => {
@@ -547,14 +591,49 @@ export default function Search() {
       list = list.filter((c) => !!c?.services?.[svcBackend]);
     }
 
+    // ✅ NOVO: filtro por avaliação
+    if (ratingFilter && ratingFilter !== "all") {
+      if (ratingFilter === "rated") {
+        list = list.filter((c) => {
+          const { count } = getRatingSummary(c);
+          return Number(count || 0) > 0;
+        });
+      } else {
+        const min = Number(ratingFilter);
+        if (Number.isFinite(min)) {
+          list = list.filter((c) => {
+            const { avg } = getRatingSummary(c);
+            return Number(avg || 0) >= min;
+          });
+        }
+      }
+    }
+
+    // ✅ Ordenação
     if (sort === "preco") {
       list.sort((a, b) => (a.minPrice ?? 9e9) - (b.minPrice ?? 9e9));
     } else if (sort === "nome") {
       list.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    } else if (sort === "avaliacao") {
+      list.sort((a, b) => {
+        const ar = getRatingSummary(a);
+        const br = getRatingSummary(b);
+
+        const aAvg = Number(ar.avg || 0);
+        const bAvg = Number(br.avg || 0);
+        if (bAvg !== aAvg) return bAvg - aAvg;
+
+        const aCount = Number(ar.count || 0);
+        const bCount = Number(br.count || 0);
+        if (bCount !== aCount) return bCount - aCount;
+
+        // desempate final: menor preço primeiro
+        return (a.minPrice ?? 9e9) - (b.minPrice ?? 9e9);
+      });
     }
 
     return list;
-  }, [caregivers, query, svc, sort]);
+  }, [caregivers, query, svc, sort, ratingFilter]);
 
   // ---------- availability ----------
   const fetchAvailabilityKeys = useCallback(
@@ -677,7 +756,7 @@ export default function Search() {
   // ao mudar filtros/lista, volta para página 1
   useEffect(() => {
     setPage(1);
-  }, [query, startDateKey, endDateKey, svc, sort, filteringDates, loading]);
+  }, [query, startDateKey, endDateKey, svc, sort, ratingFilter, filteringDates, loading]);
 
   // garante página válida quando totalPages mudar
   useEffect(() => {
@@ -741,12 +820,19 @@ export default function Search() {
     const hasQ = q.length > 0;
     const hasDates = !!startDateKey || !!endDateKey;
     const hasSvc = svc && svc !== "todos";
-    return hasQ || hasDates || hasSvc;
-  }, [query, startDateKey, endDateKey, svc]);
+    const hasRating = ratingFilter && ratingFilter !== "all";
+    return hasQ || hasDates || hasSvc || hasRating;
+  }, [query, startDateKey, endDateKey, svc, ratingFilter]);
 
   const resultsHintText = useMemo(() => {
     const q = String(query || "").trim();
-    if (!q && !startDateKey && !endDateKey && (!svc || svc === "todos")) return "";
+    if (
+      !q &&
+      !startDateKey &&
+      !endDateKey &&
+      (!svc || svc === "todos") &&
+      (!ratingFilter || ratingFilter === "all")
+    ) return "";
 
     const parts = [];
 
@@ -762,8 +848,12 @@ export default function Search() {
       parts.push(serviceLabelSafe(normalizeSvcToBackendKey(svc)));
     }
 
+    if (ratingFilter && ratingFilter !== "all") {
+      parts.push(ratingLabel(ratingFilter));
+    }
+
     return parts.join(" • ");
-  }, [query, startDateKey, endDateKey, svc]);
+  }, [query, startDateKey, endDateKey, svc, ratingFilter]);
 
   // ✅ Evento GA4: "busca" (debounce + dedupe)
   useEffect(() => {
@@ -785,6 +875,7 @@ export default function Search() {
         start: isValidKey(startDateKey) ? startDateKey : "",
         end: isValidKey(endDateKey) ? endDateKey : "",
         sort: String(sort || "preco"),
+        rating_filter: String(ratingFilter || "all"),
         results_count: Number(filtered?.length || 0),
         from_url: showResultsHint ? 1 : 0,
       };
@@ -809,6 +900,7 @@ export default function Search() {
     startDateKey,
     endDateKey,
     sort,
+    ratingFilter,
     filtered?.length,
     loading,
     filteringDates,
@@ -856,8 +948,17 @@ export default function Search() {
       });
     }
 
+    if (ratingFilter && ratingFilter !== "all") {
+      pills.push({
+        key: "rating",
+        label: `⭐ ${ratingLabel(ratingFilter)}`,
+        remove: () => setRatingFilter("all"),
+        title: "Filtro de avaliações",
+      });
+    }
+
     return pills;
-  }, [query, startDateKey, endDateKey, svc]);
+  }, [query, startDateKey, endDateKey, svc, ratingFilter]);
 
   function clearAllFilters() {
     setQuery("");
@@ -865,6 +966,7 @@ export default function Search() {
     setEndDateKey("");
     setSvc("todos");
     setSort("preco");
+    setRatingFilter("all");
   }
 
   const skeletonCount = 9;
@@ -955,6 +1057,7 @@ export default function Search() {
             >
               <option value="preco">Preço</option>
               <option value="nome">Nome</option>
+              <option value="avaliacao">Avaliações</option>
             </select>
           </div>
         </div>
@@ -993,6 +1096,23 @@ export default function Search() {
             <option value="creche">Creche</option>
             <option value="visita">Pet Sitter</option>
             <option value="passeio">Passeios</option>
+            <option value="banho">Banho & Tosa</option>
+          </select>
+
+          {/* ✅ NOVO: filtro por avaliações */}
+          <select
+            value={ratingFilter}
+            onChange={(e) => setRatingFilter(e.target.value)}
+            className="md:col-span-2 border rounded-lg px-3 py-2 bg-white"
+            aria-label="Filtrar por avaliações"
+            title="Filtrar por avaliações"
+          >
+            <option value="all">Avaliações (todas)</option>
+            <option value="rated">Somente com avaliações</option>
+            <option value="4">4+ estrelas</option>
+            <option value="3">3+ estrelas</option>
+            <option value="2">2+ estrelas</option>
+            <option value="1">1+ estrelas</option>
           </select>
 
           <button
@@ -1057,6 +1177,7 @@ export default function Search() {
                   >
                     <option value="preco">Preço</option>
                     <option value="nome">Nome</option>
+                    <option value="avaliacao">Avaliações</option>
                   </select>
                 </div>
 
@@ -1093,6 +1214,22 @@ export default function Search() {
                   <option value="creche">Creche</option>
                   <option value="visita">Pet Sitter</option>
                   <option value="passeio">Passeios</option>
+                  <option value="banho">Banho & Tosa</option>
+                </select>
+
+                {/* ✅ NOVO: filtro por avaliações (mobile) */}
+                <select
+                  value={ratingFilter}
+                  onChange={(e) => setRatingFilter(e.target.value)}
+                  className="border rounded-lg px-3 py-2 bg-white"
+                  aria-label="Filtrar por avaliações"
+                >
+                  <option value="all">Avaliações (todas)</option>
+                  <option value="rated">Somente com avaliações</option>
+                  <option value="4">4+ estrelas</option>
+                  <option value="3">3+ estrelas</option>
+                  <option value="2">2+ estrelas</option>
+                  <option value="1">1+ estrelas</option>
                 </select>
               </div>
             )}

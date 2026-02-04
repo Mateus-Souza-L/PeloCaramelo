@@ -1,7 +1,6 @@
 // src/utils/toast.jsx
 import { motion } from "framer-motion";
 import { createPortal } from "react-dom";
-import { playSound } from "./sound";
 
 // 🔔 Componente visual do Toast
 export const Toast = ({ message, type }) =>
@@ -25,11 +24,11 @@ export const Toast = ({ message, type }) =>
     document.body
   );
 
-// 💬 Função global para exibir Toast + som
+// 💬 Função global para exibir Toast (SEM SOM)
 export const showToast = (setToast, message, type = "success", duration = 2500) => {
   try {
     setToast({ show: true, message, type });
-    playSound(type);
+
     clearTimeout(window._toastTimeout);
     window._toastTimeout = setTimeout(() => setToast({ show: false }), duration);
   } catch (err) {

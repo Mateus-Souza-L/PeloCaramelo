@@ -8,7 +8,6 @@ import {
   useState,
 } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { playSound } from "../utils/sound";
 
 const ToastContext = createContext(null);
 
@@ -76,12 +75,7 @@ export default function ToastProvider({ children }) {
         return [...next, { id, message, type }];
       });
 
-      try {
-        playSound(type);
-      } catch {
-        // falha de áudio não quebra toast
-      }
-
+      // ✅ SEM SOM (mantém visual do toast intacto)
       armTimer(id, duration ?? DURATION);
     },
     [armTimer]
