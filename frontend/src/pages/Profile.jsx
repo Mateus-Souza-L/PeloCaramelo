@@ -760,7 +760,7 @@ export default function Profile() {
                           addCourse();
                         }
                       }}
-                      placeholder="Novo curso"
+                      placeholder="Novo curso (clique + ou Enter para adicionar)"
                       className="flex-1 border p-2 rounded-lg"
                     />
                     <button
