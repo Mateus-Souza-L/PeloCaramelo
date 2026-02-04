@@ -117,9 +117,9 @@ const normalizePetObject = (p) => {
     ? adjectivesRaw.filter(Boolean).map(String)
     : typeof adjectivesRaw === "string"
       ? adjectivesRaw
-        .split(/[,•|]/g)
-        .map((s) => s.trim())
-        .filter(Boolean)
+          .split(/[,•|]/g)
+          .map((s) => s.trim())
+          .filter(Boolean)
       : [];
 
   const image = pickPetImage(p);
@@ -211,22 +211,22 @@ const normalizeReservationFromApi = (r) => {
 
   const pricePerDay = toNumSafe(
     r.price_per_day ?? // 👈 principal (backend)
-    r.pricePerDay ??
-    r.daily_price ??
-    r.dailyPrice ??
-    r.price_day ??
-    r.priceDay ??
-    r.price ??
-    null
+      r.pricePerDay ??
+      r.daily_price ??
+      r.dailyPrice ??
+      r.price_day ??
+      r.priceDay ??
+      r.price ??
+      null
   );
 
   const total = toNumSafe(
     r.total ??
-    r.total_price ??
-    r.totalPrice ??
-    r.total_value ??
-    r.totalValue ??
-    null
+      r.total_price ??
+      r.totalPrice ??
+      r.total_value ??
+      r.totalValue ??
+      null
   );
 
   return {
@@ -235,6 +235,7 @@ const normalizeReservationFromApi = (r) => {
     tutorName: r.tutor_name ?? r.tutorName,
     caregiverId: toStr(r.caregiver_id ?? r.caregiverId),
     caregiverName: r.caregiver_name ?? r.caregiverName,
+
     // ✅ NOVO: contatos vindos do backend (snake_case e/ou camelCase)
     tutorEmail: r.tutor_email ?? r.tutorEmail ?? r?.tutor?.email ?? null,
     tutorPhone: r.tutor_phone ?? r.tutorPhone ?? r?.tutor?.phone ?? null,
@@ -244,6 +245,7 @@ const normalizeReservationFromApi = (r) => {
     // ✅ NOVO: objetos aninhados se vierem do backend
     tutorObj: r?.tutor ?? null,
     caregiverObj: r?.caregiver ?? null,
+
     city: r.city || "",
     neighborhood: r.neighborhood || "",
     service,
@@ -372,7 +374,10 @@ export default function ReservationDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, token } = useAuth();
+
+  // ✅ mantém UMA única leitura do AuthContext (evita "Identifier 'user' has already been declared")
+  const { user, token, activeMode } = useAuth();
+
   const { showToast } = useToast();
 
   const [reservation, setReservation] = useState(null);
@@ -388,13 +393,14 @@ export default function ReservationDetail() {
   const [ratingTitle, setRatingTitle] = useState("");
   const [ratingBusy, setRatingBusy] = useState(false);
 
-  // ✅ NOVO: fluxo padrão do cancelamento
+  // ✅ fluxo padrão do cancelamento (tutor)
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   const [cancelReasonOpen, setCancelReasonOpen] = useState(false);
   const [cancelReasonText, setCancelReasonText] = useState("");
   const [cancelBusy, setCancelBusy] = useState(false);
   const cancelReasonRef = useRef(null);
-  // ✅ NOVO: recusa do cuidador (sem window.prompt)
+
+  // ✅ recusa do cuidador (modal)
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectText, setRejectText] = useState("");
   const [rejectBusy, setRejectBusy] = useState(false);
@@ -432,8 +438,6 @@ export default function ReservationDetail() {
     d.setHours(0, 0, 0, 0);
     return d;
   }, []);
-
-  const { user, token, activeMode } = useAuth();
 
   // ✅ quem manda na UI e no storage é o modo
   const isTutor = activeMode === "tutor";
@@ -619,21 +623,21 @@ export default function ReservationDetail() {
         const fallbackCaregiver =
           finalReservation
             ? {
-              id: finalReservation.caregiverId,
-              name: finalReservation.caregiverName,
-              email: finalReservation.caregiverEmail ?? finalReservation?.caregiverObj?.email ?? null,
-              phone: finalReservation.caregiverPhone ?? finalReservation?.caregiverObj?.phone ?? null,
-            }
+                id: finalReservation.caregiverId,
+                name: finalReservation.caregiverName,
+                email: finalReservation.caregiverEmail ?? finalReservation?.caregiverObj?.email ?? null,
+                phone: finalReservation.caregiverPhone ?? finalReservation?.caregiverObj?.phone ?? null,
+              }
             : null;
 
         const fallbackTutor =
           finalReservation
             ? {
-              id: finalReservation.tutorId,
-              name: finalReservation.tutorName,
-              email: finalReservation.tutorEmail ?? finalReservation?.tutorObj?.email ?? null,
-              phone: finalReservation.tutorPhone ?? finalReservation?.tutorObj?.phone ?? null,
-            }
+                id: finalReservation.tutorId,
+                name: finalReservation.tutorName,
+                email: finalReservation.tutorEmail ?? finalReservation?.tutorObj?.email ?? null,
+                phone: finalReservation.tutorPhone ?? finalReservation?.tutorObj?.phone ?? null,
+              }
             : null;
 
         setCaregiver(currentCaregiverFromUsers || fallbackCaregiver);
@@ -992,7 +996,7 @@ export default function ReservationDetail() {
       console.error("Erro ao sincronizar status no servidor:", err);
       showToast(
         err?.message ||
-        "Não foi possível sincronizar o status com o servidor. Ele foi atualizado apenas localmente por enquanto.",
+          "Não foi possível sincronizar o status com o servidor. Ele foi atualizado apenas localmente por enquanto.",
         "error"
       );
       return false;
@@ -1084,6 +1088,7 @@ export default function ReservationDetail() {
 
   const caregiverAccept = async () => {
     if (!isCaregiver || !reservation) return;
+    if (rejectBusy) return;
 
     const next = { ...reservation, status: "Aceita" };
     persistLocalReservation(next);
@@ -1390,9 +1395,7 @@ export default function ReservationDetail() {
         disableClose={rejectBusy}
         maxWidth="max-w-[640px]"
       >
-        <p className="text-sm opacity-90">
-          (Opcional) Escreva um motivo para o tutor entender o porquê da recusa.
-        </p>
+        <p className="text-sm opacity-90">(Opcional) Escreva um motivo para o tutor entender o porquê da recusa.</p>
 
         <div className="mt-3">
           <textarea
@@ -1618,9 +1621,7 @@ export default function ReservationDetail() {
                       </p>
                       {porte && <p className="opacity-80">Porte: {String(porte)}</p>}
                       {pet?.approxAge && <p className="opacity-80">Idade aproximada: {pet.approxAge}</p>}
-                      {!!pet?.adjectives?.length && (
-                        <p className="mt-1 text-[11px] opacity-90">{pet.adjectives.join(" • ")}</p>
-                      )}
+                      {!!pet?.adjectives?.length && <p className="mt-1 text-[11px] opacity-90">{pet.adjectives.join(" • ")}</p>}
                     </div>
                   </div>
                 );
@@ -1744,7 +1745,6 @@ export default function ReservationDetail() {
               onClick={caregiverMarkCompleted}
               className="w-full sm:w-auto bg-[#FFD700] hover:bg-[#f5c400] text-[#5A3A22] px-4 py-2 rounded-lg font-semibold"
             >
-              {/* ✅ texto menor APENAS no mobile */}
               <span className="sm:hidden">Concluir reserva</span>
               <span className="hidden sm:inline">Marcar reserva como concluída</span>
             </button>
