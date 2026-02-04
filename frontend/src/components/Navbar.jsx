@@ -404,6 +404,124 @@ function CreateTutorProfileModal({ open, loading, onClose, onConfirm }) {
   );
 }
 
+/* ============================================================
+   Modal: Confirmar logout (padrão do app)
+   ============================================================ */
+
+function ConfirmLogoutModal({ open, onClose, onConfirm, loading = false }) {
+  if (!open) return null;
+
+  const colors = {
+    brown: "#5A3A22",
+    yellow: "#FFD700",
+    beige: "#EBCBA9",
+    red: "#95301F",
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.55)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 999,
+        padding: 16,
+      }}
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget && !loading) onClose?.();
+      }}
+    >
+      <div
+        style={{
+          width: "min(560px, 100%)",
+          background: "#fff",
+          borderRadius: 18,
+          overflow: "hidden",
+          boxShadow: "0 12px 30px rgba(0,0,0,0.22)",
+          border: "1px solid #eee",
+        }}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div style={{ padding: 18, borderBottom: "1px solid #eee", background: "#fff" }}>
+          <div style={{ fontSize: 18, fontWeight: 1000, color: colors.brown }}>
+            Sair da conta
+          </div>
+          <div style={{ marginTop: 8, color: "#333", lineHeight: 1.4, fontSize: 13 }}>
+            Tem certeza que deseja sair da sua conta?
+          </div>
+        </div>
+
+        <div style={{ padding: 18, background: "#fafafa" }}>
+          <div
+            style={{
+              padding: 12,
+              borderRadius: 14,
+              border: "1px solid #f0e5d7",
+              background: colors.beige,
+              color: "#222",
+              fontSize: 13,
+              lineHeight: 1.4,
+              fontWeight: 900,
+            }}
+          >
+            Você precisará fazer login novamente para acessar o painel e seus dados.
+          </div>
+        </div>
+
+        <div
+          style={{
+            padding: 18,
+            display: "flex",
+            gap: 10,
+            justifyContent: "flex-end",
+            background: "#fff",
+            borderTop: "1px solid #eee",
+          }}
+        >
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={loading}
+            style={{
+              padding: "10px 14px",
+              borderRadius: 12,
+              border: "1px solid #ddd",
+              background: "#fff",
+              color: "#333",
+              fontWeight: 900,
+              cursor: loading ? "not-allowed" : "pointer",
+              opacity: loading ? 0.7 : 1,
+            }}
+          >
+            Cancelar
+          </button>
+
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={loading}
+            style={{
+              padding: "10px 14px",
+              borderRadius: 12,
+              border: "1px solid transparent",
+              background: colors.yellow,
+              color: colors.brown,
+              fontWeight: 1000,
+              cursor: loading ? "not-allowed" : "pointer",
+              opacity: loading ? 0.85 : 1,
+            }}
+          >
+            {loading ? "Saindo..." : "Confirmar saída"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Navbar() {
   const {
     user,
@@ -465,6 +583,9 @@ export default function Navbar() {
   // ✅ modal (tutor)
   const [createTutorOpen, setCreateTutorOpen] = useState(false);
   const [createTutorLoading, setCreateTutorLoading] = useState(false);
+
+  // ✅ modal (logout confirm)
+  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
 
   const chatUnreadCount = chatUnreadIds.length;
   const totalUnread = chatUnreadCount + reservationUnreadCount;
@@ -546,6 +667,17 @@ export default function Navbar() {
     };
   }, [panelOpen]);
 
+  // ✅ fecha modal de logout no ESC
+  useEffect(() => {
+    if (!logoutConfirmOpen) return;
+
+    const onKey = (e) => {
+      if (e.key === "Escape") setLogoutConfirmOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [logoutConfirmOpen]);
+
   const handleLogout = () => {
     try {
       logout?.();
@@ -554,8 +686,15 @@ export default function Navbar() {
       setReservationUnreadCount(0);
       closeMobile();
       setPanelOpen(false);
+      setLogoutConfirmOpen(false);
       navigate("/", { replace: true });
     }
+  };
+
+  const openLogoutConfirm = () => {
+    setLogoutConfirmOpen(true);
+    setPanelOpen(false);
+    // não fecha o mobile menu automaticamente — deixa o modal por cima
   };
 
   const navigateDashboardAfterMode = useCallback(
@@ -1140,7 +1279,7 @@ export default function Navbar() {
             Meu Perfil
           </Link>
           <button
-            onClick={handleLogout}
+            onClick={openLogoutConfirm}
             className="bg-[#95301F] px-4 py-2 rounded-lg font-semibold"
             type="button"
           >
@@ -1290,7 +1429,7 @@ export default function Navbar() {
                   Meu Perfil
                 </Link>
                 <button
-                  onClick={handleLogout}
+                  onClick={openLogoutConfirm}
                   className="bg-[#95301F] px-4 py-2 rounded-lg font-semibold"
                   type="button"
                 >
@@ -1331,6 +1470,13 @@ export default function Navbar() {
         loading={createTutorLoading}
         onClose={closeCreateTutorModal}
         onConfirm={confirmCreateTutorProfile}
+      />
+
+      <ConfirmLogoutModal
+        open={logoutConfirmOpen}
+        onClose={() => setLogoutConfirmOpen(false)}
+        onConfirm={handleLogout}
+        loading={false}
       />
     </>
   );

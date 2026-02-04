@@ -106,10 +106,7 @@ export default function Register() {
 
     // ✅ senha forte no front
     if (!isStrongPassword(pw)) {
-      return showToast(
-        "Senha fraca: mínimo 8 caracteres, com letras e números.",
-        "error"
-      );
+      return showToast("Senha fraca: mínimo 8 caracteres, com letras e números.", "error");
     }
 
     if (pw !== cf) {
@@ -142,10 +139,7 @@ export default function Register() {
 
         // fallback (se você ainda tiver o effect antigo em algum lugar)
         localStorage.setItem("pc_showWelcomeToast", "1");
-        localStorage.setItem(
-          "pc_showWelcomeToast_role",
-          String(user?.role || role || "")
-        );
+        localStorage.setItem("pc_showWelcomeToast_role", String(user?.role || role || ""));
       } catch {
         // ignore
       }
@@ -225,7 +219,11 @@ export default function Register() {
               <button
                 type="button"
                 onClick={() => navigate("/login")}
-                className="px-4 py-2 rounded-lg font-semibold text-[#5A3A22] bg-[#FFD700]/40 hover:bg-[#FFD700]/60 transition"
+                className="
+                  px-4 py-2 rounded-lg font-semibold text-[#5A3A22]
+                  bg-[#FFD700]/40 hover:bg-[#FFD700]/60 transition
+                  md:px-6 md:py-3 md:text-base md:rounded-xl md:shadow-sm
+                "
               >
                 Já tenho conta
               </button>
@@ -335,8 +333,8 @@ export default function Register() {
 
             {role === "caregiver" && (
               <p className="text-sm text-[#5A3A22] mt-3">
-                <b>Dica:</b> você poderá configurar seus <b>serviços, preços e disponibilidade</b> no
-                perfil após finalizar o cadastro.
+                <b>Dica:</b> você poderá configurar seus <b>serviços, preços e disponibilidade</b>{" "}
+                no perfil após finalizar o cadastro.
               </p>
             )}
 
