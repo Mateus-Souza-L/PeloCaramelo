@@ -305,43 +305,69 @@ export default function Register() {
               Escolha como deseja usar a PeloCaramelo:
             </p>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* Tutor */}
               <button
                 onClick={() => proceedRole("tutor")}
                 className="border rounded-2xl p-5 text-left hover:shadow-md transition bg-[#FFF7E0]"
                 type="button"
               >
-                <h2 className="text-xl font-semibold text-[#5A3A22] mb-2">Ser Tutor</h2>
-                <p className="text-[#5A3A22]/90 text-sm">
+                <h2 className="text-xl font-semibold text-[#5A3A22] mb-2 md:text-center">
+                  Ser Tutor
+                </h2>
+                <p className="text-[#5A3A22]/90 text-sm md:text-center">
                   Quero encontrar cuidadores, fazer reservas e gerenciar meus pedidos.
                 </p>
               </button>
 
+              {/* Cuidador */}
               <button
                 onClick={() => proceedRole("caregiver")}
                 className="border rounded-2xl p-5 text-left hover:shadow-md transition bg-[#F4F0FF]"
                 type="button"
               >
-                <h2 className="text-xl font-semibold text-[#5A3A22] mb-2">Ser Cuidador</h2>
-                <p className="text-[#5A3A22]/90 text-sm">
+                <h2 className="text-xl font-semibold text-[#5A3A22] mb-2 md:text-center">
+                  Ser Cuidador
+                </h2>
+                <p className="text-[#5A3A22]/90 text-sm md:text-center">
                   Quero oferecer meus serviços, definir disponibilidade e receber reservas.
                 </p>
               </button>
-            </div>
 
-            <div className="mt-6 flex justify-center">
+              {/* Já tenho conta — WEB ONLY */}
               <button
                 type="button"
                 onClick={() => navigate("/login")}
                 className="
-                  px-4 py-2 rounded-lg font-semibold text-[#5A3A22]
-                  bg-[#FFD700]/40 hover:bg-[#FFD700]/60 transition
-                  md:px-6 md:py-3 md:text-base md:rounded-xl md:shadow-sm
-                "
+      hidden md:flex
+      border rounded-2xl p-5
+      hover:shadow-md transition
+      bg-[#FFD700]/30 hover:bg-[#FFD700]/50
+      items-center justify-center text-center
+    "
+              >
+                <div>
+                  <h2 className="text-xl font-semibold text-[#5A3A22] mb-2">
+                    Já tenho conta
+                  </h2>
+                  <p className="text-[#5A3A22]/90 text-sm md:text-center">
+                    Entrar na minha conta existente
+                  </p>
+                </div>
+              </button>
+            </div>
+
+            {/* MOBILE mantém exatamente como estava */}
+            <div className="mt-6 flex justify-center md:hidden">
+              <button
+                type="button"
+                onClick={() => navigate("/login")}
+                className="px-4 py-2 rounded-lg font-semibold text-[#5A3A22] bg-[#FFD700]/40 hover:bg-[#FFD700]/60 transition"
               >
                 Já tenho conta
               </button>
             </div>
+            
           </div>
         ) : (
           // PASSO 2 — Formulário
@@ -493,11 +519,10 @@ export default function Register() {
 
               <button
                 type="submit"
-                className={`px-5 py-2 rounded-lg font-semibold text-white ${
-                  loading
-                    ? "bg-[#95301F]/60 cursor-not-allowed"
-                    : "bg-[#95301F] hover:bg-[#B25B38]"
-                }`}
+                className={`px-5 py-2 rounded-lg font-semibold text-white ${loading
+                  ? "bg-[#95301F]/60 cursor-not-allowed"
+                  : "bg-[#95301F] hover:bg-[#B25B38]"
+                  }`}
                 disabled={loading}
               >
                 {loading ? "Criando..." : "Criar conta"}
