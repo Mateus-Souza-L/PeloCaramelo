@@ -394,6 +394,11 @@ export default function ReservationDetail() {
   const [cancelReasonText, setCancelReasonText] = useState("");
   const [cancelBusy, setCancelBusy] = useState(false);
   const cancelReasonRef = useRef(null);
+  // ✅ NOVO: recusa do cuidador (sem window.prompt)
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [rejectText, setRejectText] = useState("");
+  const [rejectBusy, setRejectBusy] = useState(false);
+  const rejectRef = useRef(null);
 
   // ✅ trava anti-duplo clique / enter
   const cancelFlowLockRef = useRef(false);
@@ -1087,16 +1092,52 @@ export default function ReservationDetail() {
     if (ok) showToast("Reserva aceita! 🐾", "success");
   };
 
-  const caregiverReject = async () => {
+  const caregiverReject = () => {
     if (!isCaregiver || !reservation) return;
 
-    const reason = window.prompt("Motivo da recusa (opcional):") || null;
+    // abre modal (não muda status aqui!)
+    setRejectText("");
+    setRejectOpen(true);
 
-    const next = { ...reservation, status: "Recusada", rejectReason: reason };
-    persistLocalReservation(next);
+    setTimeout(() => rejectRef.current?.focus?.(), 50);
+  };
 
-    const ok = await syncStatusWithBackend("Recusada", reason ? { rejectReason: reason } : null);
-    if (ok) showToast("Reserva recusada.", "error");
+  const closeReject = () => {
+    if (rejectBusy) return;
+    setRejectOpen(false);
+    setRejectText("");
+  };
+
+  const submitReject = async () => {
+    if (!isCaregiver || !reservation) return;
+    if (rejectBusy) return;
+
+    const reason = String(rejectText || "").trim() || null;
+
+    setRejectBusy(true);
+
+    const prev = reservation;
+
+    try {
+      const next = { ...reservation, status: "Recusada", rejectReason: reason };
+      persistLocalReservation(next);
+
+      const ok = await syncStatusWithBackend("Recusada", reason ? { rejectReason: reason } : null);
+
+      if (!ok) {
+        // reverte se falhar
+        persistLocalReservation(prev);
+        showToast("Não foi possível recusar agora. Tente novamente.", "error");
+        return;
+      }
+
+      setRejectOpen(false);
+      setRejectText("");
+
+      showToast("Reserva recusada.", "error");
+    } finally {
+      setRejectBusy(false);
+    }
   };
 
   const tutorCancel = async () => {
@@ -1338,6 +1379,58 @@ export default function ReservationDetail() {
             }
           >
             {cancelBusy ? "Cancelando..." : "Confirmar cancelamento"}
+          </button>
+        </div>
+      </PcModal>
+
+      <PcModal
+        open={rejectOpen}
+        title="Recusar pré-reserva"
+        onClose={closeReject}
+        disableClose={rejectBusy}
+        maxWidth="max-w-[640px]"
+      >
+        <p className="text-sm opacity-90">
+          (Opcional) Escreva um motivo para o tutor entender o porquê da recusa.
+        </p>
+
+        <div className="mt-3">
+          <textarea
+            ref={rejectRef}
+            value={rejectText}
+            onChange={(e) => setRejectText(e.target.value)}
+            rows={4}
+            placeholder="Ex.: Não estarei disponível nesse dia / Já tenho outra reserva / Fora da minha área..."
+            className="w-full rounded-xl border p-3 text-sm outline-none focus:ring-2 focus:ring-[#FFD700]/60"
+            disabled={rejectBusy}
+          />
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-3 justify-end">
+          <button
+            type="button"
+            onClick={closeReject}
+            disabled={rejectBusy}
+            className={
+              "px-4 py-2 rounded-lg font-semibold " +
+              (rejectBusy
+                ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+                : "bg-gray-200 hover:bg-gray-300 text-[#5A3A22]")
+            }
+          >
+            Voltar
+          </button>
+
+          <button
+            type="button"
+            onClick={submitReject}
+            disabled={rejectBusy}
+            className={
+              "px-4 py-2 rounded-lg font-semibold text-white " +
+              (rejectBusy ? "bg-gray-400 cursor-not-allowed" : "bg-[#95301F] hover:bg-[#7d2618]")
+            }
+          >
+            {rejectBusy ? "Recusando..." : "Recusar"}
           </button>
         </div>
       </PcModal>
@@ -1617,13 +1710,16 @@ export default function ReservationDetail() {
                 <button
                   type="button"
                   onClick={caregiverAccept}
+                  disabled={rejectBusy}
                   className="w-full sm:w-auto px-4 py-2 rounded-lg font-semibold text-white bg-green-600 hover:bg-green-700"
                 >
                   Aceitar
                 </button>
+
                 <button
                   type="button"
                   onClick={caregiverReject}
+                  disabled={rejectBusy}
                   className="w-full sm:w-auto bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-semibold"
                 >
                   Recusar
