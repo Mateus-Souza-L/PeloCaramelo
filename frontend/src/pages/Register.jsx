@@ -17,6 +17,13 @@ function isStrongPassword(pw) {
   return /^(?=.*[A-Za-z])(?=.*\d).{8,}$/.test(s);
 }
 
+const onlyDigits = (s) => String(s || "").replace(/\D/g, "");
+const formatCep = (cep) => {
+  const d = onlyDigits(cep).slice(0, 8);
+  if (d.length <= 5) return d;
+  return `${d.slice(0, 5)}-${d.slice(5)}`;
+};
+
 export default function Register() {
   const { login } = useAuth();
   const { showToast } = useToast();
@@ -33,6 +40,7 @@ export default function Register() {
     name: "",
     email: "",
     phone: "",
+    cep: "", // ✅ novo (front-only) — usado para auto preencher
     city: "", // ✅ obrigatório
     neighborhood: "", // ✅ obrigatório
     address: "",
@@ -40,16 +48,34 @@ export default function Register() {
     confirm: "",
   });
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setForm((prev) => ({ ...prev, [name]: value }));
-  };
-
   const nameRef = useRef(null);
   const emailRef = useRef(null);
+  const cepRef = useRef(null);
   const cityRef = useRef(null);
   const neighborhoodRef = useRef(null);
   const hasFocusedOnce = useRef(false);
+
+  // ✅ controla quais campos foram auto-preenchidos (para permitir sobrescrever ao trocar CEP)
+  const autoFilledRef = useRef({
+    city: false,
+    neighborhood: false,
+    address: false,
+  });
+
+  // ✅ CEP lookup state
+  const [cepStatus, setCepStatus] = useState("idle"); // idle | loading | ok | error
+  const lastCepLookupRef = useRef(""); // guarda o último CEP consultado (8 dígitos)
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+
+    // ✅ se o usuário editou manualmente, não sobrescreve mais pelo CEP
+    if (name === "city") autoFilledRef.current.city = false;
+    if (name === "neighborhood") autoFilledRef.current.neighborhood = false;
+    if (name === "address") autoFilledRef.current.address = false;
+
+    setForm((prev) => ({ ...prev, [name]: value }));
+  };
 
   useEffect(() => {
     document.title = "PeloCaramelo | Cadastro";
@@ -73,6 +99,92 @@ export default function Register() {
   };
 
   const isValidEmail = (em) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em);
+
+  // ✅ Auto preencher por CEP (ViaCEP) — quando tiver 8 dígitos
+  useEffect(() => {
+    if (step !== "form") return;
+
+    const cepDigits = onlyDigits(form.cep);
+    if (cepDigits.length !== 8) {
+      if (cepStatus !== "idle") setCepStatus("idle");
+      return;
+    }
+
+    // evita re-consultar o mesmo CEP
+    if (lastCepLookupRef.current === cepDigits) return;
+
+    const controller = new AbortController();
+
+    const run = async () => {
+      setCepStatus("loading");
+      try {
+        const resp = await fetch(`https://viacep.com.br/ws/${cepDigits}/json/`, {
+          signal: controller.signal,
+        });
+        if (!resp.ok) throw new Error("Falha ao consultar CEP.");
+        const data = await resp.json();
+
+        if (data?.erro) {
+          lastCepLookupRef.current = "";
+          setCepStatus("error");
+          showToast("CEP não encontrado. Verifique e tente novamente.", "error");
+          return;
+        }
+
+        const city = String(data?.localidade || "").trim();
+        const neighborhood = String(data?.bairro || "").trim();
+        const street = String(data?.logradouro || "").trim();
+        const complement = String(data?.complemento || "").trim();
+
+        // marca como consultado
+        lastCepLookupRef.current = cepDigits;
+
+        // ✅ sobrescreve apenas o que foi auto-preenchido antes (ou está vazio)
+        setForm((prev) => {
+          const next = { ...prev };
+
+          const prevCity = String(prev.city || "").trim();
+          const prevNeigh = String(prev.neighborhood || "").trim();
+          const prevAddr = String(prev.address || "").trim();
+
+          if ((autoFilledRef.current.city || !prevCity) && city) {
+            next.city = city;
+            autoFilledRef.current.city = true;
+          }
+
+          if ((autoFilledRef.current.neighborhood || !prevNeigh) && neighborhood) {
+            next.neighborhood = neighborhood;
+            autoFilledRef.current.neighborhood = true;
+          }
+
+          const fullAddress = [street, complement].filter(Boolean).join(" - ").trim();
+          if ((autoFilledRef.current.address || !prevAddr) && fullAddress) {
+            next.address = fullAddress;
+            autoFilledRef.current.address = true;
+          }
+
+          return next;
+        });
+
+        setCepStatus("ok");
+      } catch (err) {
+        if (err?.name === "AbortError") return;
+        console.error("Erro ao buscar CEP:", err);
+        lastCepLookupRef.current = "";
+        setCepStatus("error");
+        showToast("Não foi possível consultar o CEP agora. Tente novamente.", "error");
+      }
+    };
+
+    // pequeno debounce
+    const t = setTimeout(run, 350);
+
+    return () => {
+      clearTimeout(t);
+      controller.abort();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.cep, step]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -129,6 +241,8 @@ export default function Register() {
         // opcionais
         phone: form.phone?.trim() || null,
         address: form.address?.trim() || null,
+
+        // ⚠️ não enviamos CEP por enquanto (backend pode não suportar esse campo)
       });
 
       login(user, token);
@@ -278,6 +392,29 @@ export default function Register() {
                 className="w-full border rounded-lg p-2"
               />
 
+              {/* ✅ CEP (auto-preenche cidade/bairro/endereço quando encontrado) */}
+              <div className="w-full">
+                <input
+                  ref={cepRef}
+                  type="text"
+                  name="cep"
+                  value={form.cep}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, cep: formatCep(e.target.value) }))
+                  }
+                  placeholder="CEP — ex: 01001-000"
+                  className="w-full border rounded-lg p-2"
+                  inputMode="numeric"
+                  autoComplete="postal-code"
+                />
+                {cepStatus === "loading" && (
+                  <p className="text-xs text-[#5A3A22]/70 mt-1">Buscando endereço pelo CEP…</p>
+                )}
+                {cepStatus === "ok" && (
+                  <p className="text-xs text-[#5A3A22]/70 mt-1">CEP encontrado ✅</p>
+                )}
+              </div>
+
               <input
                 ref={cityRef}
                 type="text"
@@ -307,6 +444,7 @@ export default function Register() {
                 onChange={handleChange}
                 placeholder="Endereço"
                 className="md:col-span-2 w-full border rounded-lg p-2"
+                autoComplete="street-address"
               />
 
               <PasswordField
