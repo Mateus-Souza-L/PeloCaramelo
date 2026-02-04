@@ -1,5 +1,5 @@
 // src/pages/Profile.jsx
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../components/ToastProvider";
@@ -192,6 +192,9 @@ export default function Profile() {
   const [form, setForm] = useState(buildFormFromUser(null));
   const [reservations, setReservations] = useState([]);
 
+  // ✅ Mobile-only: loading para evitar “tela estática” no iOS/Safari
+  const [savingMobile, setSavingMobile] = useState(false);
+
   const roleLower = String(user?.role || "").toLowerCase().trim();
   const isAdminMaster = roleLower === "admin_master";
   const canEditName = isAdminMaster;
@@ -199,6 +202,76 @@ export default function Profile() {
   // ✅ multi-perfil: cuidador é pelo MODO, não pelo role
   const isCaregiver = activeMode === "caregiver" && Boolean(hasCaregiverProfile);
   const modeForAvg = isCaregiver ? "caregiver" : "tutor";
+
+  // ✅ helper: apenas mobile
+  const isMobileViewport = useMemo(() => {
+    try {
+      return typeof window !== "undefined" && window.matchMedia?.("(max-width: 767px)")?.matches;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  // ✅ helper: Safari iOS (para fallback de repaint/feedback)
+  const isIOSSafari = useMemo(() => {
+    try {
+      const ua = navigator.userAgent || "";
+      const isIOS = /iP(hone|od|ad)/.test(ua);
+      const isSafari = /Safari/.test(ua) && !/CriOS|FxiOS|OPiOS|EdgiOS/.test(ua);
+      return isIOS && isSafari;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  const safeMobileToast = useCallback(
+    (msg, type) => {
+      // normal
+      try {
+        showToast(msg, type);
+      } catch {
+        // ignore
+      }
+      // fallback p/ iOS Safari (às vezes engole render imediato quando teclado está aberto)
+      if (isMobileViewport && isIOSSafari) {
+        setTimeout(() => {
+          try {
+            showToast(msg, type);
+          } catch {}
+        }, 80);
+      }
+    },
+    [showToast, isMobileViewport, isIOSSafari]
+  );
+
+  const exitEditModeMobileSafe = useCallback(() => {
+    // Somente MOBILE: fecha teclado + força repaint + volta pra visualização
+    if (!isMobileViewport) return;
+
+    try {
+      const el = document.activeElement;
+      el?.blur?.();
+    } catch {
+      // ignore
+    }
+
+    try {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch {
+      // ignore
+    }
+
+    // força atualização visual em Safari iOS
+    try {
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          setEditing(false);
+        }, isIOSSafari ? 60 : 0);
+      });
+    } catch {
+      setEditing(false);
+    }
+  }, [isMobileViewport, isIOSSafari]);
 
   // ao ter token, sempre buscar /users/me para trazer o usuário COMPLETO do backend
   useEffect(() => {
@@ -271,7 +344,7 @@ export default function Profile() {
 
     const exists = (form.courses || []).some((c) => c.toLowerCase() === v.toLowerCase());
     if (exists) {
-      showToast("Esse curso já foi adicionado.", "notify");
+      safeMobileToast("Esse curso já foi adicionado.", "notify");
       return;
     }
 
@@ -292,7 +365,7 @@ export default function Profile() {
   const fetchByCep = async () => {
     const cepDigits = String(form.cep || "").replace(/\D/g, "");
     if (cepDigits.length !== 8) {
-      showToast("CEP inválido. Use 8 dígitos.", "error");
+      safeMobileToast("CEP inválido. Use 8 dígitos.", "error");
       return;
     }
     try {
@@ -300,7 +373,7 @@ export default function Profile() {
       const resp = await fetch(`https://viacep.com.br/ws/${cepDigits}/json/`);
       const data = await resp.json();
       if (data?.erro) {
-        showToast("CEP não encontrado.", "error");
+        safeMobileToast("CEP não encontrado.", "error");
         return;
       }
       setForm((f) => ({
@@ -309,10 +382,10 @@ export default function Profile() {
         neighborhood: data.bairro || f.neighborhood,
         city: data.localidade || f.city,
       }));
-      showToast("Endereço preenchido pelo CEP ✨", "success");
+      safeMobileToast("Endereço preenchido pelo CEP ✨", "success");
     } catch (e) {
       console.error(e);
-      showToast("Falha ao buscar CEP.", "error");
+      safeMobileToast("Falha ao buscar CEP.", "error");
     } finally {
       setCepLoading(false);
     }
@@ -320,6 +393,8 @@ export default function Profile() {
 
   // Clique em "Salvar Alterações"
   const handleSaveClick = () => {
+    if (savingMobile) return;
+
     // Usuário já é do backend (tem token e user não tem senha em memória)
     // → salva direto no backend, sem modal de senha
     if (token && !user?.password) {
@@ -337,64 +412,67 @@ export default function Profile() {
   const confirmSave = async () => {
     if (!user) return;
 
-    // Modo antigo: valida senha local se não há backend
-    if (!token && user?.password) {
-      if (passwordConfirm !== user.password) {
-        showToast("Senha incorreta. Alterações não salvas.", "error");
-        setPasswordConfirm("");
-        return;
-      }
-    }
+    // ✅ Mobile-only: mostra loading e evita múltiplos cliques
+    if (isMobileViewport) setSavingMobile(true);
 
-    // sempre ignora email (nunca muda)
-    const { newPassword, newCourse, email: _ignoredEmail, ...restForm } = form;
-
-    // Se temos backend (token) → envia PATCH /users/me
-    if (token) {
-      const payload = {
-        phone: restForm.phone || null,
-        address: restForm.address || null,
-        city: restForm.city || null,
-        neighborhood: restForm.neighborhood || null,
-        cep: restForm.cep || null,
-        bio: restForm.bio || null,
-        image: restForm.image || null,
-      };
-
-      // ✅ só admin_master pode enviar name
-      if (canEditName) {
-        payload.name = String(restForm.name || "").trim() || null;
+    try {
+      // Modo antigo: valida senha local se não há backend
+      if (!token && user?.password) {
+        if (passwordConfirm !== user.password) {
+          safeMobileToast("Senha incorreta. Alterações não salvas.", "error");
+          setPasswordConfirm("");
+          return;
+        }
       }
 
-      // ✅ multi-perfil: se o modo ativo é cuidador, envia campos de cuidador
-      if (isCaregiver) {
-        // 🔹 Sanitiza services: só serviços TRUE
-        const cleanServices = {};
-        for (const key of Object.keys(restForm.services || {})) {
-          if (restForm.services[key]) cleanServices[key] = true;
+      // sempre ignora email (nunca muda)
+      const { newPassword, newCourse, email: _ignoredEmail, ...restForm } = form;
+
+      // Se temos backend (token) → envia PATCH /users/me
+      if (token) {
+        const payload = {
+          phone: restForm.phone || null,
+          address: restForm.address || null,
+          city: restForm.city || null,
+          neighborhood: restForm.neighborhood || null,
+          cep: restForm.cep || null,
+          bio: restForm.bio || null,
+          image: restForm.image || null,
+        };
+
+        // ✅ só admin_master pode enviar name
+        if (canEditName) {
+          payload.name = String(restForm.name || "").trim() || null;
         }
 
-        // 🔹 Sanitiza prices: só valores preenchidos e numéricos
-        const cleanPrices = {};
-        for (const key of Object.keys(restForm.prices || {})) {
-          const raw = restForm.prices[key];
-          const norm = normalizeMoneyString(raw);
-          if (!norm) continue;
+        // ✅ multi-perfil: se o modo ativo é cuidador, envia campos de cuidador
+        if (isCaregiver) {
+          // 🔹 Sanitiza services: só serviços TRUE
+          const cleanServices = {};
+          for (const key of Object.keys(restForm.services || {})) {
+            if (restForm.services[key]) cleanServices[key] = true;
+          }
 
-          const n = Number(norm);
-          if (Number.isFinite(n) && n >= 0) cleanPrices[key] = String(norm);
+          // 🔹 Sanitiza prices: só valores preenchidos e numéricos
+          const cleanPrices = {};
+          for (const key of Object.keys(restForm.prices || {})) {
+            const raw = restForm.prices[key];
+            const norm = normalizeMoneyString(raw);
+            if (!norm) continue;
+
+            const n = Number(norm);
+            if (Number.isFinite(n) && n >= 0) cleanPrices[key] = String(norm);
+          }
+
+          const cap = Number(restForm.daily_capacity);
+          payload.daily_capacity =
+            Number.isFinite(cap) && cap > 0 ? Math.floor(cap) : DEFAULT_DAILY_CAPACITY;
+
+          payload.services = cleanServices;
+          payload.prices = cleanPrices;
+          payload.courses = Array.isArray(restForm.courses) ? restForm.courses : [];
         }
 
-        const cap = Number(restForm.daily_capacity);
-        payload.daily_capacity =
-          Number.isFinite(cap) && cap > 0 ? Math.floor(cap) : DEFAULT_DAILY_CAPACITY;
-
-        payload.services = cleanServices;
-        payload.prices = cleanPrices;
-        payload.courses = Array.isArray(restForm.courses) ? restForm.courses : [];
-      }
-
-      try {
         const data = await authRequest("/users/me", token, {
           method: "PATCH",
           body: JSON.stringify(payload),
@@ -423,29 +501,34 @@ export default function Profile() {
         localStorage.setItem("currentUser", JSON.stringify(backendUser));
         window.dispatchEvent(new Event("users-updated"));
 
-        showToast("Perfil atualizado com sucesso! 🐾", "success");
-        setEditing(false);
+        // ✅ garante que o form reflita o que foi salvo (evita “parece que não salvou” no iOS)
+        setForm(buildFormFromUser(backendUser));
+
+        safeMobileToast("Perfil atualizado com sucesso! 🐾", "success");
+
         setShowPasswordChange(false);
         setShowConfirmModal(false);
         setPasswordConfirm("");
-      } catch (e) {
-        console.error("Erro ao atualizar perfil no servidor:", e);
-        showToast("Erro ao salvar perfil no servidor.", "error");
+
+        // ✅ Mobile-only: garante sair do modo edição (principal fix do Safari)
+        if (isMobileViewport) {
+          exitEditModeMobileSafe();
+        } else {
+          setEditing(false);
+        }
+
+        return;
       }
 
-      return;
-    }
+      // --------- Fluxo antigo: somente localStorage ---------
+      const updatedUser = {
+        ...user,
+        ...restForm,
+        email: user.email, // nunca muda
+        name: canEditName ? restForm.name : user.name, // ✅ só admin_master muda nome
+        password: newPassword || user.password,
+      };
 
-    // --------- Fluxo antigo: somente localStorage ---------
-    const updatedUser = {
-      ...user,
-      ...restForm,
-      email: user.email, // nunca muda
-      name: canEditName ? restForm.name : user.name, // ✅ só admin_master muda nome
-      password: newPassword || user.password,
-    };
-
-    try {
       const users = JSON.parse(localStorage.getItem("users")) || [];
       const updatedList = users.some((u) => u.id === user.id)
         ? users.map((u) => (u.id === user.id ? updatedUser : u))
@@ -456,19 +539,32 @@ export default function Profile() {
       typeof setUser === "function" && setUser(updatedUser);
       window.dispatchEvent(new Event("users-updated"));
 
-      showToast("Perfil atualizado com sucesso! 🐾", "success");
-      setEditing(false);
+      setForm(buildFormFromUser(updatedUser));
+
+      safeMobileToast("Perfil atualizado com sucesso! 🐾", "success");
       setShowPasswordChange(false);
       setShowConfirmModal(false);
       setPasswordConfirm("");
+
+      if (isMobileViewport) {
+        exitEditModeMobileSafe();
+      } else {
+        setEditing(false);
+      }
     } catch (e) {
-      console.error(e);
-      showToast("Erro ao salvar perfil.", "error");
+      console.error("Erro ao salvar perfil:", e);
+      safeMobileToast("Erro ao salvar perfil.", "error");
+    } finally {
+      if (isMobileViewport) {
+        setTimeout(() => setSavingMobile(false), isIOSSafari ? 120 : 0);
+      }
     }
   };
 
   const cancelEdit = () => {
     if (!user) return;
+    if (savingMobile) return;
+
     setEditing(false);
     setShowPasswordChange(false);
     setForm(buildFormFromUser(user));
@@ -495,6 +591,7 @@ export default function Profile() {
           value={passwordConfirm}
           onChange={setPasswordConfirm}
           onCancel={() => {
+            if (savingMobile) return;
             setShowConfirmModal(false);
             setPasswordConfirm("");
           }}
@@ -513,10 +610,14 @@ export default function Profile() {
               />
               <p className="text-lg font-semibold flex items-center gap-2">
                 <span>{form.name}</span>
-                {avgRating && <span className="text-sm font-normal text-[#5A3A22]">⭐ {avgRating}</span>}
+                {avgRating && (
+                  <span className="text-sm font-normal text-[#5A3A22]">⭐ {avgRating}</span>
+                )}
               </p>
               <p className="text-sm opacity-90">{form.email}</p>
-              {form.bio && <p className="text-sm mt-2 text-center whitespace-pre-line">{form.bio}</p>}
+              {form.bio && (
+                <p className="text-sm mt-2 text-center whitespace-pre-line">{form.bio}</p>
+              )}
               <button
                 onClick={() => setEditing(true)}
                 className="mt-3 w-full bg-[#95301F] hover:bg-[#B25B38] text-white py-2 rounded-lg font-semibold"
@@ -530,7 +631,9 @@ export default function Profile() {
               <h3 className="font-semibold">Localização</h3>
               {form.neighborhood && <p>Bairro: {form.neighborhood}</p>}
               {form.city && <p>Cidade: {form.city}</p>}
-              <p className="text-sm opacity-75">(Endereço completo só é exibido após reserva confirmada.)</p>
+              <p className="text-sm opacity-75">
+                (Endereço completo só é exibido após reserva confirmada.)
+              </p>
 
               {isCaregiver && (
                 <>
@@ -617,7 +720,9 @@ export default function Profile() {
                     aria-readonly={!canEditName ? "true" : "false"}
                   />
                   <p className="text-xs text-gray-500 mt-1">
-                    {canEditName ? "Você é admin master: pode alterar o nome." : "Apenas o admin master pode alterar o nome."}
+                    {canEditName
+                      ? "Você é admin master: pode alterar o nome."
+                      : "Apenas o admin master pode alterar o nome."}
                   </p>
                 </div>
 
@@ -629,7 +734,9 @@ export default function Profile() {
                     placeholder="E-mail"
                     aria-readonly="true"
                   />
-                  <p className="text-xs text-gray-500 mt-1">O e-mail de acesso não pode ser alterado aqui.</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    O e-mail de acesso não pode ser alterado aqui.
+                  </p>
                 </div>
 
                 <input
@@ -654,10 +761,10 @@ export default function Profile() {
                   <button
                     type="button"
                     onClick={fetchByCep}
-                    disabled={cepLoading}
+                    disabled={cepLoading || savingMobile}
                     className={`whitespace-nowrap px-3 rounded-lg font-semibold ${
                       cepLoading ? "bg-yellow-300 cursor-wait" : "bg-[#FFD700] hover:bg-yellow-400"
-                    } text-[#5A3A22]`}
+                    } text-[#5A3A22] ${savingMobile ? "opacity-60 cursor-not-allowed" : ""}`}
                   >
                     {cepLoading ? "Buscando..." : "Buscar CEP"}
                   </button>
@@ -694,7 +801,9 @@ export default function Profile() {
             {isCaregiver && (
               <>
                 <div className="border rounded-lg p-4 bg-[#FFF6CC]/50">
-                  <h3 className="font-semibold mb-2 text-[#5A3A22]">Serviços, Preços e Capacidade</h3>
+                  <h3 className="font-semibold mb-2 text-[#5A3A22]">
+                    Serviços, Preços e Capacidade
+                  </h3>
 
                   <div className="mb-4">
                     <label className="block font-semibold mb-1">
@@ -773,7 +882,10 @@ export default function Profile() {
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {form.courses.map((c, i) => (
-                      <span key={i} className="bg-[#FFF6CC] px-3 py-1 rounded-full flex items-center gap-2">
+                      <span
+                        key={i}
+                        className="bg-[#FFF6CC] px-3 py-1 rounded-full flex items-center gap-2"
+                      >
                         {c}
                         <button type="button" onClick={() => removeCourse(i)} className="text-[#95301F]">
                           ×
@@ -812,14 +924,20 @@ export default function Profile() {
               <button
                 type="button"
                 onClick={handleSaveClick}
-                className="bg-[#5A3A22] hover:bg-[#7b5233] text-white px-4 py-2 rounded-lg w-full"
+                disabled={savingMobile}
+                className={`bg-[#5A3A22] hover:bg-[#7b5233] text-white px-4 py-2 rounded-lg w-full ${
+                  savingMobile ? "opacity-70 cursor-not-allowed" : ""
+                }`}
               >
-                Salvar Alterações
+                {savingMobile ? "Salvando..." : "Salvar Alterações"}
               </button>
               <button
                 type="button"
                 onClick={cancelEdit}
-                className="bg-gray-300 hover:bg-gray-400 text-[#5A3A22] px-4 py-2 rounded-lg w-full"
+                disabled={savingMobile}
+                className={`bg-gray-300 hover:bg-gray-400 text-[#5A3A22] px-4 py-2 rounded-lg w-full ${
+                  savingMobile ? "opacity-70 cursor-not-allowed" : ""
+                }`}
               >
                 Cancelar
               </button>
