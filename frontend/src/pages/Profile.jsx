@@ -1,5 +1,5 @@
 // src/pages/Profile.jsx
-import { useEffect, useState, useMemo, useRef, useCallback } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../components/ToastProvider";
@@ -53,8 +53,6 @@ function normalizeMoneyString(v) {
   if (cleaned.includes(",")) return cleaned.replace(",", ".");
   return cleaned;
 }
-
-const isDataUrlImage = (s) => typeof s === "string" && s.startsWith("data:image/");
 
 const buildFormFromUser = (user) => {
   if (!user) {
@@ -182,6 +180,42 @@ function ConfirmPasswordModal({ open, value, onChange, onCancel, onConfirm }) {
   );
 }
 
+function isQuotaExceededError(err) {
+  const msg = String(err?.message || err || "");
+  return (
+    err?.name === "QuotaExceededError" ||
+    msg.toLowerCase().includes("quota") ||
+    msg.toLowerCase().includes("exceeded")
+  );
+}
+
+function isMobileSafari() {
+  try {
+    const ua = navigator.userAgent || "";
+    const iOS = /iPad|iPhone|iPod/.test(ua);
+    const safari = /^((?!chrome|crios|fxios|android).)*safari/i.test(ua);
+    return iOS && safari;
+  } catch {
+    return false;
+  }
+}
+
+function stripHeavyImageIfNeeded(u) {
+  // no Mobile Safari, base64 grande costuma estourar quota
+  if (!u) return u;
+  if (!isMobileSafari()) return u;
+
+  const img = String(u.image || "");
+  const isDataUrl = img.startsWith("data:");
+  if (!isDataUrl) return u;
+
+  // se for grande, remove do localStorage (o backend já tem, e o state continua tendo)
+  if (img.length > 120000) {
+    return { ...u, image: null };
+  }
+  return u;
+}
+
 export default function Profile() {
   const { user, setUser, token, activeMode, hasCaregiverProfile } = useAuth();
   const { showToast } = useToast();
@@ -194,8 +228,8 @@ export default function Profile() {
   const [form, setForm] = useState(buildFormFromUser(null));
   const [reservations, setReservations] = useState([]);
 
-  // ✅ Mobile-only: loading para iOS/Safari
-  const [savingMobile, setSavingMobile] = useState(false);
+  // ✅ só para melhorar feedback no MOBILE (Safari)
+  const [saving, setSaving] = useState(false);
 
   const roleLower = String(user?.role || "").toLowerCase().trim();
   const isAdminMaster = roleLower === "admin_master";
@@ -204,58 +238,6 @@ export default function Profile() {
   // ✅ multi-perfil: cuidador é pelo MODO, não pelo role
   const isCaregiver = activeMode === "caregiver" && Boolean(hasCaregiverProfile);
   const modeForAvg = isCaregiver ? "caregiver" : "tutor";
-
-  const isMobileViewport = useMemo(() => {
-    try {
-      return typeof window !== "undefined" && window.matchMedia?.("(max-width: 767px)")?.matches;
-    } catch {
-      return false;
-    }
-  }, []);
-
-  const isIOSSafari = useMemo(() => {
-    try {
-      const ua = navigator.userAgent || "";
-      const isIOS = /iP(hone|od|ad)/.test(ua);
-      const isSafari = /Safari/.test(ua) && !/CriOS|FxiOS|OPiOS|EdgiOS/.test(ua);
-      return isIOS && isSafari;
-    } catch {
-      return false;
-    }
-  }, []);
-
-  const safeMobileToast = useCallback(
-    (msg, type) => {
-      try {
-        showToast(msg, type);
-      } catch {}
-      if (isMobileViewport && isIOSSafari) {
-        setTimeout(() => {
-          try {
-            showToast(msg, type);
-          } catch {}
-        }, 80);
-      }
-    },
-    [showToast, isMobileViewport, isIOSSafari]
-  );
-
-  const exitEditModeMobileSafe = useCallback(() => {
-    if (!isMobileViewport) return;
-
-    try {
-      const el = document.activeElement;
-      el?.blur?.();
-    } catch {}
-
-    try {
-      requestAnimationFrame(() => {
-        setTimeout(() => setEditing(false), isIOSSafari ? 60 : 0);
-      });
-    } catch {
-      setEditing(false);
-    }
-  }, [isMobileViewport, isIOSSafari]);
 
   // ao ter token, sempre buscar /users/me para trazer o usuário COMPLETO do backend
   useEffect(() => {
@@ -328,7 +310,7 @@ export default function Profile() {
 
     const exists = (form.courses || []).some((c) => c.toLowerCase() === v.toLowerCase());
     if (exists) {
-      safeMobileToast("Esse curso já foi adicionado.", "notify");
+      showToast("Esse curso já foi adicionado.", "notify");
       return;
     }
 
@@ -349,7 +331,7 @@ export default function Profile() {
   const fetchByCep = async () => {
     const cepDigits = String(form.cep || "").replace(/\D/g, "");
     if (cepDigits.length !== 8) {
-      safeMobileToast("CEP inválido. Use 8 dígitos.", "error");
+      showToast("CEP inválido. Use 8 dígitos.", "error");
       return;
     }
     try {
@@ -357,7 +339,7 @@ export default function Profile() {
       const resp = await fetch(`https://viacep.com.br/ws/${cepDigits}/json/`);
       const data = await resp.json();
       if (data?.erro) {
-        safeMobileToast("CEP não encontrado.", "error");
+        showToast("CEP não encontrado.", "error");
         return;
       }
       setForm((f) => ({
@@ -366,38 +348,44 @@ export default function Profile() {
         neighborhood: data.bairro || f.neighborhood,
         city: data.localidade || f.city,
       }));
-      safeMobileToast("Endereço preenchido pelo CEP ✨", "success");
+      showToast("Endereço preenchido pelo CEP ✨", "success");
     } catch (e) {
       console.error(e);
-      safeMobileToast("Falha ao buscar CEP.", "error");
+      showToast("Falha ao buscar CEP.", "error");
     } finally {
       setCepLoading(false);
     }
   };
 
+  // Clique em "Salvar Alterações"
   const handleSaveClick = () => {
-    if (savingMobile) return;
+    if (saving) return;
 
+    // Usuário já é do backend (tem token e user não tem senha em memória)
+    // → salva direto no backend, sem modal de senha
     if (token && !user?.password) {
       setPasswordConfirm("");
       confirmSave();
       return;
     }
 
+    // Fluxo antigo (somente localStorage) → usa modal de confirmação
     setPasswordConfirm("");
     setShowConfirmModal(true);
   };
 
+  // Salvar perfil (backend + fallback localStorage)
   const confirmSave = async () => {
     if (!user) return;
+    if (saving) return;
 
-    if (isMobileViewport) setSavingMobile(true);
+    setSaving(true);
 
     try {
       // Modo antigo: valida senha local se não há backend
       if (!token && user?.password) {
         if (passwordConfirm !== user.password) {
-          safeMobileToast("Senha incorreta. Alterações não salvas.", "error");
+          showToast("Senha incorreta. Alterações não salvas.", "error");
           setPasswordConfirm("");
           return;
         }
@@ -406,37 +394,32 @@ export default function Profile() {
       // sempre ignora email (nunca muda)
       const { newPassword, newCourse, email: _ignoredEmail, ...restForm } = form;
 
+      // Se temos backend (token) → envia PATCH /users/me
       if (token) {
-        // ✅ Só envia a imagem se ela mudou
-        const currImg = String(restForm.image || "");
-        const prevImg = String(user?.image || "");
-        const imageChanged = currImg !== prevImg;
-
-        const payloadBase = {
+        const payload = {
           phone: restForm.phone || null,
           address: restForm.address || null,
           city: restForm.city || null,
           neighborhood: restForm.neighborhood || null,
           cep: restForm.cep || null,
           bio: restForm.bio || null,
+          image: restForm.image || null,
         };
-
-        // imagem só se mudou
-        if (imageChanged) {
-          payloadBase.image = currImg || null;
-        }
 
         // ✅ só admin_master pode enviar name
         if (canEditName) {
-          payloadBase.name = String(restForm.name || "").trim() || null;
+          payload.name = String(restForm.name || "").trim() || null;
         }
 
+        // ✅ multi-perfil: se o modo ativo é cuidador, envia campos de cuidador
         if (isCaregiver) {
+          // 🔹 Sanitiza services: só serviços TRUE
           const cleanServices = {};
           for (const key of Object.keys(restForm.services || {})) {
             if (restForm.services[key]) cleanServices[key] = true;
           }
 
+          // 🔹 Sanitiza prices: só valores preenchidos e numéricos
           const cleanPrices = {};
           for (const key of Object.keys(restForm.prices || {})) {
             const raw = restForm.prices[key];
@@ -448,83 +431,67 @@ export default function Profile() {
           }
 
           const cap = Number(restForm.daily_capacity);
-          payloadBase.daily_capacity =
+          payload.daily_capacity =
             Number.isFinite(cap) && cap > 0 ? Math.floor(cap) : DEFAULT_DAILY_CAPACITY;
 
-          payloadBase.services = cleanServices;
-          payloadBase.prices = cleanPrices;
-          payloadBase.courses = Array.isArray(restForm.courses) ? restForm.courses : [];
+          payload.services = cleanServices;
+          payload.prices = cleanPrices;
+          payload.courses = Array.isArray(restForm.courses) ? restForm.courses : [];
         }
 
-        // ✅ iOS/Safari: se a imagem for dataURL e muito grande, tenta salvar SEM imagem primeiro
-        const payloadFirstTry = { ...payloadBase };
-        const payloadSecondTry = { ...payloadBase };
-
-        const hasImageInPayload = Object.prototype.hasOwnProperty.call(payloadFirstTry, "image");
-        const imgLooksHeavy = hasImageInPayload && isDataUrlImage(payloadFirstTry.image) && String(payloadFirstTry.image).length > 700_000;
-
-        // Se for iOS Safari e imagem "pesada", primeiro tenta sem imagem
-        if (isMobileViewport && isIOSSafari && (imgLooksHeavy || hasImageInPayload)) {
-          delete payloadFirstTry.image;
-        }
-
-        const doPatch = async (p) =>
-          authRequest("/users/me", token, {
-            method: "PATCH",
-            body: JSON.stringify(p),
-          });
-
-        let data;
-        try {
-          data = await doPatch(payloadFirstTry);
-        } catch (err1) {
-          // retry: se falhou e ainda existe image no payload original, tenta sem imagem
-          if (hasImageInPayload) {
-            try {
-              delete payloadSecondTry.image;
-              data = await doPatch(payloadSecondTry);
-              safeMobileToast("Salvei sem reenviar a foto (para compatibilidade no iPhone).", "notify");
-            } catch (err2) {
-              throw err2;
-            }
-          } else {
-            throw err1;
-          }
-        }
+        // 1) salva no backend (isso aqui é o que importa)
+        const data = await authRequest("/users/me", token, {
+          method: "PATCH",
+          body: JSON.stringify(payload),
+        });
 
         const backendUser = data?.user
           ? data.user
           : {
               ...user,
               ...restForm,
+              // ✅ garante email
               email: user.email,
+              // ✅ garante nome se não for admin_master
               name: canEditName ? restForm.name : user.name,
-              // se não enviou imagem, preserva a antiga
-              image: imageChanged ? currImg : user.image,
             };
 
+        // 2) atualiza o contexto (UI deve reagir imediatamente)
         typeof setUser === "function" && setUser(backendUser);
 
-        const users = JSON.parse(localStorage.getItem("users")) || [];
-        const updatedList = users.some((u) => u.id === backendUser.id)
-          ? users.map((u) => (u.id === backendUser.id ? backendUser : u))
-          : [...users, backendUser];
+        // 3) compat: tenta atualizar localStorage, mas NÃO deixa isso quebrar o fluxo no iPhone
+        try {
+          const safeForStorage = stripHeavyImageIfNeeded(backendUser);
 
-        localStorage.setItem("users", JSON.stringify(updatedList));
-        localStorage.setItem("currentUser", JSON.stringify(backendUser));
-        window.dispatchEvent(new Event("users-updated"));
+          const users = JSON.parse(localStorage.getItem("users")) || [];
+          const updatedList = users.some((u) => u.id === safeForStorage.id)
+            ? users.map((u) => (u.id === safeForStorage.id ? safeForStorage : u))
+            : [...users, safeForStorage];
 
-        setForm(buildFormFromUser(backendUser));
+          localStorage.setItem("users", JSON.stringify(updatedList));
+          localStorage.setItem("currentUser", JSON.stringify(safeForStorage));
+          window.dispatchEvent(new Event("users-updated"));
+        } catch (lsErr) {
+          // ✅ MOBILE SAFARI: não falha o salvamento por causa de quota
+          console.warn("[Profile] localStorage falhou:", lsErr);
 
-        safeMobileToast("Perfil atualizado com sucesso! 🐾", "success");
+          if (isQuotaExceededError(lsErr)) {
+            // tenta pelo menos atualizar currentUser sem image
+            try {
+              const safeNoImage = { ...backendUser, image: null };
+              localStorage.setItem("currentUser", JSON.stringify(safeNoImage));
+            } catch {
+              // ignore total
+            }
+          }
+        }
 
+        // 4) feedback + sair do modo edição (isso era o que “travava” no iPhone)
+        showToast("Perfil atualizado com sucesso! 🐾", "success");
+        setEditing(false);
         setShowPasswordChange(false);
         setShowConfirmModal(false);
         setPasswordConfirm("");
-
-        if (isMobileViewport) exitEditModeMobileSafe();
-        else setEditing(false);
-
         return;
       }
 
@@ -532,52 +499,53 @@ export default function Profile() {
       const updatedUser = {
         ...user,
         ...restForm,
-        email: user.email,
-        name: canEditName ? restForm.name : user.name,
+        email: user.email, // nunca muda
+        name: canEditName ? restForm.name : user.name, // ✅ só admin_master muda nome
         password: newPassword || user.password,
       };
 
-      const users = JSON.parse(localStorage.getItem("users")) || [];
-      const updatedList = users.some((u) => u.id === user.id)
-        ? users.map((u) => (u.id === user.id ? updatedUser : u))
-        : [...users, updatedUser];
+      try {
+        const users = JSON.parse(localStorage.getItem("users")) || [];
+        const updatedList = users.some((u) => u.id === user.id)
+          ? users.map((u) => (u.id === user.id ? updatedUser : u))
+          : [...users, updatedUser];
 
-      localStorage.setItem("users", JSON.stringify(updatedList));
-      localStorage.setItem("currentUser", JSON.stringify(updatedUser));
-      typeof setUser === "function" && setUser(updatedUser);
-      window.dispatchEvent(new Event("users-updated"));
+        localStorage.setItem("users", JSON.stringify(updatedList));
+        localStorage.setItem("currentUser", JSON.stringify(updatedUser));
+        typeof setUser === "function" && setUser(updatedUser);
+        window.dispatchEvent(new Event("users-updated"));
 
-      setForm(buildFormFromUser(updatedUser));
+        showToast("Perfil atualizado com sucesso! 🐾", "success");
+        setEditing(false);
+        setShowPasswordChange(false);
+        setShowConfirmModal(false);
+        setPasswordConfirm("");
+      } catch (e) {
+        console.error(e);
 
-      safeMobileToast("Perfil atualizado com sucesso! 🐾", "success");
-      setShowPasswordChange(false);
-      setShowConfirmModal(false);
-      setPasswordConfirm("");
+        if (isQuotaExceededError(e)) {
+          // aqui também: não deixa o iPhone “travar” sem feedback
+          showToast("Alterações salvas, mas seu navegador está sem espaço para cache. ✅", "notify");
+          setEditing(false);
+          setShowPasswordChange(false);
+          setShowConfirmModal(false);
+          setPasswordConfirm("");
+          return;
+        }
 
-      if (isMobileViewport) exitEditModeMobileSafe();
-      else setEditing(false);
-    } catch (e) {
-      console.error("Erro ao salvar perfil:", e);
-
-      // tenta expor uma msg melhor se existir
-      const msg =
-        e?.message ||
-        e?.error ||
-        (typeof e === "string" ? e : "") ||
-        "Erro ao salvar perfil.";
-
-      safeMobileToast(msg || "Erro ao salvar perfil.", "error");
-    } finally {
-      if (isMobileViewport) {
-        setTimeout(() => setSavingMobile(false), isIOSSafari ? 120 : 0);
+        showToast("Erro ao salvar perfil.", "error");
       }
+    } catch (e) {
+      console.error("Erro ao atualizar perfil no servidor:", e);
+      // mantém mensagem como estava para não mexer no comportamento geral
+      showToast("Erro ao salvar perfil no servidor.", "error");
+    } finally {
+      setSaving(false);
     }
   };
 
   const cancelEdit = () => {
     if (!user) return;
-    if (savingMobile) return;
-
     setEditing(false);
     setShowPasswordChange(false);
     setForm(buildFormFromUser(user));
@@ -598,20 +566,22 @@ export default function Profile() {
   return (
     <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] py-6">
       <div className="max-w-[1400px] mx-auto bg-white rounded-2xl shadow p-6 border-l-4 border-[#FFD700]/80">
+        {/* Modal de confirmação de senha (apenas para usuários antigos sem backend) */}
         <ConfirmPasswordModal
           open={showConfirmModal}
           value={passwordConfirm}
           onChange={setPasswordConfirm}
           onCancel={() => {
-            if (savingMobile) return;
             setShowConfirmModal(false);
             setPasswordConfirm("");
           }}
           onConfirm={confirmSave}
         />
 
+        {/* VISUALIZAÇÃO */}
         {!editing ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-[#5A3A22]">
+            {/* Coluna esquerda */}
             <div className="md:col-span-1 flex flex-col items-center gap-2">
               <img
                 src={form.image || DEFAULT_IMG}
@@ -625,9 +595,7 @@ export default function Profile() {
                 )}
               </p>
               <p className="text-sm opacity-90">{form.email}</p>
-              {form.bio && (
-                <p className="text-sm mt-2 text-center whitespace-pre-line">{form.bio}</p>
-              )}
+              {form.bio && <p className="text-sm mt-2 text-center whitespace-pre-line">{form.bio}</p>}
               <button
                 onClick={() => setEditing(true)}
                 className="mt-3 w-full bg-[#95301F] hover:bg-[#B25B38] text-white py-2 rounded-lg font-semibold"
@@ -636,13 +604,12 @@ export default function Profile() {
               </button>
             </div>
 
+            {/* Coluna meio */}
             <div className="md:col-span-1 space-y-2">
               <h3 className="font-semibold">Localização</h3>
               {form.neighborhood && <p>Bairro: {form.neighborhood}</p>}
               {form.city && <p>Cidade: {form.city}</p>}
-              <p className="text-sm opacity-75">
-                (Endereço completo só é exibido após reserva confirmada.)
-              </p>
+              <p className="text-sm opacity-75">(Endereço completo só é exibido após reserva confirmada.)</p>
 
               {isCaregiver && (
                 <>
@@ -665,6 +632,7 @@ export default function Profile() {
               )}
             </div>
 
+            {/* Coluna direita */}
             {isCaregiver && (
               <div className="md:col-span-1">
                 <h3 className="font-semibold">Serviços</h3>
@@ -688,8 +656,10 @@ export default function Profile() {
             )}
           </div>
         ) : (
+          // EDIÇÃO
           <div className="space-y-6 text-[#5A3A22]">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* FOTO */}
               <div className="flex flex-col items-center gap-3 bg-[#FFF8F0] rounded-2xl p-4 shadow-sm">
                 <label htmlFor="img" className="cursor-pointer">
                   <div className="w-32 h-32 md:w-40 md:h-40 rounded-full overflow-hidden border-4 border-[#FFD700] shadow">
@@ -700,13 +670,7 @@ export default function Profile() {
                     />
                   </div>
                 </label>
-                <input
-                  id="img"
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleImage}
-                />
+                <input id="img" type="file" accept="image/*" className="hidden" onChange={handleImage} />
                 <p className="text-xs text-center text-[#5A3A22]/80">
                   Essa é a foto que aparece no seu perfil para outros usuários.
                 </p>
@@ -718,6 +682,7 @@ export default function Profile() {
                 </label>
               </div>
 
+              {/* CAMPOS */}
               <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <input
@@ -745,9 +710,7 @@ export default function Profile() {
                     placeholder="E-mail"
                     aria-readonly="true"
                   />
-                  <p className="text-xs text-gray-500 mt-1">
-                    O e-mail de acesso não pode ser alterado aqui.
-                  </p>
+                  <p className="text-xs text-gray-500 mt-1">O e-mail de acesso não pode ser alterado aqui.</p>
                 </div>
 
                 <input
@@ -772,10 +735,10 @@ export default function Profile() {
                   <button
                     type="button"
                     onClick={fetchByCep}
-                    disabled={cepLoading || savingMobile}
+                    disabled={cepLoading}
                     className={`whitespace-nowrap px-3 rounded-lg font-semibold ${
                       cepLoading ? "bg-yellow-300 cursor-wait" : "bg-[#FFD700] hover:bg-yellow-400"
-                    } text-[#5A3A22] ${savingMobile ? "opacity-60 cursor-not-allowed" : ""}`}
+                    } text-[#5A3A22]`}
                   >
                     {cepLoading ? "Buscando..." : "Buscar CEP"}
                   </button>
@@ -808,12 +771,11 @@ export default function Profile() {
               </div>
             </div>
 
+            {/* Serviços + cursos (cuidador) */}
             {isCaregiver && (
               <>
                 <div className="border rounded-lg p-4 bg-[#FFF6CC]/50">
-                  <h3 className="font-semibold mb-2 text-[#5A3A22]">
-                    Serviços, Preços e Capacidade
-                  </h3>
+                  <h3 className="font-semibold mb-2 text-[#5A3A22]">Serviços, Preços e Capacidade</h3>
 
                   <div className="mb-4">
                     <label className="block font-semibold mb-1">
@@ -907,6 +869,7 @@ export default function Profile() {
               </>
             )}
 
+            {/* Troca de senha (funciona só no modo antigo/local) */}
             <div>
               {!showPasswordChange ? (
                 <button
@@ -928,23 +891,27 @@ export default function Profile() {
               )}
             </div>
 
+            {/* Botões Salvar / Cancelar */}
             <div className="flex gap-3">
               <button
                 type="button"
                 onClick={handleSaveClick}
-                disabled={savingMobile}
+                disabled={saving}
                 className={`bg-[#5A3A22] hover:bg-[#7b5233] text-white px-4 py-2 rounded-lg w-full ${
-                  savingMobile ? "opacity-70 cursor-not-allowed" : ""
+                  saving ? "opacity-70 cursor-wait" : ""
                 }`}
               >
-                {savingMobile ? "Salvando..." : "Salvar Alterações"}
+                {/* ✅ texto só muda no MOBILE */}
+                <span className="md:hidden">{saving ? "Salvando..." : "Salvar Alterações"}</span>
+                <span className="hidden md:inline">Salvar Alterações</span>
               </button>
+
               <button
                 type="button"
                 onClick={cancelEdit}
-                disabled={savingMobile}
+                disabled={saving}
                 className={`bg-gray-300 hover:bg-gray-400 text-[#5A3A22] px-4 py-2 rounded-lg w-full ${
-                  savingMobile ? "opacity-70 cursor-not-allowed" : ""
+                  saving ? "opacity-70 cursor-not-allowed" : ""
                 }`}
               >
                 Cancelar
