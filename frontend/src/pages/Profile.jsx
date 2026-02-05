@@ -54,6 +54,8 @@ function normalizeMoneyString(v) {
   return cleaned;
 }
 
+const isDataUrlImage = (s) => typeof s === "string" && s.startsWith("data:image/");
+
 const buildFormFromUser = (user) => {
   if (!user) {
     return {
@@ -192,7 +194,7 @@ export default function Profile() {
   const [form, setForm] = useState(buildFormFromUser(null));
   const [reservations, setReservations] = useState([]);
 
-  // ✅ Mobile-only: loading para evitar “tela estática” no iOS/Safari
+  // ✅ Mobile-only: loading para iOS/Safari
   const [savingMobile, setSavingMobile] = useState(false);
 
   const roleLower = String(user?.role || "").toLowerCase().trim();
@@ -203,7 +205,6 @@ export default function Profile() {
   const isCaregiver = activeMode === "caregiver" && Boolean(hasCaregiverProfile);
   const modeForAvg = isCaregiver ? "caregiver" : "tutor";
 
-  // ✅ helper: apenas mobile
   const isMobileViewport = useMemo(() => {
     try {
       return typeof window !== "undefined" && window.matchMedia?.("(max-width: 767px)")?.matches;
@@ -212,7 +213,6 @@ export default function Profile() {
     }
   }, []);
 
-  // ✅ helper: Safari iOS (para fallback de repaint/feedback)
   const isIOSSafari = useMemo(() => {
     try {
       const ua = navigator.userAgent || "";
@@ -226,13 +226,9 @@ export default function Profile() {
 
   const safeMobileToast = useCallback(
     (msg, type) => {
-      // normal
       try {
         showToast(msg, type);
-      } catch {
-        // ignore
-      }
-      // fallback p/ iOS Safari (às vezes engole render imediato quando teclado está aberto)
+      } catch {}
       if (isMobileViewport && isIOSSafari) {
         setTimeout(() => {
           try {
@@ -245,28 +241,16 @@ export default function Profile() {
   );
 
   const exitEditModeMobileSafe = useCallback(() => {
-    // Somente MOBILE: fecha teclado + força repaint + volta pra visualização
     if (!isMobileViewport) return;
 
     try {
       const el = document.activeElement;
       el?.blur?.();
-    } catch {
-      // ignore
-    }
+    } catch {}
 
-    try {
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    } catch {
-      // ignore
-    }
-
-    // força atualização visual em Safari iOS
     try {
       requestAnimationFrame(() => {
-        setTimeout(() => {
-          setEditing(false);
-        }, isIOSSafari ? 60 : 0);
+        setTimeout(() => setEditing(false), isIOSSafari ? 60 : 0);
       });
     } catch {
       setEditing(false);
@@ -391,28 +375,22 @@ export default function Profile() {
     }
   };
 
-  // Clique em "Salvar Alterações"
   const handleSaveClick = () => {
     if (savingMobile) return;
 
-    // Usuário já é do backend (tem token e user não tem senha em memória)
-    // → salva direto no backend, sem modal de senha
     if (token && !user?.password) {
       setPasswordConfirm("");
       confirmSave();
       return;
     }
 
-    // Fluxo antigo (somente localStorage) → usa modal de confirmação
     setPasswordConfirm("");
     setShowConfirmModal(true);
   };
 
-  // Salvar perfil (backend + fallback localStorage)
   const confirmSave = async () => {
     if (!user) return;
 
-    // ✅ Mobile-only: mostra loading e evita múltiplos cliques
     if (isMobileViewport) setSavingMobile(true);
 
     try {
@@ -428,32 +406,37 @@ export default function Profile() {
       // sempre ignora email (nunca muda)
       const { newPassword, newCourse, email: _ignoredEmail, ...restForm } = form;
 
-      // Se temos backend (token) → envia PATCH /users/me
       if (token) {
-        const payload = {
+        // ✅ Só envia a imagem se ela mudou
+        const currImg = String(restForm.image || "");
+        const prevImg = String(user?.image || "");
+        const imageChanged = currImg !== prevImg;
+
+        const payloadBase = {
           phone: restForm.phone || null,
           address: restForm.address || null,
           city: restForm.city || null,
           neighborhood: restForm.neighborhood || null,
           cep: restForm.cep || null,
           bio: restForm.bio || null,
-          image: restForm.image || null,
         };
+
+        // imagem só se mudou
+        if (imageChanged) {
+          payloadBase.image = currImg || null;
+        }
 
         // ✅ só admin_master pode enviar name
         if (canEditName) {
-          payload.name = String(restForm.name || "").trim() || null;
+          payloadBase.name = String(restForm.name || "").trim() || null;
         }
 
-        // ✅ multi-perfil: se o modo ativo é cuidador, envia campos de cuidador
         if (isCaregiver) {
-          // 🔹 Sanitiza services: só serviços TRUE
           const cleanServices = {};
           for (const key of Object.keys(restForm.services || {})) {
             if (restForm.services[key]) cleanServices[key] = true;
           }
 
-          // 🔹 Sanitiza prices: só valores preenchidos e numéricos
           const cleanPrices = {};
           for (const key of Object.keys(restForm.prices || {})) {
             const raw = restForm.prices[key];
@@ -465,31 +448,61 @@ export default function Profile() {
           }
 
           const cap = Number(restForm.daily_capacity);
-          payload.daily_capacity =
+          payloadBase.daily_capacity =
             Number.isFinite(cap) && cap > 0 ? Math.floor(cap) : DEFAULT_DAILY_CAPACITY;
 
-          payload.services = cleanServices;
-          payload.prices = cleanPrices;
-          payload.courses = Array.isArray(restForm.courses) ? restForm.courses : [];
+          payloadBase.services = cleanServices;
+          payloadBase.prices = cleanPrices;
+          payloadBase.courses = Array.isArray(restForm.courses) ? restForm.courses : [];
         }
 
-        const data = await authRequest("/users/me", token, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        });
+        // ✅ iOS/Safari: se a imagem for dataURL e muito grande, tenta salvar SEM imagem primeiro
+        const payloadFirstTry = { ...payloadBase };
+        const payloadSecondTry = { ...payloadBase };
+
+        const hasImageInPayload = Object.prototype.hasOwnProperty.call(payloadFirstTry, "image");
+        const imgLooksHeavy = hasImageInPayload && isDataUrlImage(payloadFirstTry.image) && String(payloadFirstTry.image).length > 700_000;
+
+        // Se for iOS Safari e imagem "pesada", primeiro tenta sem imagem
+        if (isMobileViewport && isIOSSafari && (imgLooksHeavy || hasImageInPayload)) {
+          delete payloadFirstTry.image;
+        }
+
+        const doPatch = async (p) =>
+          authRequest("/users/me", token, {
+            method: "PATCH",
+            body: JSON.stringify(p),
+          });
+
+        let data;
+        try {
+          data = await doPatch(payloadFirstTry);
+        } catch (err1) {
+          // retry: se falhou e ainda existe image no payload original, tenta sem imagem
+          if (hasImageInPayload) {
+            try {
+              delete payloadSecondTry.image;
+              data = await doPatch(payloadSecondTry);
+              safeMobileToast("Salvei sem reenviar a foto (para compatibilidade no iPhone).", "notify");
+            } catch (err2) {
+              throw err2;
+            }
+          } else {
+            throw err1;
+          }
+        }
 
         const backendUser = data?.user
           ? data.user
           : {
               ...user,
               ...restForm,
-              // ✅ garante email
               email: user.email,
-              // ✅ garante nome se não for admin_master
               name: canEditName ? restForm.name : user.name,
+              // se não enviou imagem, preserva a antiga
+              image: imageChanged ? currImg : user.image,
             };
 
-        // atualiza contexto e localStorage para compatibilidade
         typeof setUser === "function" && setUser(backendUser);
 
         const users = JSON.parse(localStorage.getItem("users")) || [];
@@ -501,7 +514,6 @@ export default function Profile() {
         localStorage.setItem("currentUser", JSON.stringify(backendUser));
         window.dispatchEvent(new Event("users-updated"));
 
-        // ✅ garante que o form reflita o que foi salvo (evita “parece que não salvou” no iOS)
         setForm(buildFormFromUser(backendUser));
 
         safeMobileToast("Perfil atualizado com sucesso! 🐾", "success");
@@ -510,12 +522,8 @@ export default function Profile() {
         setShowConfirmModal(false);
         setPasswordConfirm("");
 
-        // ✅ Mobile-only: garante sair do modo edição (principal fix do Safari)
-        if (isMobileViewport) {
-          exitEditModeMobileSafe();
-        } else {
-          setEditing(false);
-        }
+        if (isMobileViewport) exitEditModeMobileSafe();
+        else setEditing(false);
 
         return;
       }
@@ -524,8 +532,8 @@ export default function Profile() {
       const updatedUser = {
         ...user,
         ...restForm,
-        email: user.email, // nunca muda
-        name: canEditName ? restForm.name : user.name, // ✅ só admin_master muda nome
+        email: user.email,
+        name: canEditName ? restForm.name : user.name,
         password: newPassword || user.password,
       };
 
@@ -546,14 +554,19 @@ export default function Profile() {
       setShowConfirmModal(false);
       setPasswordConfirm("");
 
-      if (isMobileViewport) {
-        exitEditModeMobileSafe();
-      } else {
-        setEditing(false);
-      }
+      if (isMobileViewport) exitEditModeMobileSafe();
+      else setEditing(false);
     } catch (e) {
       console.error("Erro ao salvar perfil:", e);
-      safeMobileToast("Erro ao salvar perfil.", "error");
+
+      // tenta expor uma msg melhor se existir
+      const msg =
+        e?.message ||
+        e?.error ||
+        (typeof e === "string" ? e : "") ||
+        "Erro ao salvar perfil.";
+
+      safeMobileToast(msg || "Erro ao salvar perfil.", "error");
     } finally {
       if (isMobileViewport) {
         setTimeout(() => setSavingMobile(false), isIOSSafari ? 120 : 0);
@@ -585,7 +598,6 @@ export default function Profile() {
   return (
     <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] py-6">
       <div className="max-w-[1400px] mx-auto bg-white rounded-2xl shadow p-6 border-l-4 border-[#FFD700]/80">
-        {/* Modal de confirmação de senha (apenas para usuários antigos sem backend) */}
         <ConfirmPasswordModal
           open={showConfirmModal}
           value={passwordConfirm}
@@ -598,10 +610,8 @@ export default function Profile() {
           onConfirm={confirmSave}
         />
 
-        {/* VISUALIZAÇÃO */}
         {!editing ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-[#5A3A22]">
-            {/* Coluna esquerda */}
             <div className="md:col-span-1 flex flex-col items-center gap-2">
               <img
                 src={form.image || DEFAULT_IMG}
@@ -626,7 +636,6 @@ export default function Profile() {
               </button>
             </div>
 
-            {/* Coluna meio */}
             <div className="md:col-span-1 space-y-2">
               <h3 className="font-semibold">Localização</h3>
               {form.neighborhood && <p>Bairro: {form.neighborhood}</p>}
@@ -656,7 +665,6 @@ export default function Profile() {
               )}
             </div>
 
-            {/* Coluna direita */}
             {isCaregiver && (
               <div className="md:col-span-1">
                 <h3 className="font-semibold">Serviços</h3>
@@ -680,10 +688,8 @@ export default function Profile() {
             )}
           </div>
         ) : (
-          // EDIÇÃO
           <div className="space-y-6 text-[#5A3A22]">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {/* FOTO */}
               <div className="flex flex-col items-center gap-3 bg-[#FFF8F0] rounded-2xl p-4 shadow-sm">
                 <label htmlFor="img" className="cursor-pointer">
                   <div className="w-32 h-32 md:w-40 md:h-40 rounded-full overflow-hidden border-4 border-[#FFD700] shadow">
@@ -694,7 +700,13 @@ export default function Profile() {
                     />
                   </div>
                 </label>
-                <input id="img" type="file" accept="image/*" className="hidden" onChange={handleImage} />
+                <input
+                  id="img"
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleImage}
+                />
                 <p className="text-xs text-center text-[#5A3A22]/80">
                   Essa é a foto que aparece no seu perfil para outros usuários.
                 </p>
@@ -706,7 +718,6 @@ export default function Profile() {
                 </label>
               </div>
 
-              {/* CAMPOS */}
               <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <input
@@ -797,7 +808,6 @@ export default function Profile() {
               </div>
             </div>
 
-            {/* Serviços + cursos (cuidador) */}
             {isCaregiver && (
               <>
                 <div className="border rounded-lg p-4 bg-[#FFF6CC]/50">
@@ -897,7 +907,6 @@ export default function Profile() {
               </>
             )}
 
-            {/* Troca de senha (funciona só no modo antigo/local) */}
             <div>
               {!showPasswordChange ? (
                 <button
@@ -919,7 +928,6 @@ export default function Profile() {
               )}
             </div>
 
-            {/* Botões Salvar / Cancelar */}
             <div className="flex gap-3">
               <button
                 type="button"
