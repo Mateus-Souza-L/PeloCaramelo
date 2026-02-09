@@ -4,34 +4,35 @@ const router = express.Router();
 const pool = require("../config/db");
 const authMiddleware = require("../middleware/authMiddleware");
 
-const { createClient } = require("@supabase/supabase-js");
+// ✅ Supabase Storage (para migrar base64 -> URL)
+let _supabase = null;
+function getSupabase() {
+  if (_supabase) return _supabase;
 
-/**
- * ✅ Objetivo:
- * - LISTAGEM (/caregivers): rápida + sem base64 (foto só via Storage path)
- * - DETALHE (/caregivers/:id): pode ter fallback (se quiser), mas recomendado migrar tudo pro Storage
- * - MIGRAÇÃO (/caregivers/migrate-photos): move base64 -> Supabase Storage e salva PATH em caregivers.photo_url
- */
+  const { createClient } = require("@supabase/supabase-js");
 
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY; // ⚠️ backend only
+  if (!url || !key) {
+    throw new Error("SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY não configurados.");
+  }
+
+  _supabase = createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  return _supabase;
+}
+
+const BUCKET = process.env.SUPABASE_STORAGE_BUCKET || "pet-photos";
 const DEFAULT_DAILY_CAPACITY = Number(process.env.DEFAULT_DAILY_CAPACITY || 15);
 
-// ===== Supabase (Storage)
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const SUPABASE_STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || "pet-photos";
-
-// expiração do link assinado (segundos)
-const PROFILE_SIGNED_EXPIRES_SECONDS = Number(
-  process.env.PROFILE_SIGNED_EXPIRES_SECONDS || 3600
-);
-
-// cria client (service role = pode assinar URL e fazer upload)
-const supabase =
-  SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
-    ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-        auth: { persistSession: false },
-      })
-    : null;
+/**
+ * ✅ Regras de rating (fonte única + fallback legado)
+ * - Fonte principal: tabela reviews (reviews.reviewed_id = caregiver_id)
+ * - Fallback legado: reservations.tutor_rating (somente se ainda NÃO existe review na tabela reviews
+ *   para a mesma reserva + mesmo autor)
+ */
 
 /* ============================================================
    ✅ Schema-tolerant: users.daily_capacity pode ou não existir
@@ -75,7 +76,7 @@ function usersDailyCapacitySelectExpr() {
 const SERVICE_OPTIONS = [
   { key: "hospedagem", label: "Hospedagem" },
   { key: "creche", label: "Creche" },
-  { key: "passeios", label: "Passeios" },
+  { key: "passeios", label: "Passeios" }, // ✅ IMPORTANTE: alinhar com o front
   { key: "petSitter", label: "Visita / Pet Sitter" },
   { key: "banho", label: "Banho & Tosa" },
 ];
@@ -179,39 +180,9 @@ function hasAtLeastOneEnabledServiceWithValidPrice(servicesRaw, pricesRaw) {
 }
 
 /* ============================================================
-   ✅ Foto (Storage): path -> signed url
-   ============================================================ */
-
-function isDataUrlImage(v) {
-  const s = String(v || "");
-  return s.startsWith("data:image/") && s.includes(";base64,");
-}
-
-function sanitizeStoragePath(v) {
-  const s = String(v || "").trim();
-  if (!s) return null;
-  if (isDataUrlImage(s)) return null; // ❗não aceitar base64 como "path"
-  // se vier URL completa, tenta extrair path do bucket (melhor manter só path no DB)
-  // mas aqui vamos aceitar como "path" se não começar com http.
-  if (/^https?:\/\//i.test(s)) return null;
-  return s;
-}
-
-async function createSignedProfileUrl(path) {
-  if (!supabase) return null;
-  const clean = sanitizeStoragePath(path);
-  if (!clean) return null;
-
-  const { data, error } = await supabase.storage
-    .from(SUPABASE_STORAGE_BUCKET)
-    .createSignedUrl(clean, PROFILE_SIGNED_EXPIRES_SECONDS);
-
-  if (error) return null;
-  return data?.signedUrl || null;
-}
-
-/* ============================================================
    ✅ SQL fields: LIST vs DETAIL
+   - LIST: leve (evita payload gigante)
+   - DETAIL: completo (perfil)
    ============================================================ */
 
 function listFieldsSql() {
@@ -219,12 +190,15 @@ function listFieldsSql() {
     u.id,
     u.name,
     u.role,
+
+    -- ✅ LISTA: prioriza URL (cg.photo_url) e faz fallback p/ u.image (pode ser base64 enquanto migra)
+    COALESCE(NULLIF(cg.photo_url, ''), NULLIF(u.image, '')) AS image,
+
     u.neighborhood,
     u.city,
     u.services,
     u.prices,
-    ${usersDailyCapacitySelectExpr()},
-    NULLIF(cg.photo_url, '') AS photo_path
+    ${usersDailyCapacitySelectExpr()}
   `;
 }
 
@@ -234,6 +208,10 @@ function detailFieldsSql() {
     u.name,
     u.email,
     u.role,
+
+    -- ✅ DETALHE: URL primeiro, depois base64 legado
+    COALESCE(NULLIF(cg.photo_url, ''), NULLIF(u.image, '')) AS image,
+
     u.bio,
     u.phone,
     u.address,
@@ -243,9 +221,7 @@ function detailFieldsSql() {
     u.services,
     u.prices,
     u.courses,
-    ${usersDailyCapacitySelectExpr()},
-    NULLIF(cg.photo_url, '') AS photo_path,
-    u.image AS legacy_user_image
+    ${usersDailyCapacitySelectExpr()}
   `;
 }
 
@@ -372,6 +348,96 @@ async function hasCaregiverProfile(userId) {
 }
 
 /* ============================================================
+   ✅ Admin check robusto (não depende do JWT ter role/admin_level)
+   - aceita role: admin / admin_master
+   - OU admin_level >= 1
+   ============================================================ */
+async function ensureAdminFromDb(userId) {
+  const id = Number(userId);
+  if (!Number.isFinite(id) || id <= 0) return false;
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT role, admin_level FROM users WHERE id = $1 LIMIT 1`,
+      [id]
+    );
+    const r = rows?.[0];
+    const role = String(r?.role || "").toLowerCase();
+    const lvl = Number(r?.admin_level || 0);
+    return role === "admin" || role === "admin_master" || lvl >= 1;
+  } catch {
+    return false;
+  }
+}
+
+/* ============================================================
+   ✅ Helpers Supabase: base64(dataURL) -> upload -> public URL
+   ============================================================ */
+
+function parseDataUrl(dataUrl) {
+  const s = String(dataUrl || "");
+  if (!s.startsWith("data:")) return null;
+
+  // data:image/jpeg;base64,AAAA
+  const comma = s.indexOf(",");
+  if (comma < 0) return null;
+
+  const meta = s.slice(5, comma); // "image/jpeg;base64"
+  const b64 = s.slice(comma + 1);
+
+  const [mimeRaw, ...rest] = meta.split(";");
+  const mime = String(mimeRaw || "").trim().toLowerCase();
+  const isBase64 = rest.some((x) => String(x).trim().toLowerCase() === "base64");
+  if (!mime || !isBase64) return null;
+
+  return { mime, base64: b64 };
+}
+
+function extFromMime(mime) {
+  if (!mime) return "jpg";
+  if (mime.includes("png")) return "png";
+  if (mime.includes("webp")) return "webp";
+  if (mime.includes("gif")) return "gif";
+  return "jpg"; // jpeg/jpg default
+}
+
+async function uploadProfilePhotoFromUsersImage({ userId, dataUrl }) {
+  const parsed = parseDataUrl(dataUrl);
+  if (!parsed) return { ok: false, reason: "NOT_DATA_URL" };
+
+  const { mime, base64 } = parsed;
+  let buffer;
+  try {
+    buffer = Buffer.from(base64, "base64");
+  } catch {
+    return { ok: false, reason: "INVALID_BASE64" };
+  }
+  if (!buffer || buffer.length < 10) return { ok: false, reason: "EMPTY" };
+
+  const supabase = getSupabase();
+  const ext = extFromMime(mime);
+
+  // path estável (sobrescreve, mantendo cache-control)
+  const path = `profiles/${userId}/avatar.${ext}`;
+
+  const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, buffer, {
+    upsert: true,
+    contentType: mime,
+    cacheControl: "31536000", // 1 ano (CDN cache) — ok porque path é fixo e upsert atualiza
+  });
+
+  if (upErr) {
+    return { ok: false, reason: "UPLOAD_FAILED", details: upErr.message };
+  }
+
+  const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
+  const publicUrl = data?.publicUrl || null;
+  if (!publicUrl) return { ok: false, reason: "NO_PUBLIC_URL" };
+
+  return { ok: true, publicUrl, path, mime, bytes: buffer.length };
+}
+
+/* ============================================================
    ✅ POST /caregivers/me (idempotente)
    - cria caregiver_profile se não existe
    - salva services (OBJETO) + daily_capacity
@@ -487,102 +553,110 @@ router.post("/me", authMiddleware, async (req, res) => {
 });
 
 /* ============================================================
-   ✅ POST /caregivers/migrate-photos  (ADMIN ONLY)
-   - move base64 de caregivers.photo_url -> Supabase Storage (JPG)
-   - salva PATH em caregivers.photo_url (ex: profiles/52.jpg)
+   ✅ POST /caregivers/migrate-photos (ADMIN)
+   - migra users.image (dataURL base64) -> Supabase Storage -> caregivers.photo_url
+   - pensado pra performance: busca e migra só quem precisa
+   - querystring:
+     - ?limit=50 (padrão 50)
+     - ?dry=1 (não grava no banco)
    ============================================================ */
 router.post("/migrate-photos", authMiddleware, async (req, res) => {
-  try {
-    // proteção simples por role (ajuste se seu "admin" for diferente)
-    const role = String(req.user?.role || "").toLowerCase();
-    if (role !== "admin") {
-      return res.status(403).json({ error: "Apenas admin." });
-    }
+  const userId = req.user?.id;
+  if (!userId) return res.status(401).json({ error: "Não autenticado." });
 
-    if (!supabase) {
-      return res.status(500).json({
-        error:
-          "Supabase não configurado no backend (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY).",
+  const isAdmin = await ensureAdminFromDb(userId);
+  if (!isAdmin) return res.status(403).json({ error: "Apenas admin." });
+
+  const limit = Math.max(1, Math.min(500, Number(req.query.limit || 50)));
+  const dryRun = String(req.query.dry || "") === "1";
+
+  try {
+    // pega somente quem tem base64 em users.image e ainda não tem photo_url
+    const { rows } = await pool.query(
+      `
+      SELECT
+        u.id AS user_id,
+        u.image AS users_image
+      FROM users u
+      LEFT JOIN caregivers c ON c.user_id = u.id
+      WHERE u.image IS NOT NULL
+        AND u.image LIKE 'data:%;base64,%'
+        AND (c.photo_url IS NULL OR c.photo_url = '')
+      ORDER BY u.id ASC
+      LIMIT $1
+      `,
+      [limit]
+    );
+
+    if (!rows?.length) {
+      return res.json({
+        ok: true,
+        dryRun,
+        checked: 0,
+        migrated: 0,
+        skipped: 0,
+        message: "Nada para migrar (sem base64 pendente ou já existe photo_url).",
       });
     }
 
-    // pega somente os que estão com base64
-    const { rows } = await pool.query(
-      `
-      SELECT id, user_id, photo_url
-      FROM public.caregivers
-      WHERE photo_url IS NOT NULL
-        AND photo_url LIKE 'data:image/%;base64,%'
-      ORDER BY id ASC
-      LIMIT 500
-      `
-    );
+    const report = {
+      ok: true,
+      dryRun,
+      checked: rows.length,
+      migrated: 0,
+      skipped: 0,
+      items: [],
+    };
 
-    const migrated = [];
-    const failed = [];
+    for (const r of rows) {
+      const uid = Number(r.user_id);
+      const dataUrl = r.users_image;
 
-    for (const r of rows || []) {
-      const userId = Number(r.user_id);
-      const dataUrl = String(r.photo_url || "");
+      const up = await uploadProfilePhotoFromUsersImage({ userId: uid, dataUrl });
 
-      if (!Number.isFinite(userId) || userId <= 0 || !isDataUrlImage(dataUrl)) {
+      if (!up.ok) {
+        report.skipped += 1;
+        report.items.push({ user_id: uid, ok: false, reason: up.reason, details: up.details });
         continue;
       }
 
-      try {
-        const base64 = dataUrl.split(";base64,")[1] || "";
-        const buf = Buffer.from(base64, "base64");
-
-        // caminho final (JPG padrão)
-        const path = `profiles/${userId}.jpg`;
-
-        const { error: upErr } = await supabase.storage
-          .from(SUPABASE_STORAGE_BUCKET)
-          .upload(path, buf, {
-            contentType: "image/jpeg",
-            upsert: true,
-            cacheControl: "3600",
-          });
-
-        if (upErr) throw upErr;
-
+      if (!dryRun) {
+        // garante que existe registro em caregivers
         await pool.query(
           `
-          UPDATE public.caregivers
-          SET photo_url = $1
-          WHERE id = $2
+          INSERT INTO caregivers (user_id)
+          VALUES ($1)
+          ON CONFLICT (user_id) DO NOTHING
           `,
-          [path, r.id]
+          [uid]
         );
 
-        migrated.push({ caregiver_id: r.id, user_id: userId, path });
-      } catch (e) {
-        failed.push({
-          caregiver_id: r.id,
-          user_id: r.user_id,
-          error: String(e?.message || e),
-        });
+        // grava URL
+        await pool.query(
+          `
+          UPDATE caregivers
+          SET photo_url = $1
+          WHERE user_id = $2
+          `,
+          [up.publicUrl, uid]
+        );
       }
+
+      report.migrated += 1;
+      report.items.push({ user_id: uid, ok: true, photo_url: up.publicUrl, bytes: up.bytes });
     }
 
-    return res.json({
-      ok: true,
-      found: (rows || []).length,
-      migrated_count: migrated.length,
-      failed_count: failed.length,
-      migrated,
-      failed,
-    });
+    return res.json(report);
   } catch (err) {
-    console.error("Erro em POST /caregivers/migrate-photos:", err);
+    console.error("Erro em POST /caregivers/migrate-photos:", err?.message || err);
     return res.status(500).json({ error: "Erro ao migrar fotos." });
   }
 });
 
 /* ============================================================
-   ✅ GET /caregivers  (LISTAGEM LEVE + RÁPIDA)
-   - foto: SOMENTE via Storage PATH -> signed url
-   - nunca retorna base64 na lista
+   ✅ GET /caregivers  (LISTAGEM LEVE)
+   - retorna image como URL (cg.photo_url) e fallback em u.image (base64 legado)
+   - filtro: só retorna cuidadores com pelo menos 1 serviço ativo E preço válido
    ============================================================ */
 router.get("/", async (req, res) => {
   try {
@@ -619,23 +693,7 @@ router.get("/", async (req, res) => {
       hasAtLeastOneEnabledServiceWithValidPrice(c.services, c.prices)
     );
 
-    // assina urls (somente se tiver path válido)
-    const out = [];
-    for (const c of filtered) {
-      const photoPath = sanitizeStoragePath(c.photo_path);
-      let image = null;
-
-      if (photoPath) {
-        image = await createSignedProfileUrl(photoPath);
-      }
-
-      out.push({
-        ...c,
-        image, // ✅ front usa image
-      });
-    }
-
-    return res.json({ caregivers: out });
+    return res.json({ caregivers: filtered });
   } catch (err) {
     console.error("Erro ao buscar cuidadores:", err);
     return res.status(500).json({ error: "Erro ao buscar cuidadores." });
@@ -643,9 +701,9 @@ router.get("/", async (req, res) => {
 });
 
 /* ============================================================
-   ✅ GET /caregivers/:id  (DETALHE)
-   - tenta signed url do storage
-   - fallback opcional pro legado (u.image) se existir e for pequeno
+   ✅ GET /caregivers/:id  (DETALHE COMPLETO)
+   - aceita role caregiver OU cp existe
+   - se não tiver serviço ativo + preço válido, responde 404
    ============================================================ */
 router.get("/:id", async (req, res) => {
   try {
@@ -694,31 +752,7 @@ router.get("/:id", async (req, res) => {
       return res.status(404).json({ error: "Cuidador não encontrado." });
     }
 
-    // prioridade: storage path
-    const photoPath = sanitizeStoragePath(caregiver.photo_path);
-    let image = null;
-
-    if (photoPath) {
-      image = await createSignedProfileUrl(photoPath);
-    } else {
-      // fallback opcional: se você quiser mostrar base64 no detalhe
-      const legacy = String(caregiver.legacy_user_image || "");
-      if (legacy && legacy.length <= 200000 && legacy.startsWith("data:image/")) {
-        image = legacy;
-      }
-    }
-
-    // devolve no formato que o front espera
-    const payload = {
-      ...caregiver,
-      image,
-    };
-
-    // não expõe campos internos
-    delete payload.photo_path;
-    delete payload.legacy_user_image;
-
-    return res.json({ caregiver: payload });
+    return res.json({ caregiver });
   } catch (err) {
     console.error("Erro ao buscar cuidador:", err);
     return res.status(500).json({ error: "Erro ao buscar cuidador." });
