@@ -4,16 +4,13 @@ const express = require("express");
 const cors = require("cors");
 const morgan = require("morgan");
 const http = require("http");
-const compression = require("compression");
 const path = require("path");
+const compression = require("compression");
 
 const app = express();
 
 // ✅ Render/proxy: necessário para express-rate-limit e IP real
 app.set("trust proxy", 1);
-
-// (opcional, mas bom)
-app.disable("x-powered-by");
 
 /* ===========================================================
    ✅ CORS
@@ -49,16 +46,12 @@ app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
 
 /* ===========================================================
-   ✅ Performance: Compression (você já instalou)
+   ✅ Compressão (você já instalou: npm i compression)
    =========================================================== */
 app.use(
   compression({
-    // evita compressão em alguns proxies antigos (safe default)
-    filter: (req, res) => {
-      const h = req.headers["x-no-compression"];
-      if (h) return false;
-      return compression.filter(req, res);
-    },
+    // evita comprimir respostas minúsculas
+    threshold: 1024,
   })
 );
 
@@ -67,21 +60,6 @@ app.use(
    =========================================================== */
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
-
-/* ===========================================================
-   ✅ Static (opcional) — se suas fotos forem arquivos/caminhos
-   Ex.: user.image = "/uploads/abc.jpg"
-   =========================================================== */
-const uploadsDir = path.join(__dirname, "..", "uploads");
-app.use(
-  "/uploads",
-  express.static(uploadsDir, {
-    // cache para arquivos estáticos (imagens)
-    maxAge: "7d",
-    etag: true,
-    immutable: false,
-  })
-);
 
 /* ===========================================================
    ✅ DB
@@ -108,6 +86,25 @@ app.get("/health/db", async (req, res) => {
    ✅ Logs
    =========================================================== */
 app.use(morgan("dev"));
+
+/* ===========================================================
+   ✅ Static (opcional)
+   - Se você usa upload local, isso libera URLs tipo:
+     https://api.../uploads/arquivo.png
+   - Se a pasta não existir, não quebra nada.
+   =========================================================== */
+try {
+  const uploadsDir = path.join(__dirname, "..", "uploads");
+  app.use(
+    "/uploads",
+    express.static(uploadsDir, {
+      maxAge: "7d",
+      immutable: true,
+    })
+  );
+} catch {
+  // ignore
+}
 
 /* ===========================================================
    ✅ Debug: Email (Resend) - remover depois
@@ -376,8 +373,8 @@ httpServer.listen(PORT, () => {
   console.log("🌐 CORS_ORIGIN =", process.env.CORS_ORIGIN || "(default localhost)");
   console.log("🌐 Vercel preview liberado: https://pelo-caramelo-*.vercel.app");
   console.log("🩺 Health endpoints ativos: /health e /health/db");
+  console.log("🗜️ Compression ativo");
   console.log("🔌 Socket.IO ativo");
-  console.log("🖼️  Static uploads em /uploads (se existir pasta):", uploadsDir);
 });
 
 module.exports = app;
