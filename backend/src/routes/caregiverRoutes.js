@@ -190,6 +190,22 @@ function baseFieldsSql() {
   `;
 }
 
+/**
+ * ✅ LIST FIELDS (para /caregivers - cards)
+ * Mantém somente o necessário para a busca ficar rápida.
+ */
+function listFieldsSql() {
+  return `
+    u.id,
+    u.name,
+    u.image,
+    u.neighborhood,
+    u.city,
+    u.services,
+    u.prices
+  `;
+}
+
 const RATING_LATERAL = `
 LEFT JOIN LATERAL (
   WITH union_ratings AS (
@@ -354,7 +370,9 @@ router.post("/me", authMiddleware, async (req, res) => {
     const already = await hasCaregiverProfile(userId);
     if (!already) {
       if (linkCol === "caregiver_id") {
-        await pool.query(`INSERT INTO caregiver_profiles (caregiver_id) VALUES ($1)`, [userId]);
+        await pool.query(`INSERT INTO caregiver_profiles (caregiver_id) VALUES ($1)`, [
+          userId,
+        ]);
       } else {
         await pool.query(`INSERT INTO caregiver_profiles (user_id) VALUES ($1)`, [userId]);
       }
@@ -433,6 +451,10 @@ router.post("/me", authMiddleware, async (req, res) => {
    - NÃO depende mais de caregiver_profiles para quem já é role='caregiver'
    - ainda suporta multi-perfil (cp existe mesmo se role != caregiver)
    - filtro (FIX): só retorna cuidadores com pelo menos 1 serviço ativo E preço válido
+   ✅ PERF (NOVO):
+   - payload leve para listagem
+   - sanitiza image base64 / gigante (front usa DEFAULT_IMG)
+   - cache curto (60s)
    ============================================================ */
 router.get("/", async (req, res) => {
   try {
@@ -443,7 +465,7 @@ router.get("/", async (req, res) => {
 
     const query = `
       SELECT
-        ${baseFieldsSql()},
+        ${listFieldsSql()},
         cp.created_at AS caregiver_profile_created_at,
         COALESCE(rs.rating_avg, 0)   AS rating_avg,
         COALESCE(rs.rating_count, 0) AS rating_count,
@@ -463,10 +485,30 @@ router.get("/", async (req, res) => {
 
     const { rows } = await pool.query(query);
 
+    // ✅ PERF: sanitiza imagens base64 ou gigantes (evita payload enorme)
+    const sanitized = (rows || []).map((c) => {
+      const img = c?.image;
+
+      // se vier base64, troca por null para o front usar DEFAULT_IMG (/paw.png)
+      if (typeof img === "string" && img.startsWith("data:image/")) {
+        return { ...c, image: null };
+      }
+
+      // proteção extra: strings gigantes viram null
+      if (typeof img === "string" && img.length > 10_000) {
+        return { ...c, image: null };
+      }
+
+      return c;
+    });
+
     // ✅ FIX: precisa ter serviço ativo + preço válido
-    const filtered = (rows || []).filter((c) =>
+    const filtered = sanitized.filter((c) =>
       hasAtLeastOneEnabledServiceWithValidPrice(c.services, c.prices)
     );
+
+    // ✅ cache curto (melhora navegação repetida)
+    res.set("Cache-Control", "public, max-age=60");
 
     return res.json({ caregivers: filtered });
   } catch (err) {
