@@ -159,6 +159,17 @@ function hasAtLeastOneEnabledServiceWithValidPrice(servicesRaw, pricesRaw) {
 }
 
 /* ============================================================
+   ✅ Helpers: imagem performance-first
+   - LISTA: nunca retornar base64/data: (payload gigante)
+   - DETALHE: pode retornar base64 (fallback), mas ideal é URL do storage
+   ============================================================ */
+
+function isProbablyDataUrl(v) {
+  const s = String(v || "");
+  return s.startsWith("data:image/");
+}
+
+/* ============================================================
    ✅ SQL fields: LIST vs DETAIL
    - LIST: leve (evita payload gigante)
    - DETAIL: completo (perfil)
@@ -170,13 +181,17 @@ function listFieldsSql() {
     u.name,
     u.role,
 
-    -- ✅ LISTA: só URL leve (não base64)
+    -- ✅ LISTA (performance-first):
+    -- 1) usa caregivers.photo_url se existir (URL leve)
+    -- 2) NÃO envia base64/data: (mesmo se estiver em users.image)
     NULLIF(cg.photo_url, '') AS image,
 
     u.neighborhood,
     u.city,
+
     u.services,
     u.prices,
+
     ${usersDailyCapacitySelectExpr()}
   `;
 }
@@ -188,7 +203,8 @@ function detailFieldsSql() {
     u.email,
     u.role,
 
-    -- ✅ DETALHE: pode usar fallback para base64
+    -- ✅ DETALHE:
+    -- prioriza URL leve do caregiver (quando existir), senão usa users.image (pode ser base64 legado)
     COALESCE(NULLIF(cg.photo_url, ''), u.image) AS image,
 
     u.bio,
@@ -442,9 +458,10 @@ router.post("/me", authMiddleware, async (req, res) => {
 });
 
 /* ============================================================
-   ✅ GET /caregivers  (LISTAGEM LEVE)
-   - NÃO depende mais de caregiver_profiles para quem já é role='caregiver'
-   - suporta multi-perfil (cp existe mesmo se role != caregiver)
+   ✅ GET /caregivers  (LISTAGEM LEVE - PERFORMANCE FIRST)
+   - retorna SOMENTE URL leve (caregivers.photo_url) em "image"
+   - nunca envia base64/data: na lista (evita payload gigante)
+   - suporta multi-perfil (role caregiver OU caregiver_profiles existe)
    - filtro: só retorna cuidadores com pelo menos 1 serviço ativo E preço válido
    ============================================================ */
 router.get("/", async (req, res) => {
@@ -462,7 +479,6 @@ router.get("/", async (req, res) => {
         COALESCE(rs.rating_count, 0) AS rating_count,
         COALESCE(done.completed_reservations, 0) AS completed_reservations
       FROM users u
-      -- ✅ para priorizar caregivers.photo_url (quando existir) e fallback para users.image
       LEFT JOIN caregivers cg
         ON cg.user_id = u.id
       LEFT JOIN caregiver_profiles cp
@@ -479,9 +495,13 @@ router.get("/", async (req, res) => {
 
     const { rows } = await pool.query(query);
 
-    const filtered = (rows || []).filter((c) =>
-      hasAtLeastOneEnabledServiceWithValidPrice(c.services, c.prices)
-    );
+    const filtered = (rows || [])
+      .filter((c) => hasAtLeastOneEnabledServiceWithValidPrice(c.services, c.prices))
+      .map((c) => {
+        // segurança extra: se por algum motivo "image" vier data:
+        if (c?.image && isProbablyDataUrl(c.image)) return { ...c, image: null };
+        return c;
+      });
 
     return res.json({ caregivers: filtered });
   } catch (err) {
@@ -492,7 +512,8 @@ router.get("/", async (req, res) => {
 
 /* ============================================================
    ✅ GET /caregivers/:id  (DETALHE COMPLETO)
-   - aceita role caregiver OU cp existe
+   - prioriza caregivers.photo_url, fallback em users.image (pode ser base64 legado)
+   - aceita role caregiver OU caregiver_profiles existe
    - se não tiver serviço ativo + preço válido, responde 404
    ============================================================ */
 router.get("/:id", async (req, res) => {
@@ -515,7 +536,6 @@ router.get("/:id", async (req, res) => {
         COALESCE(rs.rating_count, 0) AS rating_count,
         COALESCE(done.completed_reservations, 0) AS completed_reservations
       FROM users u
-      -- ✅ para priorizar caregivers.photo_url (quando existir) e fallback para users.image
       LEFT JOIN caregivers cg
         ON cg.user_id = u.id
       LEFT JOIN caregiver_profiles cp
