@@ -4,8 +4,7 @@ const express = require("express");
 const cors = require("cors");
 const morgan = require("morgan");
 const http = require("http");
-const path = require("path");
-const compression = require("compression");
+const compression = require("compression"); // ✅ NOVO
 
 const app = express();
 
@@ -46,20 +45,19 @@ app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
 
 /* ===========================================================
-   ✅ Compressão (você já instalou: npm i compression)
-   =========================================================== */
-app.use(
-  compression({
-    // evita comprimir respostas minúsculas
-    threshold: 1024,
-  })
-);
-
-/* ===========================================================
    ✅ Body parsers
    =========================================================== */
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
+/* ===========================================================
+   ✅ Compressão (melhora payload do /caregivers e outros)
+   =========================================================== */
+app.use(
+  compression({
+    threshold: 1024, // só comprime a partir de 1KB
+  })
+);
 
 /* ===========================================================
    ✅ DB
@@ -86,25 +84,6 @@ app.get("/health/db", async (req, res) => {
    ✅ Logs
    =========================================================== */
 app.use(morgan("dev"));
-
-/* ===========================================================
-   ✅ Static (opcional)
-   - Se você usa upload local, isso libera URLs tipo:
-     https://api.../uploads/arquivo.png
-   - Se a pasta não existir, não quebra nada.
-   =========================================================== */
-try {
-  const uploadsDir = path.join(__dirname, "..", "uploads");
-  app.use(
-    "/uploads",
-    express.static(uploadsDir, {
-      maxAge: "7d",
-      immutable: true,
-    })
-  );
-} catch {
-  // ignore
-}
 
 /* ===========================================================
    ✅ Debug: Email (Resend) - remover depois
@@ -272,17 +251,13 @@ async function blockedGuard(req, res, next) {
 app.use("/auth", authRoutes);
 app.use("/caregivers", caregiverRoutes);
 
-// ✅ NOVO: contato público (orçamento de palestra)
+// ✅ contato público (orçamento de palestra)
 app.use("/contact", contactRoutes);
 
 /* ===========================================================
    ✅ Rotas mistas
    =========================================================== */
-// ✅ /availability volta a ser mista:
-// - GET público para tutor ver datas
-// - /me protegido dentro de availabilityRoutes.js
 app.use("/availability", availabilityRoutes);
-
 app.use("/notifications", notificationRoutes);
 
 /* ===========================================================
@@ -373,7 +348,7 @@ httpServer.listen(PORT, () => {
   console.log("🌐 CORS_ORIGIN =", process.env.CORS_ORIGIN || "(default localhost)");
   console.log("🌐 Vercel preview liberado: https://pelo-caramelo-*.vercel.app");
   console.log("🩺 Health endpoints ativos: /health e /health/db");
-  console.log("🗜️ Compression ativo");
+  console.log("🗜️ compression ativo");
   console.log("🔌 Socket.IO ativo");
 });
 
