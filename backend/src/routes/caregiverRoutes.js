@@ -170,15 +170,13 @@ function listFieldsSql() {
     u.name,
     u.role,
 
-    -- ✅ prioriza URL (caregivers.photo_url), fallback para base64 (users.image)
-    COALESCE(NULLIF(cg.photo_url, ''), u.image) AS image,
+    -- ✅ LISTA: só URL leve (não base64)
+    NULLIF(cg.photo_url, '') AS image,
 
     u.neighborhood,
     u.city,
-
     u.services,
     u.prices,
-
     ${usersDailyCapacitySelectExpr()}
   `;
 }
@@ -190,7 +188,7 @@ function detailFieldsSql() {
     u.email,
     u.role,
 
-    -- ✅ prioriza URL (caregivers.photo_url), fallback para base64 (users.image)
+    -- ✅ DETALHE: pode usar fallback para base64
     COALESCE(NULLIF(cg.photo_url, ''), u.image) AS image,
 
     u.bio,
