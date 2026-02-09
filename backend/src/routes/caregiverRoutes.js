@@ -170,12 +170,8 @@ function listFieldsSql() {
     u.name,
     u.role,
 
-    -- ✅ evita payload gigante (ex: base64). Se for grande, retorna NULL e o front cai no /paw.png
-    CASE
-      WHEN u.image IS NULL THEN NULL
-      WHEN length(u.image) <= 600 THEN u.image
-      ELSE NULL
-    END AS image,
+    -- ✅ prioriza URL (caregivers.photo_url), fallback para base64 (users.image)
+    COALESCE(NULLIF(cg.photo_url, ''), u.image) AS image,
 
     u.neighborhood,
     u.city,
@@ -193,7 +189,10 @@ function detailFieldsSql() {
     u.name,
     u.email,
     u.role,
-    u.image,
+
+    -- ✅ prioriza URL (caregivers.photo_url), fallback para base64 (users.image)
+    COALESCE(NULLIF(cg.photo_url, ''), u.image) AS image,
+
     u.bio,
     u.phone,
     u.address,
@@ -449,7 +448,6 @@ router.post("/me", authMiddleware, async (req, res) => {
    - NÃO depende mais de caregiver_profiles para quem já é role='caregiver'
    - suporta multi-perfil (cp existe mesmo se role != caregiver)
    - filtro: só retorna cuidadores com pelo menos 1 serviço ativo E preço válido
-   - ✅ PERFORMANCE: remove campos pesados (bio, address, courses, etc)
    ============================================================ */
 router.get("/", async (req, res) => {
   try {
@@ -466,6 +464,9 @@ router.get("/", async (req, res) => {
         COALESCE(rs.rating_count, 0) AS rating_count,
         COALESCE(done.completed_reservations, 0) AS completed_reservations
       FROM users u
+      -- ✅ para priorizar caregivers.photo_url (quando existir) e fallback para users.image
+      LEFT JOIN caregivers cg
+        ON cg.user_id = u.id
       LEFT JOIN caregiver_profiles cp
         ON ${joinExpr}
       ${RATING_LATERAL}
@@ -516,6 +517,9 @@ router.get("/:id", async (req, res) => {
         COALESCE(rs.rating_count, 0) AS rating_count,
         COALESCE(done.completed_reservations, 0) AS completed_reservations
       FROM users u
+      -- ✅ para priorizar caregivers.photo_url (quando existir) e fallback para users.image
+      LEFT JOIN caregivers cg
+        ON cg.user_id = u.id
       LEFT JOIN caregiver_profiles cp
         ON ${joinExpr}
       ${RATING_LATERAL}
