@@ -448,6 +448,7 @@ router.get("/", async (req, res) => {
     `;
 
     const { rows } = await pool.query(query);
+    res.set("Cache-Control", "public, max-age=30, s-maxage=60, stale-while-revalidate=60");
     return res.json({ caregivers: rows || [] });
   } catch (err) {
     console.error("Erro ao buscar cuidadores:", err);
