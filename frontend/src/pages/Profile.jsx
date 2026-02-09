@@ -1,5 +1,5 @@
 // src/pages/Profile.jsx
-import { useEffect, useState, useMemo, useRef } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../components/ToastProvider";
@@ -52,6 +52,11 @@ function normalizeMoneyString(v) {
   // se só vírgula: "10,5"
   if (cleaned.includes(",")) return cleaned.replace(",", ".");
   return cleaned;
+}
+
+function isDataUrlImage(v) {
+  const s = String(v || "");
+  return s.startsWith("data:image/") && s.includes(";base64,");
 }
 
 const buildFormFromUser = (user) => {
@@ -147,9 +152,7 @@ function ConfirmPasswordModal({ open, value, onChange, onCancel, onConfirm }) {
         }}
       >
         <div className="bg-white p-6 rounded-xl shadow-lg w-full max-w-sm">
-          <h2 className="text-lg font-semibold text-[#5A3A22] mb-3 text-center">
-            Confirme sua senha
-          </h2>
+          <h2 className="text-lg font-semibold text-[#5A3A22] mb-3 text-center">Confirme sua senha</h2>
           <input
             type="password"
             value={value}
@@ -281,10 +284,11 @@ export default function Profile() {
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
-  const avgRating = useMemo(
-    () => getAvgRating(modeForAvg, user, reservations),
-    [modeForAvg, user, reservations]
-  );
+  const avgRating = useMemo(() => getAvgRating(modeForAvg, user, reservations), [
+    modeForAvg,
+    user,
+    reservations,
+  ]);
 
   const handleChange = (field, value) => setForm((f) => ({ ...f, [field]: value }));
 
@@ -396,6 +400,36 @@ export default function Profile() {
 
       // Se temos backend (token) → envia PATCH /users/me
       if (token) {
+        // ✅ se for cuidador e a imagem for base64, sobe no Supabase e salva em caregivers.photo_url
+        //    (isso deixa a listagem MUITO mais rápida, porque não manda base64 no /caregivers)
+        let uploadedPhotoUrl = null;
+
+        if (isCaregiver && isDataUrlImage(restForm.image)) {
+          try {
+            const photoResp = await authRequest("/caregivers/me/photo", token, {
+              method: "PATCH",
+              body: JSON.stringify({ image: restForm.image }),
+            });
+
+            uploadedPhotoUrl = photoResp?.photo_url || null;
+
+            if (!uploadedPhotoUrl) {
+              showToast("Não foi possível salvar a foto. Tente novamente.", "error");
+              return;
+            }
+
+            // ✅ atualiza o form imediatamente para já refletir URL
+            setForm((f) => ({ ...f, image: uploadedPhotoUrl }));
+          } catch (err) {
+            console.error("Erro ao subir foto do cuidador:", err);
+            showToast("Erro ao salvar a foto. Tente novamente.", "error");
+            return;
+          }
+        }
+
+        // ✅ se subiu, daqui pra frente usamos URL; se não subiu, mantém como está (pode ser URL ou vazio)
+        const finalImageValue = uploadedPhotoUrl ? uploadedPhotoUrl : restForm.image || null;
+
         const payload = {
           phone: restForm.phone || null,
           address: restForm.address || null,
@@ -403,7 +437,7 @@ export default function Profile() {
           neighborhood: restForm.neighborhood || null,
           cep: restForm.cep || null,
           bio: restForm.bio || null,
-          image: restForm.image || null,
+          image: finalImageValue,
         };
 
         // ✅ só admin_master pode enviar name
@@ -439,7 +473,7 @@ export default function Profile() {
           payload.courses = Array.isArray(restForm.courses) ? restForm.courses : [];
         }
 
-        // 1) salva no backend (isso aqui é o que importa)
+        // 1) salva no backend
         const data = await authRequest("/users/me", token, {
           method: "PATCH",
           body: JSON.stringify(payload),
@@ -450,18 +484,19 @@ export default function Profile() {
           : {
               ...user,
               ...restForm,
-              // ✅ garante email
               email: user.email,
-              // ✅ garante nome se não for admin_master
               name: canEditName ? restForm.name : user.name,
             };
 
-        // 2) atualiza o contexto (UI deve reagir imediatamente)
-        typeof setUser === "function" && setUser(backendUser);
+        // ✅ garante que a UI use a URL logo após o upload
+        const finalUser = uploadedPhotoUrl ? { ...backendUser, image: uploadedPhotoUrl } : backendUser;
+
+        // 2) atualiza o contexto
+        typeof setUser === "function" && setUser(finalUser);
 
         // 3) compat: tenta atualizar localStorage, mas NÃO deixa isso quebrar o fluxo no iPhone
         try {
-          const safeForStorage = stripHeavyImageIfNeeded(backendUser);
+          const safeForStorage = stripHeavyImageIfNeeded(finalUser);
 
           const users = JSON.parse(localStorage.getItem("users")) || [];
           const updatedList = users.some((u) => u.id === safeForStorage.id)
@@ -472,21 +507,19 @@ export default function Profile() {
           localStorage.setItem("currentUser", JSON.stringify(safeForStorage));
           window.dispatchEvent(new Event("users-updated"));
         } catch (lsErr) {
-          // ✅ MOBILE SAFARI: não falha o salvamento por causa de quota
           console.warn("[Profile] localStorage falhou:", lsErr);
 
           if (isQuotaExceededError(lsErr)) {
-            // tenta pelo menos atualizar currentUser sem image
             try {
-              const safeNoImage = { ...backendUser, image: null };
+              const safeNoImage = { ...finalUser, image: null };
               localStorage.setItem("currentUser", JSON.stringify(safeNoImage));
             } catch {
-              // ignore total
+              // ignore
             }
           }
         }
 
-        // 4) feedback + sair do modo edição (isso era o que “travava” no iPhone)
+        // 4) feedback + sair do modo edição
         showToast("Perfil atualizado com sucesso! 🐾", "success");
         setEditing(false);
         setShowPasswordChange(false);
@@ -524,7 +557,6 @@ export default function Profile() {
         console.error(e);
 
         if (isQuotaExceededError(e)) {
-          // aqui também: não deixa o iPhone “travar” sem feedback
           showToast("Alterações salvas, mas seu navegador está sem espaço para cache. ✅", "notify");
           setEditing(false);
           setShowPasswordChange(false);
@@ -537,7 +569,6 @@ export default function Profile() {
       }
     } catch (e) {
       console.error("Erro ao atualizar perfil no servidor:", e);
-      // mantém mensagem como estava para não mexer no comportamento geral
       showToast("Erro ao salvar perfil no servidor.", "error");
     } finally {
       setSaving(false);
@@ -590,9 +621,7 @@ export default function Profile() {
               />
               <p className="text-lg font-semibold flex items-center gap-2">
                 <span>{form.name}</span>
-                {avgRating && (
-                  <span className="text-sm font-normal text-[#5A3A22]">⭐ {avgRating}</span>
-                )}
+                {avgRating && <span className="text-sm font-normal text-[#5A3A22]">⭐ {avgRating}</span>}
               </p>
               <p className="text-sm opacity-90">{form.email}</p>
               {form.bio && <p className="text-sm mt-2 text-center whitespace-pre-line">{form.bio}</p>}
@@ -625,9 +654,7 @@ export default function Profile() {
                   )}
 
                   <h3 className="font-semibold mt-4">Capacidade diária</h3>
-                  <p className="text-sm">
-                    {Number(form.daily_capacity) || DEFAULT_DAILY_CAPACITY} reserva(s) por dia
-                  </p>
+                  <p className="text-sm">{Number(form.daily_capacity) || DEFAULT_DAILY_CAPACITY} reserva(s) por dia</p>
                 </>
               )}
             </div>
@@ -696,9 +723,7 @@ export default function Profile() {
                     aria-readonly={!canEditName ? "true" : "false"}
                   />
                   <p className="text-xs text-gray-500 mt-1">
-                    {canEditName
-                      ? "Você é admin master: pode alterar o nome."
-                      : "Apenas o admin master pode alterar o nome."}
+                    {canEditName ? "Você é admin master: pode alterar o nome." : "Apenas o admin master pode alterar o nome."}
                   </p>
                 </div>
 
@@ -778,9 +803,7 @@ export default function Profile() {
                   <h3 className="font-semibold mb-2 text-[#5A3A22]">Serviços, Preços e Capacidade</h3>
 
                   <div className="mb-4">
-                    <label className="block font-semibold mb-1">
-                      Quantas reservas por dia você aceita?
-                    </label>
+                    <label className="block font-semibold mb-1">Quantas reservas por dia você aceita?</label>
                     <input
                       type="number"
                       min="1"
@@ -795,19 +818,13 @@ export default function Profile() {
                       }}
                       className="w-full max-w-[280px] border p-2 rounded-lg"
                     />
-                    <p className="text-xs text-[#5A3A22]/70 mt-1">
-                      Isso ajuda a limitar sua agenda automaticamente.
-                    </p>
+                    <p className="text-xs text-[#5A3A22]/70 mt-1">Isso ajuda a limitar sua agenda automaticamente.</p>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {Object.keys(EMPTY_SERVICES).map((key) => (
                       <div key={key} className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={Boolean(form.services?.[key])}
-                          onChange={() => toggleService(key)}
-                        />
+                        <input type="checkbox" checked={Boolean(form.services?.[key])} onChange={() => toggleService(key)} />
                         <span className="capitalize">{SERVICE_LABELS[key] || key}</span>
 
                         {form.services?.[key] && (
@@ -844,20 +861,13 @@ export default function Profile() {
                       placeholder="Novo curso (clique + ou Enter para adicionar)"
                       className="flex-1 border p-2 rounded-lg"
                     />
-                    <button
-                      type="button"
-                      onClick={addCourse}
-                      className="bg-[#95301F] hover:bg-[#B25B38] text-white px-3 rounded-lg"
-                    >
+                    <button type="button" onClick={addCourse} className="bg-[#95301F] hover:bg-[#B25B38] text-white px-3 rounded-lg">
                       +
                     </button>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {form.courses.map((c, i) => (
-                      <span
-                        key={i}
-                        className="bg-[#FFF6CC] px-3 py-1 rounded-full flex items-center gap-2"
-                      >
+                      <span key={i} className="bg-[#FFF6CC] px-3 py-1 rounded-full flex items-center gap-2">
                         {c}
                         <button type="button" onClick={() => removeCourse(i)} className="text-[#95301F]">
                           ×
@@ -901,7 +911,6 @@ export default function Profile() {
                   saving ? "opacity-70 cursor-wait" : ""
                 }`}
               >
-                {/* ✅ texto só muda no MOBILE */}
                 <span className="md:hidden">{saving ? "Salvando..." : "Salvar Alterações"}</span>
                 <span className="hidden md:inline">Salvar Alterações</span>
               </button>

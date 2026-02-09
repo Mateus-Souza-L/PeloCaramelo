@@ -58,11 +58,9 @@ function autoLogout(reason = "unauthorized") {
     }
 
     // fallback: redireciona para /login se não estiver lá
-    // (se o app já lida com o evento, ele pode navegar sem reload)
     try {
       const path = window.location?.pathname || "";
       if (!path.startsWith("/login")) {
-        // pequeno delay para permitir que listeners de evento reajam primeiro
         setTimeout(() => {
           try {
             const p = window.location?.pathname || "";
@@ -127,6 +125,10 @@ async function apiRequest(path, options = {}) {
     // ✅ evita 304 sem body em APIs
     "Cache-Control": "no-store",
     Pragma: "no-cache",
+
+    // ✅ ajuda alguns proxies/servidores a retornarem JSON
+    Accept: "application/json, text/plain, */*",
+
     ...(fetchOptions.headers || {}),
   };
 
@@ -168,14 +170,22 @@ async function apiRequest(path, options = {}) {
   // ✅ lê o body 1x e tenta parsear
   const rawText = await response.text();
 
-  if (rawText && looksLikeJsonString(rawText)) {
-    try {
-      data = JSON.parse(rawText);
-    } catch {
+  // ✅ melhora robustez: se servidor diz que é JSON, tenta parsear mesmo se não “parece” JSON
+  const respCT = String(response.headers.get("content-type") || "").toLowerCase();
+  const shouldParseAsJson = respCT.includes("application/json");
+
+  if (rawText) {
+    if (shouldParseAsJson || looksLikeJsonString(rawText)) {
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        data = { message: rawText };
+      }
+    } else {
       data = { message: rawText };
     }
   } else {
-    data = rawText ? { message: rawText } : null;
+    data = null;
   }
 
   if (!response.ok) {
