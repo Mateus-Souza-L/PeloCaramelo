@@ -4,12 +4,15 @@ const express = require("express");
 const cors = require("cors");
 const morgan = require("morgan");
 const http = require("http");
-const compression = require("compression"); // ✅ NOVO
+const compression = require("compression");
 
 const app = express();
 
 // ✅ Render/proxy: necessário para express-rate-limit e IP real
 app.set("trust proxy", 1);
+
+// não expõe "Express" no header
+app.disable("x-powered-by");
 
 /* ===========================================================
    ✅ CORS
@@ -45,19 +48,30 @@ app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
 
 /* ===========================================================
+   ✅ Headers básicos (seguros, sem quebrar o app)
+   =========================================================== */
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader("X-Frame-Options", "DENY");
+  next();
+});
+
+/* ===========================================================
+   ✅ Compressão (ajuda principalmente JSON grande)
+   =========================================================== */
+app.use(
+  compression({
+    // só comprime respostas razoavelmente grandes
+    threshold: 1024,
+  })
+);
+
+/* ===========================================================
    ✅ Body parsers
    =========================================================== */
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
-
-/* ===========================================================
-   ✅ Compressão (melhora payload do /caregivers e outros)
-   =========================================================== */
-app.use(
-  compression({
-    threshold: 1024, // só comprime a partir de 1KB
-  })
-);
 
 /* ===========================================================
    ✅ DB
@@ -250,8 +264,6 @@ async function blockedGuard(req, res, next) {
    =========================================================== */
 app.use("/auth", authRoutes);
 app.use("/caregivers", caregiverRoutes);
-
-// ✅ contato público (orçamento de palestra)
 app.use("/contact", contactRoutes);
 
 /* ===========================================================
@@ -284,7 +296,7 @@ app.use("/reviews", reviewRoutes);
 app.get("/", (req, res) => {
   res.json({
     ok: true,
-    message: "PeloCaramelo API rodando 🐾 (BUILD: health-v1 + socket)",
+    message: "PeloCaramelo API rodando 🐾 (BUILD: health-v1 + compression + socket)",
     allowedOrigins,
     allowVercelPreview: true,
   });
@@ -348,7 +360,7 @@ httpServer.listen(PORT, () => {
   console.log("🌐 CORS_ORIGIN =", process.env.CORS_ORIGIN || "(default localhost)");
   console.log("🌐 Vercel preview liberado: https://pelo-caramelo-*.vercel.app");
   console.log("🩺 Health endpoints ativos: /health e /health/db");
-  console.log("🗜️ compression ativo");
+  console.log("🗜️ Compression ativo");
   console.log("🔌 Socket.IO ativo");
 });
 
