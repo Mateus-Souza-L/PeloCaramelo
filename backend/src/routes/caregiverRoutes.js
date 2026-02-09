@@ -4,14 +4,31 @@ const router = express.Router();
 const pool = require("../config/db");
 const authMiddleware = require("../middleware/authMiddleware");
 
+const { createClient } = require("@supabase/supabase-js");
+
 /**
- * ✅ Regras de rating (fonte única + fallback legado)
- * - Fonte principal: tabela reviews (reviews.reviewed_id = caregiver_id)
- * - Fallback legado: reservations.tutor_rating (somente se ainda NÃO existe review na tabela reviews
- *   para a mesma reserva + mesmo autor)
+ * ✅ Objetivo (performance + segurança)
+ * - LIST (/caregivers): devolver imagem LEVE e rápida -> signed url (curta) baseada em caregivers.photo_url (path)
+ * - DETAIL (/caregivers/:id): também devolve signed url (curta) se houver path; senão cai no users.image (legado)
+ *
+ * IMPORTANTÍSSIMO:
+ * - caregivers.photo_url deve ser um PATH do storage (ex: "profiles/52.jpg"), NÃO base64.
  */
 
 const DEFAULT_DAILY_CAPACITY = Number(process.env.DEFAULT_DAILY_CAPACITY || 15);
+
+// Supabase Storage (signed url)
+const SUPABASE_URL = process.env.SUPABASE_URL || "";
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+const SUPABASE_STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || "pet-photos";
+const SIGNED_URL_TTL_SECONDS = Number(process.env.SIGNED_URL_TTL_SECONDS || 600); // 10 min
+
+const supabase =
+  SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
+    ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+        auth: { persistSession: false },
+      })
+    : null;
 
 /* ============================================================
    ✅ Schema-tolerant: users.daily_capacity pode ou não existir
@@ -51,16 +68,14 @@ function usersDailyCapacitySelectExpr() {
    ✅ Helpers: normalização/validação do body
    ============================================================ */
 
-// ✅ opções canônicas (keys) + aceitação de label
 const SERVICE_OPTIONS = [
   { key: "hospedagem", label: "Hospedagem" },
   { key: "creche", label: "Creche" },
-  { key: "passeios", label: "Passeios" }, // ✅ IMPORTANTE: alinhar com o front (Search usa "passeios")
+  { key: "passeios", label: "Passeios" },
   { key: "petSitter", label: "Visita / Pet Sitter" },
   { key: "banho", label: "Banho & Tosa" },
 ];
 
-// mapa label->key e key->key (aceita ambos)
 const SERVICE_TOKEN_TO_KEY = (() => {
   const m = new Map();
   for (const opt of SERVICE_OPTIONS) {
@@ -132,8 +147,6 @@ function safeParseJson(v, fallback) {
 
 function normalizePriceValue(raw) {
   if (raw == null) return null;
-
-  // aceita número, "55", "55.00", "55,00", "R$ 55,00"
   const s = String(raw).trim();
   if (!s) return null;
 
@@ -159,20 +172,86 @@ function hasAtLeastOneEnabledServiceWithValidPrice(servicesRaw, pricesRaw) {
 }
 
 /* ============================================================
-   ✅ Helpers: imagem performance-first
-   - LISTA: nunca retornar base64/data: (payload gigante)
-   - DETALHE: pode retornar base64 (fallback), mas ideal é URL do storage
+   ✅ Storage: signed URL (rápido e seguro)
+   - Espera path tipo "profiles/52.jpg" em cg.photo_url
+   - Se for base64/data:... -> IGNORA (pra não pesar)
    ============================================================ */
 
-function isProbablyDataUrl(v) {
+function looksLikeDataUrl(v) {
   const s = String(v || "");
-  return s.startsWith("data:image/");
+  return s.startsWith("data:image/") || s.includes(";base64,");
+}
+
+function sanitizeStoragePath(v) {
+  const s = String(v || "").trim();
+  if (!s) return null;
+  if (looksLikeDataUrl(s)) return null; // NÃO usar base64
+  // evita path estranho
+  if (s.startsWith("http://") || s.startsWith("https://")) return null;
+  return s;
+}
+
+const signedUrlCache = new Map(); // key -> { url, expiresAt }
+
+async function getSignedUrl(path) {
+  if (!supabase) return null;
+  const clean = sanitizeStoragePath(path);
+  if (!clean) return null;
+
+  const key = `${SUPABASE_STORAGE_BUCKET}:${clean}:${SIGNED_URL_TTL_SECONDS}`;
+  const now = Date.now();
+
+  const cached = signedUrlCache.get(key);
+  if (cached && cached.expiresAt > now + 15_000) {
+    return cached.url;
+  }
+
+  const { data, error } = await supabase.storage
+    .from(SUPABASE_STORAGE_BUCKET)
+    .createSignedUrl(clean, SIGNED_URL_TTL_SECONDS);
+
+  if (error || !data?.signedUrl) return null;
+
+  signedUrlCache.set(key, {
+    url: data.signedUrl,
+    expiresAt: now + SIGNED_URL_TTL_SECONDS * 1000,
+  });
+
+  return data.signedUrl;
+}
+
+async function attachSignedImageToCaregivers(rows) {
+  // altera "image" in-place (retorna string ou null)
+  if (!Array.isArray(rows) || rows.length === 0) return rows;
+
+  // performance: gera no máximo N signed urls por request
+  const MAX_SIGN = 80;
+  const slice = rows.slice(0, MAX_SIGN);
+
+  await Promise.all(
+    slice.map(async (c) => {
+      // prioridade: cg.photo_url (path)
+      const signed = await getSignedUrl(c?.photo_path || c?.photo_url || c?.image);
+      if (signed) c.image = signed;
+      else {
+        // fallback: se vier base64 no users.image, NÃO manda na listagem (pesado)
+        // detalhe pode mandar base64 se quiser, mas aqui (LIST) deixa null
+        if (c && c._listMode) c.image = null;
+      }
+      return c;
+    })
+  );
+
+  // pra quem ficou fora do slice, força null pra não atrasar
+  for (let i = MAX_SIGN; i < rows.length; i++) {
+    if (rows[i]?._listMode) rows[i].image = null;
+  }
+
+  return rows;
 }
 
 /* ============================================================
-   ✅ SQL fields: LIST vs DETAIL
-   - LIST: leve (evita payload gigante)
-   - DETAIL: completo (perfil)
+   ✅ SQL fields: LIST vs DETAIL (agora leve!)
    ============================================================ */
 
 function listFieldsSql() {
@@ -181,17 +260,13 @@ function listFieldsSql() {
     u.name,
     u.role,
 
-    -- ✅ LISTA (performance-first):
-    -- 1) usa caregivers.photo_url se existir (URL leve)
-    -- 2) NÃO envia base64/data: (mesmo se estiver em users.image)
-    NULLIF(cg.photo_url, '') AS image,
+    -- LIST: pegamos o PATH da foto (caregivers.photo_url) e geramos signed URL no Node
+    NULLIF(cg.photo_url, '') AS photo_path,
 
     u.neighborhood,
     u.city,
-
     u.services,
     u.prices,
-
     ${usersDailyCapacitySelectExpr()}
   `;
 }
@@ -203,9 +278,8 @@ function detailFieldsSql() {
     u.email,
     u.role,
 
-    -- ✅ DETALHE:
-    -- prioriza URL leve do caregiver (quando existir), senão usa users.image (pode ser base64 legado)
-    COALESCE(NULLIF(cg.photo_url, ''), u.image) AS image,
+    NULLIF(cg.photo_url, '') AS photo_path,
+    u.image AS legacy_image, -- pode ser base64 legado
 
     u.bio,
     u.phone,
@@ -219,6 +293,10 @@ function detailFieldsSql() {
     ${usersDailyCapacitySelectExpr()}
   `;
 }
+
+/* ============================================================
+   ✅ Rating + Completed (mantido)
+   ============================================================ */
 
 const RATING_LATERAL = `
 LEFT JOIN LATERAL (
@@ -257,9 +335,7 @@ LEFT JOIN LATERAL (
 `;
 
 /* ============================================================
-   ✅ Schema-tolerant: caregiver_profiles pode ter:
-   - user_id
-   - caregiver_id
+   ✅ Schema-tolerant: caregiver_profiles pode ter user_id
    ============================================================ */
 
 let cachedLinkCol = null; // "user_id" | "caregiver_id" | null
@@ -458,11 +534,7 @@ router.post("/me", authMiddleware, async (req, res) => {
 });
 
 /* ============================================================
-   ✅ GET /caregivers  (LISTAGEM LEVE - PERFORMANCE FIRST)
-   - retorna SOMENTE URL leve (caregivers.photo_url) em "image"
-   - nunca envia base64/data: na lista (evita payload gigante)
-   - suporta multi-perfil (role caregiver OU caregiver_profiles existe)
-   - filtro: só retorna cuidadores com pelo menos 1 serviço ativo E preço válido
+   ✅ GET /caregivers  (LISTAGEM LEVE + signed urls)
    ============================================================ */
 router.get("/", async (req, res) => {
   try {
@@ -495,15 +567,27 @@ router.get("/", async (req, res) => {
 
     const { rows } = await pool.query(query);
 
-    const filtered = (rows || [])
-      .filter((c) => hasAtLeastOneEnabledServiceWithValidPrice(c.services, c.prices))
-      .map((c) => {
-        // segurança extra: se por algum motivo "image" vier data:
-        if (c?.image && isProbablyDataUrl(c.image)) return { ...c, image: null };
-        return c;
-      });
+    const filtered = (rows || []).filter((c) =>
+      hasAtLeastOneEnabledServiceWithValidPrice(c.services, c.prices)
+    );
 
-    return res.json({ caregivers: filtered });
+    // marca listMode e monta campo image (signed url) a partir do photo_path
+    for (const c of filtered) {
+      c._listMode = true;
+      c.image = null;
+      c.photo_url = undefined;
+    }
+
+    await attachSignedImageToCaregivers(filtered);
+
+    // remove campos internos
+    const out = filtered.map((c) => {
+      const { _listMode, photo_path, legacy_image, ...rest } = c;
+      // para compat com front: devolve "image"
+      return { ...rest, image: c.image ?? null };
+    });
+
+    return res.json({ caregivers: out });
   } catch (err) {
     console.error("Erro ao buscar cuidadores:", err);
     return res.status(500).json({ error: "Erro ao buscar cuidadores." });
@@ -511,10 +595,7 @@ router.get("/", async (req, res) => {
 });
 
 /* ============================================================
-   ✅ GET /caregivers/:id  (DETALHE COMPLETO)
-   - prioriza caregivers.photo_url, fallback em users.image (pode ser base64 legado)
-   - aceita role caregiver OU caregiver_profiles existe
-   - se não tiver serviço ativo + preço válido, responde 404
+   ✅ GET /caregivers/:id  (DETALHE + signed url + fallback legado)
    ============================================================ */
 router.get("/:id", async (req, res) => {
   try {
@@ -563,7 +644,22 @@ router.get("/:id", async (req, res) => {
       return res.status(404).json({ error: "Cuidador não encontrado." });
     }
 
-    return res.json({ caregiver });
+    // Monta image:
+    // 1) signed url do photo_path (caregivers.photo_url)
+    // 2) fallback: legacy_image (pode ser base64)
+    let image = null;
+    if (caregiver.photo_path) image = await getSignedUrl(caregiver.photo_path);
+    if (!image && caregiver.legacy_image && !looksLikeDataUrl(caregiver.legacy_image)) {
+      // se for alguma URL antiga armazenada no users.image
+      image = caregiver.legacy_image;
+    }
+    if (!image && caregiver.legacy_image && looksLikeDataUrl(caregiver.legacy_image)) {
+      // detalhe pode aceitar base64 legado (se você quiser)
+      image = caregiver.legacy_image;
+    }
+
+    const { photo_path, legacy_image, ...rest } = caregiver;
+    return res.json({ caregiver: { ...rest, image } });
   } catch (err) {
     console.error("Erro ao buscar cuidador:", err);
     return res.status(500).json({ error: "Erro ao buscar cuidador." });
