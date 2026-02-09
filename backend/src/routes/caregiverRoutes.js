@@ -117,66 +117,7 @@ function normalizeDailyCapacity(input) {
      precisa ter pelo menos 1 serviço true E preço válido (>0)
    ============================================================ */
 
-function safeParseJson(v, fallback) {
-  if (v == null) return fallback;
-  if (typeof v === "object") return v;
-  if (typeof v === "string") {
-    try {
-      const parsed = JSON.parse(v);
-      return parsed && typeof parsed === "object" ? parsed : fallback;
-    } catch {
-      return fallback;
-    }
-  }
-  return fallback;
-}
-
-function normalizePriceValue(raw) {
-  if (raw == null) return null;
-
-  // aceita número, "55", "55.00", "55,00", "R$ 55,00"
-  const s = String(raw).trim();
-  if (!s) return null;
-
-  const cleaned = s
-    .replace(/[^\d,.\-]/g, "") // remove "R$" e outros
-    .replace(",", "."); // pt-br -> en
-
-  const n = Number(cleaned);
-  if (!Number.isFinite(n)) return null;
-  if (n <= 0) return null;
-  return n;
-}
-
-function hasAtLeastOneEnabledServiceWithValidPrice(servicesRaw, pricesRaw) {
-  const services = safeParseJson(servicesRaw, {});
-  const prices = safeParseJson(pricesRaw, {});
-
-  if (!services || typeof services !== "object") return false;
-
-  // precisa haver pelo menos 1 serviço habilitado com preço > 0
-  for (const [serviceKey, enabled] of Object.entries(services)) {
-    if (!enabled) continue;
-
-    // preço pode estar em prices[serviceKey]
-    const price = normalizePriceValue(prices?.[serviceKey]);
-    if (price != null) return true;
-  }
-
-  return false;
-}
-
-/**
- * ✅ Versão SQL do filtro (bem mais rápido do que filtrar no JS depois do SELECT):
- * - exige pelo menos 1 serviço true
- * - exige preço numérico > 0 no mesmo serviceKey
- *
- * Observação:
- * - funciona bem mesmo se services/prices forem jsonb ou string JSON (desde que a coluna seja jsonb no banco).
- */
 function sqlHasEnabledServiceWithValidPrice(alias = "u") {
-  // price parse: remove tudo que não é dígito/,-. e troca vírgula por ponto
-  // NULLIF evita cast em string vazia
   return `
     EXISTS (
       SELECT 1
@@ -197,9 +138,25 @@ function sqlHasEnabledServiceWithValidPrice(alias = "u") {
 
 /* ============================================================
    ✅ BASE FIELDS
+   - LISTA (leve) vs DETALHE (completo)
    ============================================================ */
 
-function baseFieldsSql() {
+// ✅ LISTA: não envia image/base64 nem campos pesados/sensíveis
+function baseFieldsSqlList() {
+  return `
+    u.id,
+    u.name,
+    u.role,
+    u.neighborhood,
+    u.city,
+    u.services,
+    u.prices,
+    ${usersDailyCapacitySelectExpr()}
+  `;
+}
+
+// ✅ DETALHE: envia tudo (inclui image)
+function baseFieldsSqlDetail() {
   return `
     u.id,
     u.name,
@@ -421,10 +378,8 @@ router.post("/me", authMiddleware, async (req, res) => {
 });
 
 /* ============================================================
-   ✅ GET /caregivers
-   ✅ Otimização:
-   - rating + completed agregados (evita LATERAL por linha)
-   - filtro (FIX) movido para SQL (evita filtrar no JS)
+   ✅ GET /caregivers (LISTA LEVE)
+   - reduz payload (principal ganho de performance)
    ============================================================ */
 router.get("/", async (req, res) => {
   try {
@@ -435,7 +390,6 @@ router.get("/", async (req, res) => {
 
     const query = `
       WITH rating_union AS (
-        -- fonte principal: reviews
         SELECT
           rv.reviewed_id::int AS caregiver_id,
           rv.rating::numeric  AS rating
@@ -444,7 +398,6 @@ router.get("/", async (req, res) => {
 
         UNION ALL
 
-        -- fallback legado: reservations.tutor_rating
         SELECT
           r.caregiver_id::int         AS caregiver_id,
           r.tutor_rating::numeric     AS rating
@@ -459,8 +412,8 @@ router.get("/", async (req, res) => {
       rating_agg AS (
         SELECT
           caregiver_id,
-          COALESCE(AVG(rating), 0)     AS rating_avg,
-          COUNT(*)::int               AS rating_count
+          COALESCE(AVG(rating), 0) AS rating_avg,
+          COUNT(*)::int           AS rating_count
         FROM rating_union
         GROUP BY caregiver_id
       ),
@@ -473,7 +426,7 @@ router.get("/", async (req, res) => {
         GROUP BY r.caregiver_id
       )
       SELECT
-        ${baseFieldsSql()},
+        ${baseFieldsSqlList()},
         cp.created_at AS caregiver_profile_created_at,
         COALESCE(ra.rating_avg, 0)   AS rating_avg,
         COALESCE(ra.rating_count, 0) AS rating_count,
@@ -503,10 +456,8 @@ router.get("/", async (req, res) => {
 });
 
 /* ============================================================
-   ✅ GET /caregivers/:id
-   ✅ mesma regra do list:
-   - aceita role caregiver OU cp existe
-   - se não tiver serviço ativo + preço válido => 404
+   ✅ GET /caregivers/:id (DETALHE COMPLETO)
+   - aqui pode trazer image/base64, bio, phone etc.
    ============================================================ */
 router.get("/:id", async (req, res) => {
   try {
@@ -544,8 +495,8 @@ router.get("/:id", async (req, res) => {
       rating_agg AS (
         SELECT
           caregiver_id,
-          COALESCE(AVG(rating), 0)     AS rating_avg,
-          COUNT(*)::int               AS rating_count
+          COALESCE(AVG(rating), 0) AS rating_avg,
+          COUNT(*)::int           AS rating_count
         FROM rating_union
         GROUP BY caregiver_id
       ),
@@ -558,7 +509,7 @@ router.get("/:id", async (req, res) => {
         GROUP BY r.caregiver_id
       )
       SELECT
-        ${baseFieldsSql()},
+        ${baseFieldsSqlDetail()},
         cp.created_at AS caregiver_profile_created_at,
         COALESCE(ra.rating_avg, 0)   AS rating_avg,
         COALESCE(ra.rating_count, 0) AS rating_count,
