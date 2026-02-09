@@ -15,9 +15,116 @@ const {
 } = require("../models/userModel");
 
 // -----------------------------------------------------------------------------
+// ✅ Supabase Storage (para salvar avatar automaticamente)
+// -----------------------------------------------------------------------------
+let _supabase = null;
+function getSupabase() {
+  if (_supabase) return _supabase;
+
+  const { createClient } = require("@supabase/supabase-js");
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY; // ⚠️ backend only
+
+  if (!url || !key) {
+    throw new Error("SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY não configurados.");
+  }
+
+  _supabase = createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  return _supabase;
+}
+
+const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || "pet-photos";
+
+// data:image/jpeg;base64,AAA...
+function parseDataUrl(dataUrl) {
+  const s = String(dataUrl || "");
+  if (!s.startsWith("data:")) return null;
+
+  const comma = s.indexOf(",");
+  if (comma < 0) return null;
+
+  const meta = s.slice(5, comma); // ex: "image/jpeg;base64"
+  const b64 = s.slice(comma + 1);
+
+  const [mimeRaw, ...rest] = meta.split(";");
+  const mime = String(mimeRaw || "").trim().toLowerCase();
+  const isBase64 = rest.some((x) => String(x).trim().toLowerCase() === "base64");
+  if (!mime || !isBase64) return null;
+
+  return { mime, base64: b64 };
+}
+
+function extFromMime(mime) {
+  if (!mime) return "jpg";
+  if (mime.includes("png")) return "png";
+  if (mime.includes("webp")) return "webp";
+  if (mime.includes("gif")) return "gif";
+  return "jpg";
+}
+
+async function uploadAvatarToStorage({ userId, dataUrl }) {
+  const parsed = parseDataUrl(dataUrl);
+  if (!parsed) return { ok: false, reason: "NOT_DATA_URL" };
+
+  let buffer;
+  try {
+    buffer = Buffer.from(parsed.base64, "base64");
+  } catch {
+    return { ok: false, reason: "INVALID_BASE64" };
+  }
+  if (!buffer || buffer.length < 10) return { ok: false, reason: "EMPTY" };
+
+  const supabase = getSupabase();
+  const ext = extFromMime(parsed.mime);
+
+  // path estável (sobrescreve)
+  const path = `profiles/${userId}/avatar.${ext}`;
+
+  const { error: upErr } = await supabase.storage.from(STORAGE_BUCKET).upload(path, buffer, {
+    upsert: true,
+    contentType: parsed.mime,
+    cacheControl: "31536000",
+  });
+
+  if (upErr) {
+    return { ok: false, reason: "UPLOAD_FAILED", details: upErr.message };
+  }
+
+  const { data } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path);
+  const publicUrl = data?.publicUrl || null;
+
+  if (!publicUrl) return { ok: false, reason: "NO_PUBLIC_URL" };
+
+  return { ok: true, publicUrl, path, bytes: buffer.length, mime: parsed.mime };
+}
+
+async function upsertCaregiverPhotoUrl(userId, photoUrl) {
+  // garante o registro e seta photo_url
+  await pool.query(
+    `
+    INSERT INTO caregivers (user_id)
+    VALUES ($1)
+    ON CONFLICT (user_id) DO NOTHING
+    `,
+    [Number(userId)]
+  );
+
+  await pool.query(
+    `
+    UPDATE caregivers
+    SET photo_url = $1
+    WHERE user_id = $2
+    `,
+    [String(photoUrl || ""), Number(userId)]
+  );
+}
+
+// -----------------------------------------------------------------------------
 // Helpers
 // -----------------------------------------------------------------------------
-
 function getAuthenticatedUserId(req, res) {
   const userId = req.user?.id;
   if (!userId) {
@@ -57,7 +164,6 @@ function clampInt(n, min, max) {
 // ✅ Multi-perfil: detectar se usuário TEM perfil cuidador (caregiver_profiles)
 // - suporta schema antigo/novo: caregiver_profiles.user_id OU caregiver_profiles.caregiver_id
 // -----------------------------------------------------------------------------
-
 let _cpLinkCol = null; // "user_id" | "caregiver_id" | null
 let _cpCheckedAt = 0;
 
@@ -105,14 +211,13 @@ async function hasCaregiverProfileByUserId(userId) {
       return rows?.length > 0;
     }
 
-    // default user_id
     const { rows } = await pool.query(
       `SELECT 1 FROM caregiver_profiles WHERE user_id::text = $1 LIMIT 1`,
       [String(id)]
     );
     return rows?.length > 0;
-  } catch (e) {
-    // fallback tentativa/erro (não quebra)
+  } catch {
+    // fallback tentativa/erro
     try {
       const { rows } = await pool.query(
         `SELECT 1 FROM caregiver_profiles WHERE user_id::text = $1 LIMIT 1`,
@@ -138,7 +243,6 @@ async function hasCaregiverProfileByUserId(userId) {
 }
 
 async function isEffectiveCaregiver(req) {
-  // role caregiver (legado) OU possui caregiver_profiles (multi-perfil real)
   const role = String(req.user?.role || "").toLowerCase().trim();
   if (role === "caregiver") return true;
 
@@ -179,6 +283,7 @@ async function getMeController(req, res) {
 
 // -----------------------------------------------------------------------------
 // PATCH /users/me
+// ✅ Agora: se vier image em base64 (dataURL), faz upload no Supabase e salva URL
 // -----------------------------------------------------------------------------
 async function updateMeController(req, res) {
   try {
@@ -201,16 +306,62 @@ async function updateMeController(req, res) {
     // campos básicos
     const basicFields = ["city", "neighborhood", "phone", "address", "bio", "image", "cep"];
 
-    basicFields.forEach((field) => {
-      if (!Object.prototype.hasOwnProperty.call(body, field)) return;
+    // ✅ tratamento especial para "image"
+    if (Object.prototype.hasOwnProperty.call(body, "image")) {
+      const incoming = body.image;
 
-      const value = body[field];
-      if (typeof value === "string") {
-        updates[field] = value.trim() === "" ? null : value.trim();
+      // permite limpar
+      if (incoming == null || String(incoming).trim() === "") {
+        updates.image = null;
+      } else if (typeof incoming === "string" && incoming.startsWith("data:")) {
+        // ✅ base64 -> storage -> URL
+        const up = await uploadAvatarToStorage({ userId, dataUrl: incoming });
+
+        if (!up.ok) {
+          return res.status(400).json({
+            error: "Imagem inválida ou falha ao enviar para o Storage.",
+            code: "IMAGE_UPLOAD_FAILED",
+            reason: up.reason,
+            details: up.details,
+          });
+        }
+
+        // salva URL no users.image (para avatar geral)
+        updates.image = up.publicUrl;
+
+        // ✅ salva também no caregivers.photo_url (para busca ficar rápida e padronizada)
+        // (não quebra se o user não for cuidador — só cria o registro em caregivers)
+        try {
+          await upsertCaregiverPhotoUrl(userId, up.publicUrl);
+        } catch (e) {
+          // não falha a requisição por isso; mas loga
+          console.error("Falha ao salvar caregivers.photo_url:", e?.message || e);
+        }
       } else {
-        updates[field] = value ?? null;
+        // se já vier URL
+        updates.image = String(incoming).trim();
+        // opcional: manter sincronizado
+        try {
+          await upsertCaregiverPhotoUrl(userId, updates.image);
+        } catch {
+          // ignore
+        }
       }
-    });
+    }
+
+    // outros campos básicos
+    basicFields
+      .filter((f) => f !== "image")
+      .forEach((field) => {
+        if (!Object.prototype.hasOwnProperty.call(body, field)) return;
+
+        const value = body[field];
+        if (typeof value === "string") {
+          updates[field] = value.trim() === "" ? null : value.trim();
+        } else {
+          updates[field] = value ?? null;
+        }
+      });
 
     // ✅ multi-perfil: campos do cuidador devem salvar se for cuidador efetivo
     const effectiveCaregiver = await isEffectiveCaregiver(req);
@@ -243,9 +394,7 @@ async function updateMeController(req, res) {
       ) {
         const raw = body.daily_capacity ?? body.dailyCapacity ?? null;
         const parsed = toInt(raw);
-        // não quebra se vier inválido: simplesmente ignora
         if (parsed != null) {
-          // aqui mantenho coerente com 1..50 (igual ao endpoint capacity)
           const cap = clampInt(parsed, 1, 50);
           updates.daily_capacity = cap;
         }
@@ -330,8 +479,6 @@ async function updateMyAvailabilityController(req, res) {
 // -----------------------------------------------------------------------------
 // Capacidade diária do cuidador
 // -----------------------------------------------------------------------------
-// ✅ Aceita payload tanto em daily_capacity quanto em dailyCapacity
-// ✅ Agora clamp 1..50 (como você pediu)
 const CAPACITY_MIN = 1;
 const CAPACITY_MAX = 50;
 
@@ -344,7 +491,6 @@ async function ensureCaregiver(req, res) {
   return true;
 }
 
-// GET /users/me/capacity
 async function getMyDailyCapacityController(req, res) {
   try {
     const userId = getAuthenticatedUserId(req, res);
@@ -360,7 +506,6 @@ async function getMyDailyCapacityController(req, res) {
   }
 }
 
-// PUT/PATCH /users/me/capacity
 async function updateMyDailyCapacityController(req, res) {
   try {
     const userId = getAuthenticatedUserId(req, res);
@@ -393,9 +538,13 @@ async function updateMyDailyCapacityController(req, res) {
 
 // -----------------------------------------------------------------------------
 // Admin
+// ✅ Ajustado: aceita admin_master e/ou admin_level >= 1
 // -----------------------------------------------------------------------------
 function ensureAdmin(req, res) {
-  if (req.user?.role !== "admin") {
+  const role = String(req.user?.role || "").toLowerCase();
+  const level = Number(req.user?.admin_level || 0);
+
+  if (!(role === "admin" || role === "admin_master" || level >= 1)) {
     res.status(403).json({ error: "Acesso restrito ao admin." });
     return false;
   }
