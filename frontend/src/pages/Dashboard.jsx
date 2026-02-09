@@ -889,6 +889,13 @@ export default function Dashboard() {
   const refreshTimerRef = useRef(null);
 
   const chatFetchGuardRef = useRef({ inFlight: false, lastAt: 0 });
+  // ✅ Evita o load da disponibilidade sobrescrever alterações ainda NÃO salvas
+  const unsavedRef = useRef(false);
+
+  useEffect(() => {
+    unsavedRef.current = !!unsaved;
+  }, [unsaved]);
+
   const resFetchGuardRef = useRef({ inFlight: false, lastAt: 0, lastKey: "" });
   const availFetchGuardRef = useRef({ inFlight: false, lastAt: 0, lastKey: "" });
   const myReviewsGuardRef = useRef({ inFlight: false, lastAt: 0, lastKey: "" });
@@ -1229,6 +1236,10 @@ export default function Dashboard() {
   const loadAvailabilityIfCaregiver = useCallback(async () => {
     if (!isCaregiver || !user?.id) return;
 
+    // ✅ Se o usuário está com mudanças não salvas, NÃO recarrega
+    // (senão sobrescreve pendingDates e “some” o que foi marcado)
+    if (unsavedRef.current) return;
+
     const now = Date.now();
     const guardKey = `${user?.id}:${availabilityStorageKey}`;
 
@@ -1294,14 +1305,34 @@ export default function Dashboard() {
 
     const cleanDates = normalizeAvailKeys(pendingDates);
 
+    // ✅ cache local pode falhar no iPhone (QuotaExceeded)
     const persistCache = (keys) => {
       try {
         localStorage.setItem(availabilityStorageKey, JSON.stringify(keys));
-      } catch {
-        // ignore
+        return true;
+      } catch (err) {
+        const msg = String(err?.message || err || "").toLowerCase();
+        const quota =
+          err?.name === "QuotaExceededError" ||
+          msg.includes("quota") ||
+          msg.includes("exceeded");
+
+        if (quota) {
+          // não deixa quebrar o fluxo no iOS
+          showToast(
+            "Disponibilidade salva ✅ (mas o navegador está sem espaço para cache local).",
+            "notify"
+          );
+          return false;
+        }
+
+        // erro genérico de storage
+        console.warn("[availability] falha ao salvar cache local:", err);
+        return false;
       }
     };
 
+    // ✅ Sem token ou sem perfil cuidador: salva apenas local
     if (!token || !isCaregiver) {
       persistCache(cleanDates);
       setAvailableDates(cleanDates);
@@ -1320,7 +1351,9 @@ export default function Dashboard() {
       const serverDates = availabilityToKeys(data);
       const finalDates = normalizeAvailKeys(serverDates.length ? serverDates : cleanDates);
 
+      // ✅ tenta cache local, mas não depende disso pra concluir
       persistCache(finalDates);
+
       setAvailableDates(finalDates);
       setPendingDates(finalDates);
       setUnsaved(false);
@@ -1329,6 +1362,7 @@ export default function Dashboard() {
     } catch (err) {
       console.error("Erro ao salvar disponibilidade:", err);
 
+      // ✅ Mesmo com erro no servidor, tenta manter local para não perder seleção
       persistCache(cleanDates);
       setAvailableDates(cleanDates);
       setPendingDates(cleanDates);
@@ -1346,6 +1380,7 @@ export default function Dashboard() {
     availabilityToKeys,
     showToast,
   ]);
+
 
   const discardAvailability = useCallback(() => {
     setPendingDates([...availableDates]);

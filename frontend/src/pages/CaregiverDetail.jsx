@@ -3,7 +3,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../components/ToastProvider";
-import { toLocalKey, parseLocalKey, formatDateBR } from "../utils/date";
+import {
+  toLocalKey,
+  parseLocalKey,
+  formatDateBR,
+  maskDateBRInput,
+  dateBRToLocalKey,
+  isValidDateBR,
+} from "../utils/date";
 import { authRequest } from "../services/api";
 
 // ✅ Analytics
@@ -145,6 +152,10 @@ export default function CaregiverDetail() {
   const [startDate, setStartDate] = useState(""); // YYYY-MM-DD
   const [endDate, setEndDate] = useState(""); // YYYY-MM-DD
   const [saving, setSaving] = useState(false);
+
+  // ✅ NOVO: inputs visuais em PT-BR (DD/MM/AAAA)
+  const [startBR, setStartBR] = useState("");
+  const [endBR, setEndBR] = useState("");
 
   // pets do tutor
   const [pets, setPets] = useState([]);
@@ -855,7 +866,7 @@ export default function CaregiverDetail() {
     loadInitial();
 
     return () => {
-      cancelled = true;
+      cancelled = false;
       if (revealTimerRef.current) {
         clearTimeout(revealTimerRef.current);
         revealTimerRef.current = null;
@@ -1011,6 +1022,14 @@ export default function CaregiverDetail() {
     setSvc(valid[0] || "");
   }, [caregiver, svcPriceMap, svc]);
 
+  // ✅ sincroniza inputs BR quando estado ISO muda (por qualquer motivo)
+  useEffect(() => {
+    setStartBR(startDate ? formatDateBR(startDate) : "");
+  }, [startDate]);
+  useEffect(() => {
+    setEndBR(endDate ? formatDateBR(endDate) : "");
+  }, [endDate]);
+
   // ---------- MEMOS ----------
   const hasAddressAccess = useMemo(() => {
     if (!user || user.role !== "tutor") return false;
@@ -1056,12 +1075,8 @@ export default function CaregiverDetail() {
 
   // ✅ total REAL de avaliações (vem do summary), independente da paginação carregada
   const totalReviewsCount = useMemo(() => {
-    // count do summary é a fonte de verdade
     const total = Number(reviewSummary?.count ?? 0) || 0;
-
-    // fallback: se summary não veio por algum motivo, usa o que já carregou
     if (total <= 0) return (listReviews || []).length;
-
     return total;
   }, [reviewSummary?.count, listReviews]);
 
@@ -1133,8 +1148,8 @@ export default function CaregiverDetail() {
     }
   };
 
-  // ---------- HANDLERS DE DATA ----------
-  const handleStartChange = (value) => {
+  // ---------- HANDLERS DE DATA (ISO) ----------
+  const handleStartChangeISO = (value) => {
     setCapacityInfo(null);
 
     if (!value) {
@@ -1163,7 +1178,7 @@ export default function CaregiverDetail() {
     }
   };
 
-  const handleEndChange = (value) => {
+  const handleEndChangeISO = (value) => {
     setCapacityInfo(null);
 
     if (!value) {
@@ -1187,6 +1202,80 @@ export default function CaregiverDetail() {
       return;
     }
     setEndDate(value);
+  };
+
+  // ---------- HANDLERS DE DATA (BR - input) ----------
+  const onStartBRChange = (raw) => {
+    setCapacityInfo(null);
+    const masked = maskDateBRInput(raw);
+    setStartBR(masked);
+
+    // só converte quando estiver completo
+    if (masked.length < 10) {
+      setStartDate("");
+      if (endDate) setEndDate("");
+      return;
+    }
+
+    if (!isValidDateBR(masked)) {
+      showToast("Data de entrada inválida.", "error");
+      setStartDate("");
+      if (endDate) setEndDate("");
+      return;
+    }
+
+    const iso = dateBRToLocalKey(masked);
+    handleStartChangeISO(iso);
+  };
+
+  const onEndBRChange = (raw) => {
+    setCapacityInfo(null);
+    const masked = maskDateBRInput(raw);
+    setEndBR(masked);
+
+    if (masked.length < 10) {
+      setEndDate("");
+      return;
+    }
+
+    if (!isValidDateBR(masked)) {
+      showToast("Data de saída inválida.", "error");
+      setEndDate("");
+      return;
+    }
+
+    const iso = dateBRToLocalKey(masked);
+    handleEndChangeISO(iso);
+  };
+
+  const onBlurStartBR = () => {
+    // se estiver incompleto, limpa tudo
+    if (startBR && startBR.length < 10) {
+      setStartBR("");
+      setStartDate("");
+      setEndBR("");
+      setEndDate("");
+      return;
+    }
+
+    // se estiver completo, força sincronizar formato (ex: "1/2/2026" não acontece pq máscara)
+    if (startBR && startBR.length === 10 && isValidDateBR(startBR)) {
+      const iso = dateBRToLocalKey(startBR);
+      setStartDate(iso);
+    }
+  };
+
+  const onBlurEndBR = () => {
+    if (endBR && endBR.length < 10) {
+      setEndBR("");
+      setEndDate("");
+      return;
+    }
+
+    if (endBR && endBR.length === 10 && isValidDateBR(endBR)) {
+      const iso = dateBRToLocalKey(endBR);
+      setEndDate(iso);
+    }
   };
 
   // ---------- ACTIONS ----------
@@ -1383,6 +1472,7 @@ export default function CaregiverDetail() {
         }
 
         setEndDate("");
+        setEndBR("");
         return;
       }
 
@@ -1393,6 +1483,7 @@ export default function CaregiverDetail() {
         (msg.toLowerCase().includes("disponibilidade") || msg.toLowerCase().includes("conflit"))
       ) {
         setEndDate("");
+        setEndBR("");
       }
     } finally {
       setSaving(false);
@@ -1631,37 +1722,39 @@ export default function CaregiverDetail() {
         <section className="pc-card pc-card-accent mb-6">
           <h2 className="font-semibold text-[#5A3A22] mb-3">Fazer pré-reserva</h2>
 
-          {Object.keys(caregiver.services || {}).filter(
-            (k) => caregiver.services[k] && (svcPriceMap[k] ?? 0) > 0
-          ).length === 0 ? (
+          {pricedServices.length === 0 ? (
             <p className="text-[#5A3A22]">Este cuidador ainda não definiu preços para os serviços.</p>
           ) : (
             <>
               <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
                 <select value={svc} onChange={(e) => setSvc(e.target.value)} className="input">
-                  {Object.keys(caregiver.services || {})
-                    .filter((k) => caregiver.services[k] && (svcPriceMap[k] ?? 0) > 0)
-                    .map((k) => (
-                      <option key={k} value={k}>
-                        {serviceLabel(k)} — R$ {Number(svcPriceMap[k]).toFixed(2)}/
-                        {k === "passeios" ? "h" : "dia"}
-                      </option>
-                    ))}
+                  {pricedServices.map((k) => (
+                    <option key={k} value={k}>
+                      {serviceLabel(k)} — R$ {Number(svcPriceMap[k]).toFixed(2)}/
+                      {k === "passeios" ? "h" : "dia"}
+                    </option>
+                  ))}
                 </select>
 
+                {/* ✅ Input BR: Entrada */}
                 <input
-                  type="date"
-                  value={startDate}
-                  min={todayKey}
-                  onChange={(e) => handleStartChange(e.target.value)}
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="DD/MM/AAAA"
+                  value={startBR}
+                  onChange={(e) => onStartBRChange(e.target.value)}
+                  onBlur={onBlurStartBR}
                   className="input"
                 />
 
+                {/* ✅ Input BR: Saída */}
                 <input
-                  type="date"
-                  value={endDate}
-                  min={startDate || todayKey}
-                  onChange={(e) => handleEndChange(e.target.value)}
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="DD/MM/AAAA"
+                  value={endBR}
+                  onChange={(e) => onEndBRChange(e.target.value)}
+                  onBlur={onBlurEndBR}
                   className="input"
                 />
 
@@ -1676,6 +1769,25 @@ export default function CaregiverDetail() {
                 >
                   {saving ? "Enviando..." : "Enviar pré-reserva"}
                 </button>
+              </div>
+
+              {/* ✅ ajuda visual: mostra ISO convertido no padrão BR (opcional e leve) */}
+              <div className="mt-2 text-xs text-[#5A3A22] opacity-70">
+                {startDate ? (
+                  <span>
+                    Entrada: <b>{formatDateBR(startDate)}</b>
+                  </span>
+                ) : (
+                  <span>Entrada: —</span>
+                )}
+                {"  "}•{"  "}
+                {endDate ? (
+                  <span>
+                    Saída: <b>{formatDateBR(endDate)}</b>
+                  </span>
+                ) : (
+                  <span>Saída: —</span>
+                )}
               </div>
 
               {capacityInfo && (
@@ -1698,10 +1810,11 @@ export default function CaregiverDetail() {
                   <button
                     type="button"
                     onClick={toggleAllPets}
-                    className={`mb-3 px-3 py-1 rounded-full text-xs font-semibold border transition ${allPetsSelected
-                      ? "bg-[#5A3A22] text-white border-[#5A3A22]"
-                      : "bg-white text-[#5A3A22] border-[#D2A679] hover:bg-[#FFF3D0]"
-                      }`}
+                    className={`mb-3 px-3 py-1 rounded-full text-xs font-semibold border transition ${
+                      allPetsSelected
+                        ? "bg-[#5A3A22] text-white border-[#5A3A22]"
+                        : "bg-white text-[#5A3A22] border-[#D2A679] hover:bg-[#FFF3D0]"
+                    }`}
                   >
                     {allPetsSelected ? "Desmarcar todos" : "Selecionar todos os pets"}
                   </button>
@@ -1715,10 +1828,11 @@ export default function CaregiverDetail() {
                           key={pet.id}
                           type="button"
                           onClick={() => togglePet(pet.id)}
-                          className={`px-3 py-2 rounded-xl text-xs md:text-sm border flex items-center gap-2 transition ${active
-                            ? "bg-[#5A3A22] text-white border-[#5A3A22]"
-                            : "bg-white text-[#5A3A22] border-[#D2A679] hover:bg-[#FFF3D0]"
-                            }`}
+                          className={`px-3 py-2 rounded-xl text-xs md:text-sm border flex items-center gap-2 transition ${
+                            active
+                              ? "bg-[#5A3A22] text-white border-[#5A3A22]"
+                              : "bg-white text-[#5A3A22] border-[#D2A679] hover:bg-[#FFF3D0]"
+                          }`}
                         >
                           <img
                             src={pickPetImage(pet) || "/paw.png"}
@@ -1831,8 +1945,9 @@ export default function CaregiverDetail() {
                     return (
                       <div
                         key={rv.id}
-                        className={`pc-card pc-card-accent transition-all duration-300 ${revealed ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1"
-                          }`}
+                        className={`pc-card pc-card-accent transition-all duration-300 ${
+                          revealed ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1"
+                        }`}
                       >
                         <p className="text-sm text-[#5A3A22]/80">
                           <b>{rv.authorName || "Usuário"}</b> — {rv.rating} ★ —{" "}
