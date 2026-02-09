@@ -113,50 +113,81 @@ function normalizeDailyCapacity(input) {
 
 /* ============================================================
    ✅ Helpers: filtro de cuidador
-   - Regra NOVA (fix do bug):
-     precisa ter pelo menos 1 serviço true E preço válido (>0)
+   - precisa ter pelo menos 1 serviço true E preço válido (>0)
    ============================================================ */
 
-function sqlHasEnabledServiceWithValidPrice(alias = "u") {
-  return `
-    EXISTS (
-      SELECT 1
-      FROM jsonb_each_text(COALESCE(${alias}.services, '{}'::jsonb)) s(key, val)
-      JOIN jsonb_each_text(COALESCE(${alias}.prices, '{}'::jsonb))  p(key, val)
-        ON p.key = s.key
-      WHERE lower(s.val) IN ('true','1','t','yes','y')
-        AND COALESCE(
-              NULLIF(
-                replace(regexp_replace(p.val, '[^0-9,\\.\\-]', '', 'g'), ',', '.'),
-                ''
-              )::numeric,
-              0
-            ) > 0
-    )
-  `;
+function safeParseJson(v, fallback) {
+  if (v == null) return fallback;
+  if (typeof v === "object") return v;
+  if (typeof v === "string") {
+    try {
+      const parsed = JSON.parse(v);
+      return parsed && typeof parsed === "object" ? parsed : fallback;
+    } catch {
+      return fallback;
+    }
+  }
+  return fallback;
+}
+
+function normalizePriceValue(raw) {
+  if (raw == null) return null;
+
+  // aceita número, "55", "55.00", "55,00", "R$ 55,00"
+  const s = String(raw).trim();
+  if (!s) return null;
+
+  const cleaned = s.replace(/[^\d,.\-]/g, "").replace(",", ".");
+  const n = Number(cleaned);
+  if (!Number.isFinite(n)) return null;
+  if (n <= 0) return null;
+  return n;
+}
+
+function hasAtLeastOneEnabledServiceWithValidPrice(servicesRaw, pricesRaw) {
+  const services = safeParseJson(servicesRaw, {});
+  const prices = safeParseJson(pricesRaw, {});
+
+  if (!services || typeof services !== "object") return false;
+
+  for (const [serviceKey, enabled] of Object.entries(services)) {
+    if (!enabled) continue;
+    const price = normalizePriceValue(prices?.[serviceKey]);
+    if (price != null) return true;
+  }
+  return false;
 }
 
 /* ============================================================
-   ✅ BASE FIELDS
-   - LISTA (leve) vs DETALHE (completo)
+   ✅ SQL fields: LIST vs DETAIL
+   - LIST: leve (evita payload gigante)
+   - DETAIL: completo (perfil)
    ============================================================ */
 
-// ✅ LISTA: não envia image/base64 nem campos pesados/sensíveis
-function baseFieldsSqlList() {
+function listFieldsSql() {
   return `
     u.id,
     u.name,
     u.role,
+
+    -- ✅ evita payload gigante (ex: base64). Se for grande, retorna NULL e o front cai no /paw.png
+    CASE
+      WHEN u.image IS NULL THEN NULL
+      WHEN length(u.image) <= 600 THEN u.image
+      ELSE NULL
+    END AS image,
+
     u.neighborhood,
     u.city,
+
     u.services,
     u.prices,
+
     ${usersDailyCapacitySelectExpr()}
   `;
 }
 
-// ✅ DETALHE: envia tudo (inclui image)
-function baseFieldsSqlDetail() {
+function detailFieldsSql() {
   return `
     u.id,
     u.name,
@@ -175,6 +206,42 @@ function baseFieldsSqlDetail() {
     ${usersDailyCapacitySelectExpr()}
   `;
 }
+
+const RATING_LATERAL = `
+LEFT JOIN LATERAL (
+  WITH union_ratings AS (
+    SELECT rv.rating::numeric AS rating
+    FROM reviews rv
+    WHERE rv.reviewed_id = u.id
+      AND (rv.is_hidden IS NOT TRUE)
+
+    UNION ALL
+
+    SELECT r.tutor_rating::numeric AS rating
+    FROM reservations r
+    LEFT JOIN reviews rv2
+      ON rv2.reservation_id = r.id
+     AND rv2.reviewer_id = r.tutor_id
+    WHERE r.caregiver_id = u.id
+      AND r.tutor_rating IS NOT NULL
+      AND r.tutor_rating > 0
+      AND (rv2.id IS NULL)
+  )
+  SELECT
+    COALESCE(AVG(rating), 0)     AS rating_avg,
+    COUNT(*)::int               AS rating_count
+  FROM union_ratings
+) rs ON true
+`;
+
+const COMPLETED_LATERAL = `
+LEFT JOIN LATERAL (
+  SELECT COUNT(*)::int AS completed_reservations
+  FROM reservations r
+  WHERE r.caregiver_id = u.id
+    AND lower(coalesce(r.status, '')) IN ('concluida','concluída','finalizada','completed')
+) done ON true
+`;
 
 /* ============================================================
    ✅ Schema-tolerant: caregiver_profiles pode ter:
@@ -378,8 +445,11 @@ router.post("/me", authMiddleware, async (req, res) => {
 });
 
 /* ============================================================
-   ✅ GET /caregivers (LISTA LEVE)
-   - reduz payload (principal ganho de performance)
+   ✅ GET /caregivers  (LISTAGEM LEVE)
+   - NÃO depende mais de caregiver_profiles para quem já é role='caregiver'
+   - suporta multi-perfil (cp existe mesmo se role != caregiver)
+   - filtro: só retorna cuidadores com pelo menos 1 serviço ativo E preço válido
+   - ✅ PERFORMANCE: remove campos pesados (bio, address, courses, etc)
    ============================================================ */
 router.get("/", async (req, res) => {
   try {
@@ -389,67 +459,32 @@ router.get("/", async (req, res) => {
     const joinExpr = linkCol === "caregiver_id" ? "cp.caregiver_id = u.id" : "cp.user_id = u.id";
 
     const query = `
-      WITH rating_union AS (
-        SELECT
-          rv.reviewed_id::int AS caregiver_id,
-          rv.rating::numeric  AS rating
-        FROM reviews rv
-        WHERE rv.is_hidden IS NOT TRUE
-
-        UNION ALL
-
-        SELECT
-          r.caregiver_id::int         AS caregiver_id,
-          r.tutor_rating::numeric     AS rating
-        FROM reservations r
-        LEFT JOIN reviews rv2
-          ON rv2.reservation_id = r.id
-         AND rv2.reviewer_id = r.tutor_id
-        WHERE r.tutor_rating IS NOT NULL
-          AND r.tutor_rating > 0
-          AND rv2.id IS NULL
-      ),
-      rating_agg AS (
-        SELECT
-          caregiver_id,
-          COALESCE(AVG(rating), 0) AS rating_avg,
-          COUNT(*)::int           AS rating_count
-        FROM rating_union
-        GROUP BY caregiver_id
-      ),
-      completed_agg AS (
-        SELECT
-          r.caregiver_id::int AS caregiver_id,
-          COUNT(*)::int       AS completed_reservations
-        FROM reservations r
-        WHERE lower(coalesce(r.status, '')) IN ('concluida','concluída','finalizada','completed')
-        GROUP BY r.caregiver_id
-      )
       SELECT
-        ${baseFieldsSqlList()},
+        ${listFieldsSql()},
         cp.created_at AS caregiver_profile_created_at,
-        COALESCE(ra.rating_avg, 0)   AS rating_avg,
-        COALESCE(ra.rating_count, 0) AS rating_count,
-        COALESCE(ca.completed_reservations, 0) AS completed_reservations
+        COALESCE(rs.rating_avg, 0)   AS rating_avg,
+        COALESCE(rs.rating_count, 0) AS rating_count,
+        COALESCE(done.completed_reservations, 0) AS completed_reservations
       FROM users u
       LEFT JOIN caregiver_profiles cp
         ON ${joinExpr}
-      LEFT JOIN rating_agg ra
-        ON ra.caregiver_id = u.id
-      LEFT JOIN completed_agg ca
-        ON ca.caregiver_id = u.id
+      ${RATING_LATERAL}
+      ${COMPLETED_LATERAL}
       WHERE (u.blocked IS NOT TRUE)
         AND (
           lower(coalesce(u.role,'')) = 'caregiver'
           OR cp.created_at IS NOT NULL
         )
-        AND ${sqlHasEnabledServiceWithValidPrice("u")}
       ORDER BY u.id DESC;
     `;
 
     const { rows } = await pool.query(query);
-    res.set("Cache-Control", "public, max-age=30, s-maxage=60, stale-while-revalidate=60");
-    return res.json({ caregivers: rows || [] });
+
+    const filtered = (rows || []).filter((c) =>
+      hasAtLeastOneEnabledServiceWithValidPrice(c.services, c.prices)
+    );
+
+    return res.json({ caregivers: filtered });
   } catch (err) {
     console.error("Erro ao buscar cuidadores:", err);
     return res.status(500).json({ error: "Erro ao buscar cuidadores." });
@@ -457,8 +492,9 @@ router.get("/", async (req, res) => {
 });
 
 /* ============================================================
-   ✅ GET /caregivers/:id (DETALHE COMPLETO)
-   - aqui pode trazer image/base64, bio, phone etc.
+   ✅ GET /caregivers/:id  (DETALHE COMPLETO)
+   - aceita role caregiver OU cp existe
+   - se não tiver serviço ativo + preço válido, responde 404
    ============================================================ */
 router.get("/:id", async (req, res) => {
   try {
@@ -473,62 +509,23 @@ router.get("/:id", async (req, res) => {
     const joinExpr = linkCol === "caregiver_id" ? "cp.caregiver_id = u.id" : "cp.user_id = u.id";
 
     const query = `
-      WITH rating_union AS (
-        SELECT
-          rv.reviewed_id::int AS caregiver_id,
-          rv.rating::numeric  AS rating
-        FROM reviews rv
-        WHERE rv.is_hidden IS NOT TRUE
-
-        UNION ALL
-
-        SELECT
-          r.caregiver_id::int         AS caregiver_id,
-          r.tutor_rating::numeric     AS rating
-        FROM reservations r
-        LEFT JOIN reviews rv2
-          ON rv2.reservation_id = r.id
-         AND rv2.reviewer_id = r.tutor_id
-        WHERE r.tutor_rating IS NOT NULL
-          AND r.tutor_rating > 0
-          AND rv2.id IS NULL
-      ),
-      rating_agg AS (
-        SELECT
-          caregiver_id,
-          COALESCE(AVG(rating), 0) AS rating_avg,
-          COUNT(*)::int           AS rating_count
-        FROM rating_union
-        GROUP BY caregiver_id
-      ),
-      completed_agg AS (
-        SELECT
-          r.caregiver_id::int AS caregiver_id,
-          COUNT(*)::int       AS completed_reservations
-        FROM reservations r
-        WHERE lower(coalesce(r.status, '')) IN ('concluida','concluída','finalizada','completed')
-        GROUP BY r.caregiver_id
-      )
       SELECT
-        ${baseFieldsSqlDetail()},
+        ${detailFieldsSql()},
         cp.created_at AS caregiver_profile_created_at,
-        COALESCE(ra.rating_avg, 0)   AS rating_avg,
-        COALESCE(ra.rating_count, 0) AS rating_count,
-        COALESCE(ca.completed_reservations, 0) AS completed_reservations
+        COALESCE(rs.rating_avg, 0)   AS rating_avg,
+        COALESCE(rs.rating_count, 0) AS rating_count,
+        COALESCE(done.completed_reservations, 0) AS completed_reservations
       FROM users u
       LEFT JOIN caregiver_profiles cp
         ON ${joinExpr}
-      LEFT JOIN rating_agg ra
-        ON ra.caregiver_id = u.id
-      LEFT JOIN completed_agg ca
-        ON ca.caregiver_id = u.id
+      ${RATING_LATERAL}
+      ${COMPLETED_LATERAL}
       WHERE (u.blocked IS NOT TRUE)
         AND u.id = $1
         AND (
           lower(coalesce(u.role,'')) = 'caregiver'
           OR cp.created_at IS NOT NULL
         )
-        AND ${sqlHasEnabledServiceWithValidPrice("u")}
       LIMIT 1;
     `;
 
@@ -538,7 +535,13 @@ router.get("/:id", async (req, res) => {
       return res.status(404).json({ error: "Cuidador não encontrado." });
     }
 
-    return res.json({ caregiver: rows[0] });
+    const caregiver = rows[0];
+
+    if (!hasAtLeastOneEnabledServiceWithValidPrice(caregiver.services, caregiver.prices)) {
+      return res.status(404).json({ error: "Cuidador não encontrado." });
+    }
+
+    return res.json({ caregiver });
   } catch (err) {
     console.error("Erro ao buscar cuidador:", err);
     return res.status(500).json({ error: "Erro ao buscar cuidador." });
