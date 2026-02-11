@@ -380,7 +380,6 @@ function parseDataUrl(dataUrl) {
   const s = String(dataUrl || "");
   if (!s.startsWith("data:")) return null;
 
-  // data:image/jpeg;base64,AAAA
   const comma = s.indexOf(",");
   if (comma < 0) return null;
 
@@ -400,7 +399,7 @@ function extFromMime(mime) {
   if (mime.includes("png")) return "png";
   if (mime.includes("webp")) return "webp";
   if (mime.includes("gif")) return "gif";
-  return "jpg"; // jpeg/jpg default
+  return "jpg";
 }
 
 async function uploadProfilePhotoFromDataUrl({ userId, dataUrl }) {
@@ -423,14 +422,12 @@ async function uploadProfilePhotoFromDataUrl({ userId, dataUrl }) {
 
   const supabase = getSupabase();
   const ext = extFromMime(mime);
-
-  // path estável (sobrescreve)
   const path = `profiles/${userId}/avatar.${ext}`;
 
   const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, buffer, {
     upsert: true,
     contentType: mime,
-    cacheControl: "31536000", // 1 ano
+    cacheControl: "31536000",
   });
 
   if (upErr) {
@@ -452,7 +449,6 @@ async function upsertCaregiversPhotoUrl(userId, photoUrl) {
     throw e;
   }
 
-  // garante que existe registro em caregivers
   await pool.query(
     `
     INSERT INTO caregivers (user_id)
@@ -472,24 +468,8 @@ async function upsertCaregiversPhotoUrl(userId, photoUrl) {
   );
 }
 
-async function updateUsersImageUrl(userId, imageUrl) {
-  const uid = Number(userId);
-  if (!Number.isFinite(uid) || uid <= 0) return;
-
-  await pool.query(
-    `
-    UPDATE users
-    SET image = $1
-    WHERE id = $2
-    `,
-    [String(imageUrl || ""), uid]
-  );
-}
-
 /* ============================================================
    ✅ PATCH /caregivers/me/photo (AUTOMÁTICO no fluxo)
-   - recebe { image: "data:image/...;base64,..." } OU { dataUrl: "..." }
-   - sobe no Supabase e salva em caregivers.photo_url
    ============================================================ */
 router.patch("/me/photo", authMiddleware, async (req, res) => {
   const userId = req.user?.id;
@@ -528,16 +508,10 @@ router.patch("/me/photo", authMiddleware, async (req, res) => {
 
 /* ============================================================
    ✅ POST /caregivers/me (idempotente)
-   - cria caregiver_profile se não existe
-   - salva services (OBJETO) + daily_capacity
-   - ✅ opcional: se vier image/dataUrl (base64), já sobe e salva photo_url
    ============================================================ */
 router.post("/me", authMiddleware, async (req, res) => {
   const userId = req.user?.id;
-
-  if (!userId) {
-    return res.status(401).json({ error: "Não autenticado." });
-  }
+  if (!userId) return res.status(401).json({ error: "Não autenticado." });
 
   try {
     await detectUsersColumnsOnce();
@@ -550,10 +524,9 @@ router.post("/me", authMiddleware, async (req, res) => {
 
     if (body.services !== undefined) {
       if (!serviceKeys || serviceKeys.length === 0) {
-        return res.status(400).json({
-          error: "Selecione pelo menos 1 serviço.",
-          code: "INVALID_SERVICES",
-        });
+        return res
+          .status(400)
+          .json({ error: "Selecione pelo menos 1 serviço.", code: "INVALID_SERVICES" });
       }
     }
 
@@ -636,18 +609,14 @@ router.post("/me", authMiddleware, async (req, res) => {
       hasCaregiverProfile: true,
       services,
       daily_capacity,
-      photo_url, // ✅ se fez upload agora
+      photo_url,
     });
   } catch (err) {
     console.error("Erro em POST /caregivers/me:", err?.message || err);
 
     const msg = String(err?.message || "").toLowerCase();
     if (msg.includes("duplicate") || msg.includes("unique")) {
-      return res.status(200).json({
-        ok: true,
-        created: false,
-        hasCaregiverProfile: true,
-      });
+      return res.status(200).json({ ok: true, created: false, hasCaregiverProfile: true });
     }
 
     return res.status(500).json({ error: "Erro ao criar perfil de cuidador." });
@@ -656,14 +625,9 @@ router.post("/me", authMiddleware, async (req, res) => {
 
 /* ============================================================
    ✅ POST /caregivers/migrate-photos (ADMIN)
-   - migra base64 -> Supabase Storage -> URL
-   - cobre:
-     (A) users.image base64
-     (B) caregivers.photo_url base64 (seu caso!)
-   - e atualiza caregivers.photo_url e users.image para URL
-   - querystring:
-     - ?limit=50 (padrão 50)
-     - ?dry=1 (não grava no banco)
+   - Migra base64 que estiver em:
+   - caregivers.photo_url (prioridade)
+   - OU users.image (fallback)
    ============================================================ */
 router.post("/migrate-photos", authMiddleware, async (req, res) => {
   const userId = req.user?.id;
@@ -676,7 +640,7 @@ router.post("/migrate-photos", authMiddleware, async (req, res) => {
   const dryRun = String(req.query.dry || "") === "1";
 
   try {
-    // pega quem tem base64 EM QUALQUER UM (users.image OU caregivers.photo_url)
+    // ✅ pega candidatos onde existe base64 em c.photo_url OU u.image
     const { rows } = await pool.query(
       `
       SELECT
@@ -686,8 +650,11 @@ router.post("/migrate-photos", authMiddleware, async (req, res) => {
       FROM users u
       LEFT JOIN caregivers c ON c.user_id = u.id
       WHERE
-        (u.image LIKE 'data:%;base64,%'
-         OR c.photo_url LIKE 'data:%;base64,%')
+        (
+          (c.photo_url IS NOT NULL AND c.photo_url LIKE 'data:%;base64,%')
+          OR
+          (u.image IS NOT NULL AND u.image LIKE 'data:%;base64,%')
+        )
       ORDER BY u.id ASC
       LIMIT $1
       `,
@@ -701,7 +668,7 @@ router.post("/migrate-photos", authMiddleware, async (req, res) => {
         checked: 0,
         migrated: 0,
         skipped: 0,
-        message: "Nada para migrar (sem base64 em users.image ou caregivers.photo_url).",
+        message: "Nada para migrar (sem base64 pendente).",
       });
     }
 
@@ -710,18 +677,22 @@ router.post("/migrate-photos", authMiddleware, async (req, res) => {
     for (const r of rows) {
       const uid = Number(r.user_id);
 
-      // prioridade: se caregivers.photo_url é base64, usa ela; senão usa users.image
-      const cPhoto = typeof r.caregivers_photo_url === "string" ? r.caregivers_photo_url : "";
-      const uImg = typeof r.users_image === "string" ? r.users_image : "";
+      // ✅ prioridade: caregivers.photo_url (se for base64), senão users.image
+      const cBase64 =
+        typeof r.caregivers_photo_url === "string" && r.caregivers_photo_url.startsWith("data:")
+          ? r.caregivers_photo_url
+          : null;
 
-      const cIsB64 = cPhoto.startsWith("data:") && cPhoto.includes(";base64,");
-      const uIsB64 = uImg.startsWith("data:") && uImg.includes(";base64,");
+      const uBase64 =
+        typeof r.users_image === "string" && r.users_image.startsWith("data:")
+          ? r.users_image
+          : null;
 
-      const dataUrl = cIsB64 ? cPhoto : uIsB64 ? uImg : null;
+      const dataUrl = cBase64 || uBase64;
 
       if (!dataUrl) {
         report.skipped += 1;
-        report.items.push({ user_id: uid, ok: false, reason: "NO_BASE64_FOUND" });
+        report.items.push({ user_id: uid, ok: false, reason: "NO_BASE64_SOURCE" });
         continue;
       }
 
@@ -734,10 +705,11 @@ router.post("/migrate-photos", authMiddleware, async (req, res) => {
       }
 
       if (!dryRun) {
-        // ✅ garante caregivers + salva URL
+        // grava URL em caregivers.photo_url (fonte oficial p/ listagem)
         await upsertCaregiversPhotoUrl(uid, up.publicUrl);
-        // ✅ troca users.image também para URL (remove base64 pesado)
-        await updateUsersImageUrl(uid, up.publicUrl);
+
+        // opcional e útil: também troca users.image para URL (pra não sobrar base64 em users)
+        await pool.query(`UPDATE users SET image = $1 WHERE id = $2`, [up.publicUrl, uid]);
       }
 
       report.migrated += 1;
@@ -753,9 +725,6 @@ router.post("/migrate-photos", authMiddleware, async (req, res) => {
 
 /* ============================================================
    ✅ GET /caregivers  (LISTAGEM ULTRA LEVE)
-   - ✅ image = SOMENTE URL (cg.photo_url)
-   - ✅ NÃO retorna base64 (deixa MUITO mais rápido)
-   - filtro: só retorna cuidadores com pelo menos 1 serviço ativo E preço válido
    ============================================================ */
 router.get("/", async (req, res) => {
   try {
@@ -801,8 +770,6 @@ router.get("/", async (req, res) => {
 
 /* ============================================================
    ✅ GET /caregivers/:id  (DETALHE COMPLETO)
-   - aceita role caregiver OU cp existe
-   - se não tiver serviço ativo + preço válido, responde 404
    ============================================================ */
 router.get("/:id", async (req, res) => {
   try {
