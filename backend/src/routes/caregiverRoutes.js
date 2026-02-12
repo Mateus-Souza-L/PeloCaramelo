@@ -4,17 +4,58 @@ const router = express.Router();
 const pool = require("../config/db");
 const authMiddleware = require("../middleware/authMiddleware");
 
-// ✅ Supabase Storage (para migrar base64 -> URL)
+/* ============================================================
+   ✅ Helpers de ENV (evita valores "colados" tipo KEY=VALOR)
+   ============================================================ */
+
+function sanitizeEnvValue(raw, fallback = "") {
+  const s = String(raw || "").trim();
+  if (!s) return fallback;
+
+  // se vier "VAR=valor", pega só depois do "="
+  const eq = s.indexOf("=");
+  let v = eq >= 0 ? s.slice(eq + 1).trim() : s;
+
+  // remove aspas acidentais
+  v = v.replace(/^"+|"+$/g, "").replace(/^'+|'+$/g, "").trim();
+
+  return v || fallback;
+}
+
+function sanitizeBucketName(raw, fallback) {
+  return sanitizeEnvValue(raw, fallback);
+}
+
+function sanitizeSupabaseUrl(raw, fallback = "") {
+  let url = sanitizeEnvValue(raw, fallback);
+  if (!url) return fallback;
+
+  // Se veio só "xxxx.supabase.co", adiciona https://
+  if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
+
+  // remove barra final
+  url = url.replace(/\/+$/, "");
+  return url;
+}
+
+/* ============================================================
+   ✅ Supabase Storage (para migrar base64 -> URL)
+   ============================================================ */
+
 let _supabase = null;
+
 function getSupabase() {
   if (_supabase) return _supabase;
 
   const { createClient } = require("@supabase/supabase-js");
 
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY; // ⚠️ backend only
+  const url = sanitizeSupabaseUrl(process.env.SUPABASE_URL, "");
+  const key = sanitizeEnvValue(process.env.SUPABASE_SERVICE_ROLE_KEY, ""); // ⚠️ backend only
+
   if (!url || !key) {
-    throw new Error("SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY não configurados.");
+    throw new Error(
+      "SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY não configurados (ou vieram vazios)."
+    );
   }
 
   _supabase = createClient(url, key, {
@@ -24,11 +65,16 @@ function getSupabase() {
   return _supabase;
 }
 
-const BUCKET = process.env.SUPABASE_STORAGE_BUCKET || "pet-photos";
+const BUCKET = sanitizeBucketName(
+  process.env.SUPABASE_STORAGE_BUCKET,
+  "pet-photos"
+);
 const DEFAULT_DAILY_CAPACITY = Number(process.env.DEFAULT_DAILY_CAPACITY || 15);
 
 // ✅ limite de upload (evita estourar memória/requests)
-const MAX_PROFILE_PHOTO_BYTES = Number(process.env.MAX_PROFILE_PHOTO_BYTES || 6 * 1024 * 1024); // 6MB
+const MAX_PROFILE_PHOTO_BYTES = Number(
+  process.env.MAX_PROFILE_PHOTO_BYTES || 6 * 1024 * 1024
+); // 6MB
 
 /**
  * ✅ Regras de rating (fonte única + fallback legado)
@@ -49,15 +95,13 @@ async function detectUsersColumnsOnce() {
   _usersColsChecked = true;
 
   try {
-    const { rows } = await pool.query(
-      `
+    const { rows } = await pool.query(`
       SELECT column_name
       FROM information_schema.columns
       WHERE table_schema = 'public'
         AND table_name = 'users'
         AND column_name IN ('daily_capacity')
-      `
-    );
+    `);
 
     const set = new Set((rows || []).map((r) => String(r.column_name)));
     _hasDailyCapacityCol = set.has("daily_capacity");
@@ -67,7 +111,8 @@ async function detectUsersColumnsOnce() {
 }
 
 function usersDailyCapacitySelectExpr() {
-  if (_hasDailyCapacityCol) return "COALESCE(u.daily_capacity, 15) AS daily_capacity";
+  if (_hasDailyCapacityCol)
+    return "COALESCE(u.daily_capacity, 15) AS daily_capacity";
   return `${DEFAULT_DAILY_CAPACITY}::int AS daily_capacity`;
 }
 
@@ -157,7 +202,6 @@ function safeParseJson(v, fallback) {
 function normalizePriceValue(raw) {
   if (raw == null) return null;
 
-  // aceita número, "55", "55.00", "55,00", "R$ 55,00"
   const s = String(raw).trim();
   if (!s) return null;
 
@@ -184,8 +228,6 @@ function hasAtLeastOneEnabledServiceWithValidPrice(servicesRaw, pricesRaw) {
 
 /* ============================================================
    ✅ SQL fields: LIST vs DETAIL
-   - LIST: leve (NÃO retorna base64)
-   - DETAIL: pode manter fallback legado (1 registro apenas)
    ============================================================ */
 
 function listFieldsSql() {
@@ -193,10 +235,7 @@ function listFieldsSql() {
     u.id,
     u.name,
     u.role,
-
-    -- ✅ LISTA ULTRA LEVE: SOMENTE URL (sem base64)
     NULLIF(cg.photo_url, '') AS image,
-
     u.neighborhood,
     u.city,
     u.services,
@@ -211,10 +250,7 @@ function detailFieldsSql() {
     u.name,
     u.email,
     u.role,
-
-    -- ✅ DETALHE: URL primeiro, depois base64 legado (ok, é 1 cuidador)
     COALESCE(NULLIF(cg.photo_url, ''), NULLIF(u.image, '')) AS image,
-
     u.bio,
     u.phone,
     u.address,
@@ -270,7 +306,7 @@ LEFT JOIN LATERAL (
    - caregiver_id
    ============================================================ */
 
-let cachedLinkCol = null; // "user_id" | "caregiver_id" | null
+let cachedLinkCol = null;
 let cachedAt = 0;
 
 async function detectLinkColumn() {
@@ -278,15 +314,13 @@ async function detectLinkColumn() {
   if (cachedAt && now - cachedAt < 5 * 60 * 1000) return cachedLinkCol;
 
   try {
-    const { rows } = await pool.query(
-      `
+    const { rows } = await pool.query(`
       SELECT column_name
       FROM information_schema.columns
       WHERE table_schema = 'public'
         AND table_name = 'caregiver_profiles'
         AND column_name IN ('user_id', 'caregiver_id')
-      `
-    );
+    `);
 
     const cols = new Set((rows || []).map((r) => String(r.column_name)));
 
@@ -327,7 +361,7 @@ async function hasCaregiverProfile(userId) {
       return rows?.length > 0;
     }
 
-    // fallback por tentativa/erro
+    // fallback
     try {
       const { rows } = await pool.query(
         `SELECT 1 FROM caregiver_profiles WHERE user_id::text = $1 LIMIT 1`,
@@ -351,18 +385,17 @@ async function hasCaregiverProfile(userId) {
 }
 
 /* ============================================================
-   ✅ Admin check robusto (não depende do JWT ter role/admin_level)
-   - aceita role: admin / admin_master
-   - OU admin_level >= 1
+   ✅ Admin check robusto
    ============================================================ */
 async function ensureAdminFromDb(userId) {
   const id = Number(userId);
   if (!Number.isFinite(id) || id <= 0) return false;
 
   try {
-    const { rows } = await pool.query(`SELECT role, admin_level FROM users WHERE id = $1 LIMIT 1`, [
-      id,
-    ]);
+    const { rows } = await pool.query(
+      `SELECT role, admin_level FROM users WHERE id = $1 LIMIT 1`,
+      [id]
+    );
     const r = rows?.[0];
     const role = String(r?.role || "").toLowerCase();
     const lvl = Number(r?.admin_level || 0);
@@ -383,7 +416,7 @@ function parseDataUrl(dataUrl) {
   const comma = s.indexOf(",");
   if (comma < 0) return null;
 
-  const meta = s.slice(5, comma); // "image/jpeg;base64"
+  const meta = s.slice(5, comma);
   const b64 = s.slice(comma + 1);
 
   const [mimeRaw, ...rest] = meta.split(";");
@@ -400,6 +433,21 @@ function extFromMime(mime) {
   if (mime.includes("webp")) return "webp";
   if (mime.includes("gif")) return "gif";
   return "jpg";
+}
+
+function extractSupabaseErrorDetails(err) {
+  if (!err) return null;
+  const out = {
+    message: err.message,
+    statusCode: err.statusCode,
+    name: err.name,
+  };
+  try {
+    if (err.cause) out.cause = String(err.cause?.message || err.cause);
+  } catch {
+    // ignore
+  }
+  return out;
 }
 
 async function uploadProfilePhotoFromDataUrl({ userId, dataUrl }) {
@@ -424,14 +472,32 @@ async function uploadProfilePhotoFromDataUrl({ userId, dataUrl }) {
   const ext = extFromMime(mime);
   const path = `profiles/${userId}/avatar.${ext}`;
 
-  const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, buffer, {
-    upsert: true,
-    contentType: mime,
-    cacheControl: "31536000",
-  });
+  try {
+    const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, buffer, {
+      upsert: true,
+      contentType: mime,
+      cacheControl: "31536000",
+    });
 
-  if (upErr) {
-    return { ok: false, reason: "UPLOAD_FAILED", details: upErr.message };
+    if (upErr) {
+      return {
+        ok: false,
+        reason: "UPLOAD_FAILED",
+        details: upErr.message,
+        extra: extractSupabaseErrorDetails(upErr),
+        bucket: BUCKET,
+        supabaseUrl: sanitizeSupabaseUrl(process.env.SUPABASE_URL, ""),
+      };
+    }
+  } catch (thrown) {
+    return {
+      ok: false,
+      reason: "UPLOAD_THROWN",
+      details: String(thrown?.message || thrown || ""),
+      extra: extractSupabaseErrorDetails(thrown),
+      bucket: BUCKET,
+      supabaseUrl: sanitizeSupabaseUrl(process.env.SUPABASE_URL, ""),
+    };
   }
 
   const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
@@ -469,7 +535,205 @@ async function upsertCaregiversPhotoUrl(userId, photoUrl) {
 }
 
 /* ============================================================
-   ✅ PATCH /caregivers/me/photo (AUTOMÁTICO no fluxo)
+   ✅ Galeria do cuidador
+   ============================================================ */
+
+const GALLERY_BUCKET = sanitizeBucketName(
+  process.env.SUPABASE_GALLERY_BUCKET,
+  "caregiver-gallery"
+);
+const MAX_GALLERY_PHOTOS = Math.max(
+  1,
+  Math.min(50, Number(process.env.MAX_GALLERY_PHOTOS || 12))
+);
+
+// opcional: limite separado para galeria
+const MAX_GALLERY_PHOTO_BYTES = Number(
+  process.env.MAX_GALLERY_PHOTO_BYTES || MAX_PROFILE_PHOTO_BYTES
+);
+
+let _galleryTableChecked = false;
+let _hasGalleryTable = false;
+
+let _galleryColsChecked = false;
+let _galleryHasCaption = false;
+let _galleryHasPhotoPath = false;
+
+async function detectCaregiverPhotosTableOnce() {
+  if (_galleryTableChecked) return _hasGalleryTable;
+  _galleryTableChecked = true;
+
+  try {
+    const { rows } = await pool.query(`
+      SELECT 1
+      FROM information_schema.tables
+      WHERE table_schema = 'public'
+        AND table_name = 'caregiver_photos'
+      LIMIT 1
+    `);
+    _hasGalleryTable = rows.length > 0;
+  } catch {
+    _hasGalleryTable = false;
+  }
+
+  return _hasGalleryTable;
+}
+
+async function detectCaregiverPhotosColumnsOnce() {
+  if (_galleryColsChecked) return;
+  _galleryColsChecked = true;
+
+  try {
+    const { rows } = await pool.query(`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'caregiver_photos'
+        AND column_name IN ('caption', 'photo_path')
+    `);
+
+    const set = new Set((rows || []).map((r) => String(r.column_name)));
+    _galleryHasCaption = set.has("caption");
+    _galleryHasPhotoPath = set.has("photo_path");
+  } catch {
+    _galleryHasCaption = false;
+    _galleryHasPhotoPath = false;
+  }
+}
+
+function safeTrimCaption(v) {
+  if (v == null) return "";
+  const s = String(v).trim();
+  if (!s) return "";
+  return s.slice(0, 140);
+}
+
+function makeRandomId() {
+  try {
+    const crypto = require("crypto");
+    if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+    return crypto.randomBytes(16).toString("hex");
+  } catch {
+    return `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  }
+}
+
+/**
+ * ✅ IMPORTANTÍSSIMO (seu FK confirmou):
+ * caregiver_photos.caregiver_id -> users.id
+ * Então o "caregiverId" da galeria é o PRÓPRIO user_id.
+ */
+async function getCaregiverIdByUserId(userId) {
+  const uid = Number(userId);
+  if (!Number.isFinite(uid) || uid <= 0) return null;
+  return uid;
+}
+
+async function uploadGalleryPhotoFromDataUrl({ caregiverId, dataUrl }) {
+  const parsed = parseDataUrl(dataUrl);
+  if (!parsed) return { ok: false, reason: "NOT_DATA_URL" };
+
+  const { mime, base64 } = parsed;
+
+  let buffer;
+  try {
+    buffer = Buffer.from(base64, "base64");
+  } catch {
+    return { ok: false, reason: "INVALID_BASE64" };
+  }
+
+  if (!buffer || buffer.length < 10) return { ok: false, reason: "EMPTY" };
+  if (buffer.length > MAX_GALLERY_PHOTO_BYTES) {
+    return { ok: false, reason: "TOO_LARGE", details: `max=${MAX_GALLERY_PHOTO_BYTES}` };
+  }
+
+  const supabase = getSupabase();
+  const ext = extFromMime(mime);
+  const id = makeRandomId();
+  const path = `gallery/${caregiverId}/${id}.${ext}`;
+
+  try {
+    const { error: upErr } = await supabase.storage.from(GALLERY_BUCKET).upload(path, buffer, {
+      upsert: false,
+      contentType: mime,
+      cacheControl: "31536000",
+    });
+
+    if (upErr) {
+      return {
+        ok: false,
+        reason: "UPLOAD_FAILED",
+        details: upErr.message,
+        extra: extractSupabaseErrorDetails(upErr),
+        bucket: GALLERY_BUCKET,
+        path,
+        supabaseUrl: sanitizeSupabaseUrl(process.env.SUPABASE_URL, ""),
+      };
+    }
+  } catch (thrown) {
+    return {
+      ok: false,
+      reason: "UPLOAD_THROWN",
+      details: String(thrown?.message || thrown || ""),
+      extra: extractSupabaseErrorDetails(thrown),
+      bucket: GALLERY_BUCKET,
+      path,
+      supabaseUrl: sanitizeSupabaseUrl(process.env.SUPABASE_URL, ""),
+    };
+  }
+
+  const { data } = supabase.storage.from(GALLERY_BUCKET).getPublicUrl(path);
+  const publicUrl = data?.publicUrl || null;
+  if (!publicUrl) return { ok: false, reason: "NO_PUBLIC_URL" };
+
+  return { ok: true, publicUrl, path, mime, bytes: buffer.length, bucket: GALLERY_BUCKET };
+}
+
+async function tryInsertCaregiverPhoto({ caregiverId, photoUrl, photoPath, caption }) {
+  await detectCaregiverPhotosColumnsOnce();
+
+  const cols = ["caregiver_id", "photo_url"];
+  const vals = [Number(caregiverId), String(photoUrl || "")];
+  const ph = ["$1", "$2"];
+  let idx = 3;
+
+  if (_galleryHasCaption) {
+    cols.push("caption");
+    vals.push(safeTrimCaption(caption));
+    ph.push(`$${idx++}`);
+  }
+
+  if (_galleryHasPhotoPath) {
+    cols.push("photo_path");
+    vals.push(String(photoPath || ""));
+    ph.push(`$${idx++}`);
+  }
+
+  const q = `
+    INSERT INTO caregiver_photos (${cols.join(", ")})
+    VALUES (${ph.join(", ")})
+    RETURNING id, caregiver_id, photo_url, ${_galleryHasCaption ? "caption," : ""} created_at
+  `;
+
+  const { rows } = await pool.query(q, vals);
+  return rows?.[0] || null;
+}
+
+async function deleteFromSupabaseGalleryIfPossible(photoPathOrNull) {
+  if (!photoPathOrNull) return false;
+  try {
+    const supabase = getSupabase();
+    const { error } = await supabase.storage
+      .from(GALLERY_BUCKET)
+      .remove([String(photoPathOrNull)]);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+/* ============================================================
+   ✅ PATCH /caregivers/me/photo
    ============================================================ */
 router.patch("/me/photo", authMiddleware, async (req, res) => {
   const userId = req.user?.id;
@@ -490,6 +754,9 @@ router.patch("/me/photo", authMiddleware, async (req, res) => {
         error: "Foto inválida ou não suportada.",
         code: up.reason,
         details: up.details,
+        extra: up.extra,
+        bucket: up.bucket,
+        supabaseUrl: up.supabaseUrl,
       });
     }
 
@@ -505,6 +772,337 @@ router.patch("/me/photo", authMiddleware, async (req, res) => {
     return res.status(500).json({ error: "Erro ao salvar foto." });
   }
 });
+
+/* ============================================================
+   ✅ Handlers compartilhados (/me/gallery e /me/photos)
+   ============================================================ */
+
+async function handleUploadGallery(req, res) {
+  const userId = req.user?.id;
+  if (!userId) return res.status(401).json({ error: "Não autenticado." });
+
+  try {
+    const hasTable = await detectCaregiverPhotosTableOnce();
+    if (!hasTable) {
+      return res.status(201).json({
+        ok: true,
+        limit: MAX_GALLERY_PHOTOS,
+        results: [],
+        warning: "Tabela caregiver_photos não existe ainda.",
+      });
+    }
+
+    const uid = Number(userId);
+    if (!Number.isFinite(uid) || uid <= 0) return res.status(400).json({ error: "ID inválido." });
+
+    const caregiverId = await getCaregiverIdByUserId(uid);
+    if (!caregiverId) return res.status(400).json({ error: "Perfil cuidador inválido." });
+
+    let existingCount = 0;
+    try {
+      const { rows } = await pool.query(
+        `SELECT COUNT(*)::int AS n FROM caregiver_photos WHERE caregiver_id = $1`,
+        [caregiverId]
+      );
+      existingCount = Number(rows?.[0]?.n || 0);
+    } catch {
+      existingCount = 0;
+    }
+
+    const body = req.body || {};
+    const batch = Array.isArray(body.photos) ? body.photos : null;
+
+    const items = batch
+      ? batch.slice(0, MAX_GALLERY_PHOTOS)
+      : [{ dataUrl: body.dataUrl ?? body.image ?? body.photo, caption: body.caption }];
+
+    if (!items.length) {
+      return res.status(400).json({ error: "Envie 'dataUrl' ou 'photos'." });
+    }
+
+    if (existingCount >= MAX_GALLERY_PHOTOS) {
+      return res.status(400).json({
+        error: `Limite de ${MAX_GALLERY_PHOTOS} fotos atingido.`,
+        code: "GALLERY_LIMIT_REACHED",
+      });
+    }
+
+    const results = [];
+    for (const it of items) {
+      if (existingCount >= MAX_GALLERY_PHOTOS) break;
+
+      const dataUrl = it?.dataUrl ?? it?.image ?? it?.photo ?? null;
+      if (typeof dataUrl !== "string" || !dataUrl.startsWith("data:")) {
+        results.push({ ok: false, code: "INVALID_DATAURL", details: "Foto inválida (dataURL base64)." });
+        continue;
+      }
+
+      const up = await uploadGalleryPhotoFromDataUrl({ caregiverId, dataUrl });
+      if (!up.ok) {
+        results.push({
+          ok: false,
+          code: up.reason,
+          details: up.details,
+          extra: up.extra,
+          bucket: up.bucket,
+          path: up.path,
+          supabaseUrl: up.supabaseUrl,
+        });
+        continue;
+      }
+
+      const saved = await tryInsertCaregiverPhoto({
+        caregiverId,
+        photoUrl: up.publicUrl,
+        photoPath: up.path,
+        caption: it?.caption,
+      });
+
+      existingCount += 1;
+
+      results.push({
+        ok: true,
+        photo: saved || {
+          photo_url: up.publicUrl,
+          caption: safeTrimCaption(it?.caption),
+        },
+      });
+    }
+
+    return res.status(201).json({
+      ok: true,
+      limit: MAX_GALLERY_PHOTOS,
+      results,
+      bucket: GALLERY_BUCKET,
+    });
+  } catch (err) {
+    console.error("Erro em upload da galeria:", err?.message || err);
+    return res.status(500).json({ error: "Erro ao salvar foto na galeria." });
+  }
+}
+
+async function handleListGallery(req, res) {
+  const userId = req.user?.id;
+  if (!userId) return res.status(401).json({ error: "Não autenticado." });
+
+  try {
+    const hasTable = await detectCaregiverPhotosTableOnce();
+    if (!hasTable) return res.json({ ok: true, photos: [], limit: MAX_GALLERY_PHOTOS });
+
+    await detectCaregiverPhotosColumnsOnce();
+
+    const uid = Number(userId);
+    const caregiverId = await getCaregiverIdByUserId(uid);
+    if (!caregiverId) return res.json({ ok: true, photos: [], limit: MAX_GALLERY_PHOTOS });
+
+    const selectCaption = _galleryHasCaption ? "p.caption," : "";
+
+    const { rows } = await pool.query(
+      `
+      SELECT
+        p.id,
+        p.photo_url,
+        ${selectCaption}
+        p.created_at
+      FROM caregiver_photos p
+      WHERE p.caregiver_id = $1
+      ORDER BY p.created_at DESC
+      LIMIT $2
+      `,
+      [caregiverId, MAX_GALLERY_PHOTOS]
+    );
+
+    return res.json({ ok: true, photos: rows || [], limit: MAX_GALLERY_PHOTOS });
+  } catch (err) {
+    console.error("Erro em listagem da galeria:", err?.message || err);
+    return res.status(500).json({ error: "Erro ao buscar galeria." });
+  }
+}
+
+async function handleDeleteGallery(req, res) {
+  const userId = req.user?.id;
+  if (!userId) return res.status(401).json({ error: "Não autenticado." });
+
+  try {
+    const hasTable = await detectCaregiverPhotosTableOnce();
+    if (!hasTable) return res.json({ ok: true });
+
+    await detectCaregiverPhotosColumnsOnce();
+
+    const uid = Number(userId);
+    const caregiverId = await getCaregiverIdByUserId(uid);
+    if (!caregiverId) return res.status(403).json({ error: "Sem permissão." });
+
+    const photoId = String(req.params.photoId || "").trim();
+    if (!photoId) return res.status(400).json({ error: "photoId inválido." });
+
+    let row = null;
+    if (_galleryHasPhotoPath) {
+      const { rows } = await pool.query(
+        `
+        SELECT id, caregiver_id, photo_url, photo_path
+        FROM caregiver_photos
+        WHERE id::text = $1
+        LIMIT 1
+        `,
+        [photoId]
+      );
+      row = rows?.[0] || null;
+    } else {
+      const { rows } = await pool.query(
+        `
+        SELECT id, caregiver_id, photo_url
+        FROM caregiver_photos
+        WHERE id::text = $1
+        LIMIT 1
+        `,
+        [photoId]
+      );
+      row = rows?.[0] || null;
+    }
+
+    if (!row) return res.status(404).json({ error: "Foto não encontrada." });
+    if (Number(row.caregiver_id) !== Number(caregiverId))
+      return res.status(403).json({ error: "Sem permissão." });
+
+    if (_galleryHasPhotoPath && row.photo_path) {
+      await deleteFromSupabaseGalleryIfPossible(row.photo_path);
+    }
+
+    await pool.query(`DELETE FROM caregiver_photos WHERE id::text = $1`, [photoId]);
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("Erro em delete da galeria:", err?.message || err);
+    return res.status(500).json({ error: "Erro ao remover foto." });
+  }
+}
+
+/* ============================================================
+   ✅ PATCH /caregivers/me/photos/:photoId  (LEGENDAS POR FOTO)
+   - aceita { caption: "..." } (ou null/"" para limpar)
+   ============================================================ */
+router.patch("/me/photos/:photoId", authMiddleware, async (req, res) => {
+  const userId = req.user?.id;
+  if (!userId) return res.status(401).json({ error: "Não autenticado." });
+
+  try {
+    const hasTable = await detectCaregiverPhotosTableOnce();
+    if (!hasTable) {
+      return res.status(404).json({ error: "Galeria indisponível (tabela não existe)." });
+    }
+
+    await detectCaregiverPhotosColumnsOnce();
+    if (!_galleryHasCaption) {
+      return res.status(400).json({
+        error: "Coluna 'caption' não existe na tabela caregiver_photos.",
+        code: "NO_CAPTION_COLUMN",
+      });
+    }
+
+    const uid = Number(userId);
+    const caregiverId = await getCaregiverIdByUserId(uid);
+    if (!caregiverId) return res.status(403).json({ error: "Sem permissão." });
+
+    const photoId = String(req.params.photoId || "").trim();
+    if (!photoId) return res.status(400).json({ error: "photoId inválido." });
+
+    // garante que a foto pertence ao cuidador logado
+    const { rows: ownerRows } = await pool.query(
+      `SELECT id, caregiver_id, photo_url, caption, created_at
+       FROM caregiver_photos
+       WHERE id::text = $1
+       LIMIT 1`,
+      [photoId]
+    );
+
+    const row = ownerRows?.[0];
+    if (!row) return res.status(404).json({ error: "Foto não encontrada." });
+    if (Number(row.caregiver_id) !== Number(caregiverId))
+      return res.status(403).json({ error: "Sem permissão." });
+
+    const rawCaption = req.body?.caption;
+    // permite: string, null, undefined (undefined = não altera)
+    if (rawCaption === undefined) {
+      return res.status(400).json({
+        error: "Envie { caption: '...' } (ou vazio para remover).",
+        code: "MISSING_CAPTION",
+      });
+    }
+
+    const caption = safeTrimCaption(rawCaption);
+    const finalCaption = caption ? caption : null;
+
+    const { rows: upd } = await pool.query(
+      `
+      UPDATE caregiver_photos
+      SET caption = $1
+      WHERE id::text = $2
+      RETURNING id, caregiver_id, photo_url, caption, created_at
+      `,
+      [finalCaption, photoId]
+    );
+
+    return res.json({ ok: true, photo: upd?.[0] || null });
+  } catch (err) {
+    console.error("Erro em PATCH /caregivers/me/photos/:photoId:", err?.message || err);
+    return res.status(500).json({ error: "Erro ao salvar legenda." });
+  }
+});
+
+/* ============================================================
+   ✅ Rotas (compat + o que o Dashboard espera)
+   ============================================================ */
+
+router.post("/me/photos", authMiddleware, handleUploadGallery);
+router.get("/me/photos", authMiddleware, handleListGallery);
+router.delete("/me/photos/:photoId", authMiddleware, handleDeleteGallery);
+
+router.post("/me/gallery", authMiddleware, handleUploadGallery);
+router.get("/me/gallery", authMiddleware, handleListGallery);
+router.delete("/me/gallery/:photoId", authMiddleware, handleDeleteGallery);
+
+/* ============================================================
+   ✅ Público: fotos da galeria (tutor vê referência)
+   ============================================================ */
+async function handlePublicGallery(req, res) {
+  try {
+    const hasTable = await detectCaregiverPhotosTableOnce();
+    if (!hasTable) return res.json({ ok: true, photos: [], limit: MAX_GALLERY_PHOTOS });
+
+    await detectCaregiverPhotosColumnsOnce();
+
+    const caregiverId = Number(req.params.id);
+    if (!Number.isFinite(caregiverId)) {
+      return res.status(400).json({ error: "ID inválido." });
+    }
+
+    const selectCaption = _galleryHasCaption ? "p.caption," : "";
+
+    const { rows } = await pool.query(
+      `
+      SELECT
+        p.id,
+        p.photo_url,
+        ${selectCaption}
+        p.created_at
+      FROM caregiver_photos p
+      WHERE p.caregiver_id = $1
+      ORDER BY p.created_at DESC
+      LIMIT $2
+      `,
+      [caregiverId, MAX_GALLERY_PHOTOS]
+    );
+
+    return res.json({ ok: true, photos: rows || [], limit: MAX_GALLERY_PHOTOS });
+  } catch (err) {
+    console.error("Erro em GET público da galeria:", err?.message || err);
+    return res.status(500).json({ error: "Erro ao buscar galeria." });
+  }
+}
+
+router.get("/:id/photos", handlePublicGallery);
+router.get("/:id/gallery", handlePublicGallery);
 
 /* ============================================================
    ✅ POST /caregivers/me (idempotente)
@@ -524,9 +1122,7 @@ router.post("/me", authMiddleware, async (req, res) => {
 
     if (body.services !== undefined) {
       if (!serviceKeys || serviceKeys.length === 0) {
-        return res
-          .status(400)
-          .json({ error: "Selecione pelo menos 1 serviço.", code: "INVALID_SERVICES" });
+        return res.status(400).json({ error: "Selecione pelo menos 1 serviço.", code: "INVALID_SERVICES" });
       }
     }
 
@@ -575,11 +1171,13 @@ router.post("/me", authMiddleware, async (req, res) => {
       );
     }
 
-    // ✅ se veio foto base64, já sobe e salva URL (não quebra se falhar)
     let photo_url = null;
     const maybeDataUrl = body?.dataUrl ?? body?.image ?? null;
     if (typeof maybeDataUrl === "string" && maybeDataUrl.startsWith("data:")) {
-      const up = await uploadProfilePhotoFromDataUrl({ userId: Number(userId), dataUrl: maybeDataUrl });
+      const up = await uploadProfilePhotoFromDataUrl({
+        userId: Number(userId),
+        dataUrl: maybeDataUrl,
+      });
       if (up.ok) {
         await upsertCaregiversPhotoUrl(userId, up.publicUrl);
         photo_url = up.publicUrl;
@@ -600,8 +1198,7 @@ router.post("/me", authMiddleware, async (req, res) => {
 
     const extra = rows?.[0] || {};
     const services = extra.services ?? null;
-    const daily_capacity =
-      extra.daily_capacity != null ? Number(extra.daily_capacity) : DEFAULT_DAILY_CAPACITY;
+    const daily_capacity = extra.daily_capacity != null ? Number(extra.daily_capacity) : DEFAULT_DAILY_CAPACITY;
 
     return res.status(already ? 200 : 201).json({
       ok: true,
@@ -625,9 +1222,6 @@ router.post("/me", authMiddleware, async (req, res) => {
 
 /* ============================================================
    ✅ POST /caregivers/migrate-photos (ADMIN)
-   - Migra base64 que estiver em:
-   - caregivers.photo_url (prioridade)
-   - OU users.image (fallback)
    ============================================================ */
 router.post("/migrate-photos", authMiddleware, async (req, res) => {
   const userId = req.user?.id;
@@ -640,7 +1234,6 @@ router.post("/migrate-photos", authMiddleware, async (req, res) => {
   const dryRun = String(req.query.dry || "") === "1";
 
   try {
-    // ✅ pega candidatos onde existe base64 em c.photo_url OU u.image
     const { rows } = await pool.query(
       `
       SELECT
@@ -677,16 +1270,12 @@ router.post("/migrate-photos", authMiddleware, async (req, res) => {
     for (const r of rows) {
       const uid = Number(r.user_id);
 
-      // ✅ prioridade: caregivers.photo_url (se for base64), senão users.image
       const cBase64 =
         typeof r.caregivers_photo_url === "string" && r.caregivers_photo_url.startsWith("data:")
           ? r.caregivers_photo_url
           : null;
 
-      const uBase64 =
-        typeof r.users_image === "string" && r.users_image.startsWith("data:")
-          ? r.users_image
-          : null;
+      const uBase64 = typeof r.users_image === "string" && r.users_image.startsWith("data:") ? r.users_image : null;
 
       const dataUrl = cBase64 || uBase64;
 
@@ -705,10 +1294,7 @@ router.post("/migrate-photos", authMiddleware, async (req, res) => {
       }
 
       if (!dryRun) {
-        // grava URL em caregivers.photo_url (fonte oficial p/ listagem)
         await upsertCaregiversPhotoUrl(uid, up.publicUrl);
-
-        // opcional e útil: também troca users.image para URL (pra não sobrar base64 em users)
         await pool.query(`UPDATE users SET image = $1 WHERE id = $2`, [up.publicUrl, uid]);
       }
 

@@ -66,6 +66,27 @@ CREATE TABLE IF NOT EXISTS caregiver_profiles (
 CREATE INDEX IF NOT EXISTS idx_caregiver_profiles_user_id
   ON caregiver_profiles(user_id);
 
+-- ------------------------------------------------------------
+-- caregiver_photos (galeria de fotos do cuidador)
+-- 1 cuidador -> N fotos
+-- Usado para referência visual no perfil público
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS caregiver_photos (
+  id           SERIAL PRIMARY KEY,
+  caregiver_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+
+  photo_url    TEXT NOT NULL,
+  caption      TEXT,
+  photo_path   TEXT, -- opcional (útil para deletar do Storage via backend)
+
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_caregiver_photos_caregiver_id
+  ON caregiver_photos (caregiver_id);
+
+CREATE INDEX IF NOT EXISTS idx_caregiver_photos_created_at
+  ON caregiver_photos (created_at DESC);
 
 -- =========================================================
 -- 2) Tabela de reservas

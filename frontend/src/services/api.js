@@ -85,6 +85,24 @@ function autoLogout(reason = "unauthorized") {
   }
 }
 
+function isContentTypeJson(headers) {
+  const key = Object.keys(headers || {}).find((k) => k.toLowerCase() === "content-type");
+  const ct = key ? String(headers[key] || "") : "";
+  return ct.toLowerCase().includes("application/json");
+}
+
+function mergeHeadersPreserveCase(base, extra) {
+  // Mescla headers de forma case-insensitive sem duplicar chaves
+  const out = { ...(base || {}) };
+  const extraObj = extra || {};
+  for (const [k, v] of Object.entries(extraObj)) {
+    const existingKey = Object.keys(out).find((kk) => kk.toLowerCase() === k.toLowerCase());
+    if (existingKey) out[existingKey] = v;
+    else out[k] = v;
+  }
+  return out;
+}
+
 /* ===========================================================
    🔹 FUNÇÃO BASE
    =========================================================== */
@@ -92,7 +110,7 @@ function autoLogout(reason = "unauthorized") {
 /**
  * Função genérica para requisições
  * - Garante JSON (Content-Type + stringify) quando o body é objeto JS
- * - ✅ NOVO: se body já vier string JSON ("{...}" / "[...]"), seta Content-Type JSON também
+ * - Se body já vier string JSON ("{...}" / "[...]"), seta Content-Type JSON também
  * - NÃO seta Content-Type quando for FormData/Blob (deixa o browser cuidar)
  * - Evita cache (304 sem body em APIs)
  * - ✅ auto logout APENAS em 401 (padrão), com opção de desativar
@@ -121,43 +139,49 @@ async function apiRequest(path, options = {}) {
   const isBlob = typeof Blob !== "undefined" && body instanceof Blob;
   const isString = typeof body === "string";
 
-  const headers = {
-    // ✅ evita 304 sem body em APIs
-    "Cache-Control": "no-store",
-    Pragma: "no-cache",
+  // Headers base
+  let headers = mergeHeadersPreserveCase(
+    {
+      // ✅ evita 304 sem body em APIs
+      "Cache-Control": "no-store",
+      Pragma: "no-cache",
 
-    // ✅ ajuda alguns proxies/servidores a retornarem JSON
-    Accept: "application/json, text/plain, */*",
-
-    ...(fetchOptions.headers || {}),
-  };
-
-  // Normaliza chave para checar content-type já setado (case-insensitive)
-  const headerKeys = Object.keys(headers);
-  const hasContentTypeHeader = headerKeys.some((k) => k.toLowerCase() === "content-type");
-  const contentTypeKey = headerKeys.find((k) => k.toLowerCase() === "content-type");
+      // ✅ ajuda alguns proxies/servidores a retornarem JSON
+      Accept: "application/json, text/plain, */*",
+    },
+    fetchOptions.headers || {}
+  );
 
   // ✅ Caso 1: body é objeto JS -> stringify e Content-Type JSON
   if (hasBody && !isFormData && !isBlob && !isString) {
-    if (!hasContentTypeHeader) headers["Content-Type"] = "application/json";
+    if (!isContentTypeJson(headers)) {
+      headers = mergeHeadersPreserveCase(headers, { "Content-Type": "application/json" });
+    }
     body = JSON.stringify(body);
   }
 
   // ✅ Caso 2: body já é string, MAS parece JSON -> garantir Content-Type JSON
   if (hasBody && isString && !isFormData && !isBlob) {
-    const ct = contentTypeKey ? String(headers[contentTypeKey] || "") : "";
-    const alreadyJson = ct.toLowerCase().includes("application/json");
-    if (!alreadyJson && looksLikeJsonString(body)) {
-      headers["Content-Type"] = "application/json";
+    if (!isContentTypeJson(headers) && looksLikeJsonString(body)) {
+      headers = mergeHeadersPreserveCase(headers, { "Content-Type": "application/json" });
     }
   }
 
-  const response = await fetch(url, {
-    cache: "no-store", // ✅ IMPORTANTÍSSIMO
-    ...fetchOptions,
-    body: hasBody ? body : undefined,
-    headers,
-  });
+  let response;
+  try {
+    response = await fetch(url, {
+      cache: "no-store", // ✅ IMPORTANTÍSSIMO
+      ...fetchOptions,
+      body: hasBody ? body : undefined,
+      headers,
+    });
+  } catch (networkErr) {
+    const error = new Error("Falha de conexão. Verifique sua internet/servidor e tente novamente.");
+    error.status = 0;
+    error.data = null;
+    error.details = networkErr?.message || null;
+    throw error;
+  }
 
   // ✅ 304 não tem body; em API isso atrapalha o fetch
   if (response.status === 304) return null;
@@ -201,17 +225,29 @@ async function apiRequest(path, options = {}) {
       }
     }
 
-    const message = data?.error || data?.message || "Erro na requisição.";
-    const error = new Error(message);
+    // ✅ pega melhor mensagem possível
+    const message =
+      data?.error ||
+      data?.message ||
+      data?.details ||
+      (typeof data === "string" ? data : null) ||
+      `Erro HTTP ${response.status}`;
 
+    const error = new Error(String(message));
+
+    // ✅ IMPORTANTES para você ver o motivo no front
     error.status = response.status;
     error.data = data;
+    error.url = url;
 
     // campos úteis que você já usa em outros fluxos
     error.code = data?.code || null;
     error.capacity = data?.capacity ?? null;
     error.overlapping = data?.overlapping ?? null;
     error.details = data?.details ?? null;
+
+    // ✅ ajuda debug (sem quebrar)
+    error.method = String(fetchOptions.method || "GET").toUpperCase();
 
     throw error;
   }
@@ -273,11 +309,11 @@ export async function authRequest(path, tokenOrOptions, maybeOptions = {}) {
     options = tokenOrOptions || {};
   }
 
+  const baseHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+  const merged = mergeHeadersPreserveCase(baseHeaders, options.headers || {});
+
   return apiRequest(path, {
     ...options,
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(options.headers || {}),
-    },
+    headers: merged,
   });
 }

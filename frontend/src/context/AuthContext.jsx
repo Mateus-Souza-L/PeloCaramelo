@@ -60,21 +60,6 @@ function formatBlockedUntil(blockedUntil) {
   }
 }
 
-function coerceHasCaregiverProfile(res) {
-  const v =
-    res?.hasCaregiverProfile ??
-    res?.has_caregiver_profile ??
-    res?.user?.hasCaregiverProfile ??
-    res?.user?.has_caregiver_profile ??
-    false;
-
-  // ✅ se o backend diz role=caregiver, consideramos que "pode ser caregiver"
-  const role = String(res?.user?.role || "").toLowerCase().trim();
-  if (role === "caregiver") return true;
-
-  return Boolean(v);
-}
-
 function normalizeMode(m) {
   return String(m || "").toLowerCase().trim() === "caregiver" ? "caregiver" : "tutor";
 }
@@ -83,21 +68,33 @@ function normalizeRole(role) {
   return String(role || "").toLowerCase().trim();
 }
 
+function coerceHasCaregiverProfile(res) {
+  const v =
+    res?.hasCaregiverProfile ??
+    res?.has_caregiver_profile ??
+    res?.user?.hasCaregiverProfile ??
+    res?.user?.has_caregiver_profile ??
+    false;
+
+  // ✅ se o backend diz role=caregiver, consideramos que "tem acesso caregiver"
+  const role = normalizeRole(res?.user?.role);
+  if (role === "caregiver") return true;
+
+  return Boolean(v);
+}
+
 /**
  * ✅ Regra final do modo (multi-perfil de verdade):
- * 1) Se preferCaregiver=true e existe caregiver_profile => caregiver
- * 2) Se savedMode=caregiver e existe caregiver_profile => caregiver
- * 3) Senão => tutor
- *
- * OBS: role NÃO força modo.
+ * - role caregiver força modo caregiver (não depende do hasCaregiverProfile)
+ * - se preferCaregiver=true e existe caregiver_profile => caregiver
+ * - se savedMode=caregiver e existe caregiver_profile => caregiver
+ * - senão => tutor
  */
 function decideMode({ role, savedMode, hasCaregiverProfile, preferCaregiver = false }) {
   const r = normalizeRole(role);
   const s = normalizeMode(savedMode);
 
-  // ✅ se o usuário é caregiver no backend, o modo padrão tem que ser caregiver
   if (r === "caregiver") return "caregiver";
-
   if (preferCaregiver && hasCaregiverProfile) return "caregiver";
   if (s === "caregiver" && hasCaregiverProfile) return "caregiver";
   return "tutor";
@@ -164,9 +161,7 @@ function BlockedModal({ open, info, onClose }) {
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div style={{ padding: 18, borderBottom: "1px solid #eee", background: "#fff" }}>
-          <div style={{ fontSize: 18, fontWeight: 1000, color: colors.red }}>
-            Acesso bloqueado
-          </div>
+          <div style={{ fontSize: 18, fontWeight: 1000, color: colors.red }}>Acesso bloqueado</div>
           <div style={{ marginTop: 8, color: "#333", lineHeight: 1.4 }}>
             Seu acesso à plataforma foi bloqueado pelo administrador.
           </div>
@@ -182,9 +177,7 @@ function BlockedModal({ open, info, onClose }) {
                 background: colors.beige,
               }}
             >
-              <div style={{ fontWeight: 1000, color: colors.brown, fontSize: 13 }}>
-                Motivo
-              </div>
+              <div style={{ fontWeight: 1000, color: colors.brown, fontSize: 13 }}>Motivo</div>
               <div style={{ marginTop: 6, color: "#222" }}>
                 {info?.reason ? String(info.reason) : "Não informado"}
               </div>
@@ -198,15 +191,12 @@ function BlockedModal({ open, info, onClose }) {
                 background: "#fff",
               }}
             >
-              <div style={{ fontWeight: 1000, color: colors.brown, fontSize: 13 }}>
-                Até quando
-              </div>
+              <div style={{ fontWeight: 1000, color: colors.brown, fontSize: 13 }}>Até quando</div>
               <div style={{ marginTop: 6, color: "#222" }}>{untilTxt}</div>
             </div>
 
             <div style={{ fontSize: 13, color: "#555", lineHeight: 1.4 }}>
-              Se você acredita que isso foi um engano, entre em contato com o
-              suporte/administrador.
+              Se você acredita que isso foi um engano, entre em contato com o suporte/administrador.
             </div>
           </div>
         </div>
@@ -496,9 +486,7 @@ function CaregiverSetupModal({
                     color: "#222",
                   }}
                 />
-                <span style={{ fontSize: 13, color: "#555" }}>
-                  Dica: você pode ajustar depois no painel.
-                </span>
+                <span style={{ fontSize: 13, color: "#555" }}>Dica: você pode ajustar depois no painel.</span>
               </div>
             </div>
 
@@ -678,21 +666,15 @@ export function AuthProvider({ children }) {
 
   /**
    * ✅ troca de modo:
-   * - caregiver só é permitido se tiver caregiver_profile
+   * - caregiver só é permitido se tiver caregiver_profile OU role caregiver
    * - tutor sempre é permitido
-   * - FIX PROBLEMA 1: usa também o valor salvo no localStorage (evita "modo invertido")
    */
   function setMode(nextMode) {
     const saved = readSession();
     const desired = normalizeMode(nextMode);
 
-    // ✅ fonte mais confiável no clique: saved.hasCaregiverProfile (se existir),
-    // senão cai no state atual.
     const currentRole = normalizeRole(saved?.user?.role ?? user?.role);
 
-    // ✅ caregiver é permitido se:
-    // - tem caregiver_profile OU
-    // - o role do usuário já é caregiver
     const canCaregiver = Boolean(
       (saved?.hasCaregiverProfile ?? hasCaregiverProfile ?? false) || currentRole === "caregiver"
     );
@@ -729,13 +711,17 @@ export function AuthProvider({ children }) {
 
     const full = normalizeUser(res.user);
 
+    // ✅ se role caregiver, força hasCaregiverProfile também (para UI fora do Dashboard)
+    const role = normalizeRole(full?.role);
+    const finalHas = role === "caregiver" ? true : has;
+
     setUser(full);
-    setHasCaregiverProfile(has);
+    setHasCaregiverProfile(finalHas);
 
     const nextMode = decideMode({
       role: full.role,
       savedMode,
-      hasCaregiverProfile: has,
+      hasCaregiverProfile: finalHas,
       preferCaregiver,
     });
 
@@ -744,16 +730,16 @@ export function AuthProvider({ children }) {
     persistSession({
       user: full,
       token: t,
-      hasCaregiverProfile: has,
+      hasCaregiverProfile: finalHas,
       activeMode: nextMode,
     });
 
-    return { user: full, hasCaregiverProfile: has, activeMode: nextMode };
+    return { user: full, hasCaregiverProfile: finalHas, activeMode: nextMode };
   }
 
   /**
    * ✅ cria o outro perfil (POST /caregivers/me) — FUNÇÃO INTERNA
-   * Agora envia { services, dailyCapacity } no body.
+   * Envia { services, dailyCapacity } no body.
    */
   async function createCaregiverProfile(payload) {
     if (!token) throw new Error("Não autenticado.");
@@ -797,6 +783,13 @@ export function AuthProvider({ children }) {
    */
   function requestCreateCaregiverProfile() {
     if (!token) throw new Error("Não autenticado.");
+
+    // ✅ se o usuário já é caregiver no backend, só garante modo caregiver
+    if (normalizeRole(user?.role) === "caregiver") {
+      setHasCaregiverProfile(true);
+      setMode("caregiver");
+      return;
+    }
 
     if (hasCaregiverProfile) {
       setMode("caregiver");
@@ -897,8 +890,11 @@ export function AuthProvider({ children }) {
 
     const savedToken = saved.token;
     const savedUser = saved.user || null;
-    const savedHas = Boolean(saved.hasCaregiverProfile ?? false);
     const savedMode = saved.activeMode || "tutor";
+
+    // ✅ se o usuário salvo já é caregiver, não deixa has=false
+    const savedRole = normalizeRole(savedUser?.role);
+    const savedHas = savedRole === "caregiver" ? true : Boolean(saved.hasCaregiverProfile ?? false);
 
     // hidrata imediatamente
     setToken(savedToken);
@@ -920,13 +916,17 @@ export function AuthProvider({ children }) {
 
         if (res?.user) {
           const full = normalizeUser(res.user);
+
+          const role = normalizeRole(full?.role);
+          const finalHas = role === "caregiver" ? true : has;
+
           setUser(full);
-          setHasCaregiverProfile(has);
+          setHasCaregiverProfile(finalHas);
 
           const nextMode = decideMode({
             role: full.role,
             savedMode,
-            hasCaregiverProfile: has,
+            hasCaregiverProfile: finalHas,
             preferCaregiver: false,
           });
 
@@ -935,7 +935,7 @@ export function AuthProvider({ children }) {
           persistSession({
             user: full,
             token: savedToken,
-            hasCaregiverProfile: has,
+            hasCaregiverProfile: finalHas,
             activeMode: nextMode,
           });
           return;
@@ -968,7 +968,6 @@ export function AuthProvider({ children }) {
 
   /* ============================================================
      Login ( /auth/login -> /auth/me )
-     FIX PROBLEMA 2: hidrata sessão IMEDIATA antes do /me
      ============================================================ */
 
   async function handleLogin(loginUser, newToken) {
@@ -983,12 +982,14 @@ export function AuthProvider({ children }) {
 
       const savedMode = readSession()?.activeMode || "tutor";
 
-      // enquanto o /me não vem, assumimos "não sei ainda"
-      // mas preservamos preferência salva (tutor/caregiver).
+      // ✅ se vier role caregiver já no login, não deixa has=false
+      const role = normalizeRole(immediateUser?.role);
+      const hasGuess = role === "caregiver" ? true : Boolean(readSession()?.hasCaregiverProfile ?? false);
+
       persistSession({
         user: immediateUser,
         token: newToken,
-        hasCaregiverProfile: Boolean(readSession()?.hasCaregiverProfile ?? false),
+        hasCaregiverProfile: hasGuess,
         activeMode: normalizeMode(savedMode),
       });
 
@@ -1006,13 +1007,15 @@ export function AuthProvider({ children }) {
       const has = coerceHasCaregiverProfile(res);
       const fullUser = normalizeUser(res?.user || immediateUser);
 
+      const finalHas = normalizeRole(fullUser?.role) === "caregiver" ? true : has;
+
       setUser(fullUser);
-      setHasCaregiverProfile(has);
+      setHasCaregiverProfile(finalHas);
 
       const nextMode = decideMode({
         role: fullUser?.role,
         savedMode,
-        hasCaregiverProfile: has,
+        hasCaregiverProfile: finalHas,
         preferCaregiver: false,
       });
 
@@ -1021,11 +1024,11 @@ export function AuthProvider({ children }) {
       persistSession({
         user: fullUser,
         token: newToken,
-        hasCaregiverProfile: has,
+        hasCaregiverProfile: finalHas,
         activeMode: nextMode,
       });
 
-      return { user: fullUser, token: newToken, activeMode: nextMode, hasCaregiverProfile: has };
+      return { user: fullUser, token: newToken, activeMode: nextMode, hasCaregiverProfile: finalHas };
     } catch (err) {
       console.error("Erro ao buscar /auth/me após login:", err);
 
@@ -1039,12 +1042,15 @@ export function AuthProvider({ children }) {
       }
 
       // fallback: mantém sessão com o usuário do login (já hidratado)
-      setHasCaregiverProfile(false);
+      const role = normalizeRole(immediateUser?.role);
+      const hasFallback = role === "caregiver";
+
+      setHasCaregiverProfile(hasFallback);
 
       const nextMode = decideMode({
         role: immediateUser?.role,
         savedMode: "tutor",
-        hasCaregiverProfile: false,
+        hasCaregiverProfile: hasFallback,
         preferCaregiver: false,
       });
 
@@ -1053,7 +1059,7 @@ export function AuthProvider({ children }) {
       persistSession({
         user: immediateUser,
         token: newToken,
-        hasCaregiverProfile: false,
+        hasCaregiverProfile: hasFallback,
         activeMode: nextMode,
       });
 
@@ -1061,7 +1067,7 @@ export function AuthProvider({ children }) {
         user: immediateUser,
         token: newToken,
         activeMode: nextMode,
-        hasCaregiverProfile: false,
+        hasCaregiverProfile: hasFallback,
       };
     } finally {
       setLoading(false);
@@ -1083,7 +1089,7 @@ export function AuthProvider({ children }) {
       activeMode,
       setMode,
 
-      // ✅ criação cuidador com 2 passos
+      // ✅ criação cuidador (2 passos)
       requestCreateCaregiverProfile,
       confirmCreateCaregiverProfile,
       cancelCreateCaregiverProfile,

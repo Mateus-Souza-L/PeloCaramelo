@@ -641,6 +641,151 @@ export default function Dashboard() {
   const [capacityLoading, setCapacityLoading] = useState(false);
   const [capacitySaving, setCapacitySaving] = useState(false);
 
+  // ===========================================================
+  // 🖼️ Galeria do cuidador (fotos de referência)
+  // - backend esperado:
+  //   GET    /caregivers/me/photos
+  //   POST   /caregivers/me/photos   { dataUrl, caption }
+  //   DELETE /caregivers/me/photos/:photoId
+  // ===========================================================
+
+  const MAX_GALLERY_PHOTO_BYTES = 6 * 1024 * 1024; // 6MB (igual ao backend)
+  const [gallery, setGallery] = useState([]);
+  const [galleryLoading, setGalleryLoading] = useState(false);
+  const [galleryUploading, setGalleryUploading] = useState(false);
+  const [galleryCaption, setGalleryCaption] = useState("");
+  const galleryFileRef = useRef(null);
+
+  const normalizeGalleryItem = (x) => {
+    if (!x) return null;
+    return {
+      id: String(x.id ?? x.photo_id ?? ""),
+      photoUrl: x.photo_url ?? x.photoUrl ?? x.url ?? "",
+      caption: x.caption ?? "",
+      createdAt: x.created_at ?? x.createdAt ?? null,
+    };
+  };
+
+  const loadMyGallery = useCallback(async () => {
+    if (!isCaregiver || !token) {
+      setGallery([]);
+      return;
+    }
+
+    setGalleryLoading(true);
+    try {
+      const data = await authRequest("/caregivers/me/photos", token);
+
+      const list = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.photos)
+          ? data.photos
+          : Array.isArray(data?.items)
+            ? data.items
+            : [];
+
+      const normalized = list.map(normalizeGalleryItem).filter(Boolean).filter((p) => p.photoUrl);
+      setGallery(normalized);
+    } catch (err) {
+      console.error("Erro ao carregar galeria (/caregivers/me/photos):", err);
+      // não mostra toast agressivo aqui pra não “poluir” o painel
+    } finally {
+      setGalleryLoading(false);
+    }
+  }, [isCaregiver, token]);
+
+  useEffect(() => {
+    loadMyGallery();
+  }, [loadMyGallery]);
+
+  const handlePickGalleryPhoto = () => {
+    if (!isCaregiver) return;
+    if (!token) {
+      showToast("Faça login novamente para enviar fotos.", "error");
+      return;
+    }
+    galleryFileRef.current?.click?.();
+  };
+
+  const uploadGalleryPhoto = async (file) => {
+    if (!file) return;
+    if (file.size > MAX_GALLERY_PHOTO_BYTES) {
+      showToast("Foto muito grande. Máximo 6MB.", "notify");
+      return;
+    }
+
+    setGalleryUploading(true);
+
+    try {
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(new Error("Falha ao ler arquivo."));
+        reader.readAsDataURL(file);
+      });
+
+      if (!String(dataUrl).startsWith("data:")) {
+        showToast("Arquivo inválido.", "error");
+        return;
+      }
+
+      const caption = (galleryCaption || "").trim() || null;
+
+      const data = await authRequest("/caregivers/me/photos", token, {
+        method: "POST",
+        body: { dataUrl, caption },
+      });
+
+      const created =
+        data?.photo ? normalizeGalleryItem(data.photo) : normalizeGalleryItem(data);
+
+      if (created?.id && created?.photoUrl) {
+        setGallery((prev) => [created, ...(Array.isArray(prev) ? prev : [])]);
+      } else {
+        // fallback: recarrega se o backend respondeu em outro formato
+        await loadMyGallery();
+      }
+
+      setGalleryCaption("");
+      showToast("Foto adicionada na sua galeria ✅", "success");
+    } catch (err) {
+      console.error("Erro ao enviar foto da galeria:", err);
+      showToast("Não foi possível enviar a foto. Tente novamente.", "error");
+    } finally {
+      setGalleryUploading(false);
+      try {
+        if (galleryFileRef.current) galleryFileRef.current.value = "";
+      } catch {
+        // ignore
+      }
+    }
+  };
+
+  const deleteGalleryPhoto = async (photoId) => {
+    const pid = String(photoId || "");
+    if (!pid) return;
+
+    if (!token) {
+      showToast("Faça login novamente para remover fotos.", "error");
+      return;
+    }
+
+    const ok = window.confirm("Remover esta foto da sua galeria?");
+    if (!ok) return;
+
+    try {
+      await authRequest(`/caregivers/me/photos/${encodeURIComponent(pid)}`, token, {
+        method: "DELETE",
+      });
+
+      setGallery((prev) => (Array.isArray(prev) ? prev.filter((p) => String(p.id) !== pid) : []));
+      showToast("Foto removida ✅", "success");
+    } catch (err) {
+      console.error("Erro ao remover foto da galeria:", err);
+      showToast("Não foi possível remover a foto.", "error");
+    }
+  };
+
   const loadMyCapacityIfCaregiver = useCallback(async () => {
     if (!isCaregiver || !token) return;
 

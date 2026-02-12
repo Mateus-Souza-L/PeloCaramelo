@@ -123,6 +123,58 @@ export default function CaregiverDetail() {
 
   const [caregiver, setCaregiver] = useState(null);
 
+  // ✅ Galeria pública do cuidador (para tutor ver)
+  const [galleryPhotos, setGalleryPhotos] = useState([]);
+  const [galleryLoading, setGalleryLoading] = useState(true);
+  const [galleryError, setGalleryError] = useState(null);
+
+  // modal simples ao clicar na foto
+  const [galleryOpen, setGalleryOpen] = useState(false);
+  const [activePhotoIndex, setActivePhotoIndex] = useState(-1);
+
+  const activePhoto =
+    activePhotoIndex >= 0 ? galleryPhotos[activePhotoIndex] : null;
+
+  const openPhoto = (p, indexFromMap) => {
+    // se veio index (recomendado), usa ele; senão tenta achar no array
+    const idx =
+      Number.isFinite(Number(indexFromMap))
+        ? Number(indexFromMap)
+        : galleryPhotos.findIndex((x) => String(x?.id) === String(p?.id));
+
+    setActivePhotoIndex(idx >= 0 ? idx : 0);
+    setGalleryOpen(true);
+  };
+
+  const closePhoto = () => {
+    setGalleryOpen(false);
+    setActivePhotoIndex(-1);
+  };
+
+  const goPrevPhoto = () => {
+    if (!galleryPhotos.length) return;
+    setActivePhotoIndex((prev) => (prev <= 0 ? galleryPhotos.length - 1 : prev - 1));
+  };
+
+  const goNextPhoto = () => {
+    if (!galleryPhotos.length) return;
+    setActivePhotoIndex((prev) => (prev >= galleryPhotos.length - 1 ? 0 : prev + 1));
+  };
+
+  // ✅ Navegação por teclado no modal (← → Esc)
+  useEffect(() => {
+    if (!galleryOpen) return;
+
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") closePhoto();
+      if (e.key === "ArrowLeft") goPrevPhoto();
+      if (e.key === "ArrowRight") goNextPhoto();
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [galleryOpen, galleryPhotos.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ✅ evita piscar “não encontrado” antes de terminar o fetch
   const [caregiverLoading, setCaregiverLoading] = useState(true);
   const [caregiverLoaded, setCaregiverLoaded] = useState(false);
@@ -684,6 +736,59 @@ export default function CaregiverDetail() {
       cancelled = true;
     };
   }, [id, token, user?.role, reservationsStorageKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ---------------- LOAD GALLERY (público) ----------------
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadGallery = async () => {
+      setGalleryLoading(true);
+      setGalleryError(null);
+
+      try {
+        // tenta /photos primeiro (rota oficial pro tutor ver)
+        let resp = await fetch(`${API_BASE_URL}/caregivers/${id}/photos`, {
+          cache: "no-store",
+          headers: { "Cache-Control": "no-store", Pragma: "no-cache" },
+        });
+
+        // fallback: /gallery
+        if (!resp.ok) {
+          resp = await fetch(`${API_BASE_URL}/caregivers/${id}/gallery`, {
+            cache: "no-store",
+            headers: { "Cache-Control": "no-store", Pragma: "no-cache" },
+          });
+        }
+
+        if (!resp.ok) throw new Error("Não foi possível carregar as fotos do cuidador.");
+
+        const data = await resp.json();
+        const list = Array.isArray(data?.photos) ? data.photos : [];
+
+        const normalized = list
+          .map((p) => ({
+            id: String(p?.id ?? `${Date.now()}_${Math.random().toString(16).slice(2)}`),
+            photo_url: p?.photo_url || p?.url || p?.image || null,
+            caption: p?.caption != null ? String(p.caption) : "",
+            created_at: p?.created_at || null,
+          }))
+          .filter((p) => !!p.photo_url);
+
+        if (!cancelled) setGalleryPhotos(normalized);
+      } catch (err) {
+        if (!cancelled) setGalleryError(err?.message || "Erro ao carregar galeria.");
+        if (!cancelled) setGalleryPhotos([]);
+      } finally {
+        if (!cancelled) setGalleryLoading(false);
+      }
+    };
+
+    loadGallery();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---------------- LOAD REVIEWS (summary + lista paginada) ----------------
   useEffect(() => {
@@ -1673,6 +1778,203 @@ export default function CaregiverDetail() {
           );
         })()}
 
+        {/* Galeria de fotos do cuidador */}
+        <section className="pc-card pc-card-accent mb-6">
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <h2 className="font-semibold text-[#5A3A22]">Fotos</h2>
+            {!galleryLoading && !galleryError && (
+              <span className="text-xs text-[#5A3A22] opacity-70">
+                {galleryPhotos.length} foto(s)
+              </span>
+            )}
+          </div>
+
+          {galleryLoading ? (
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="aspect-square rounded-xl bg-gray-200 animate-pulse" />
+              ))}
+            </div>
+          ) : galleryError ? (
+            <p className="text-sm text-[#95301F] font-semibold">{galleryError}</p>
+          ) : galleryPhotos.length === 0 ? (
+            <p className="text-sm text-[#5A3A22]/80">Este cuidador ainda não adicionou fotos.</p>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 sm:gap-3">
+              {galleryPhotos.map((p, idx) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => openPhoto(p, idx)}
+                  className="
+        group relative overflow-hidden
+        rounded-2xl border border-[#5A3A22]/15 bg-white
+        aspect-[4/3] sm:aspect-square
+        active:scale-[0.99] transition
+      "
+                  title={p.caption ? p.caption : "Ver foto"}
+                >
+                  <img
+                    src={p.photo_url}
+                    alt={p.caption ? p.caption : "Foto do cuidador"}
+                    className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform"
+                    loading="lazy"
+                  />
+
+                  {/* overlay leve pra leitura da legenda */}
+                  {p.caption ? (
+                    <div className="absolute left-0 right-0 bottom-0 px-2 py-1 text-[11px] sm:text-xs text-white bg-gradient-to-t from-black/70 to-black/0 text-left line-clamp-2">
+                      {p.caption}
+                    </div>
+                  ) : null}
+
+                  {/* micro “dica” no mobile */}
+                  <div className="absolute top-2 right-2 text-[10px] px-2 py-0.5 rounded-full bg-black/45 text-white opacity-0 group-hover:opacity-100 transition">
+                    {idx + 1}/{galleryPhotos.length}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* Modal de foto + navegação */}
+        {galleryOpen && (
+          <div
+            className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-3 sm:p-4"
+            onClick={closePhoto}
+            role="dialog"
+            aria-modal="true"
+          >
+            <div
+              className="max-w-3xl w-full bg-white rounded-2xl overflow-hidden shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between gap-3 px-4 py-3 border-b">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-[#5A3A22] truncate">
+                    {activePhoto?.caption ? activePhoto.caption : "Foto do cuidador"}
+                  </p>
+                  {!!galleryPhotos.length && (
+                    <p className="text-[11px] text-[#5A3A22]/70 mt-0.5">
+                      {activePhotoIndex + 1} de {galleryPhotos.length}
+                    </p>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={closePhoto}
+                  className="text-[#5A3A22] font-bold px-2 py-1 rounded hover:bg-gray-100"
+                  aria-label="Fechar"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="relative bg-black">
+                {/* seta esquerda */}
+                {galleryPhotos.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={goPrevPhoto}
+                    className="
+              absolute left-2 sm:left-3 top-1/2 -translate-y-1/2
+              w-10 h-10 rounded-full
+              bg-white/85 hover:bg-white
+              text-[#5A3A22] font-bold
+              flex items-center justify-center
+              shadow
+            "
+                    aria-label="Foto anterior"
+                    title="Anterior"
+                  >
+                    ‹
+                  </button>
+                )}
+
+                <img
+                  src={activePhoto?.photo_url}
+                  alt={activePhoto?.caption ? activePhoto.caption : "Foto do cuidador"}
+                  className="w-full max-h-[70vh] object-contain"
+                />
+
+                {/* seta direita */}
+                {galleryPhotos.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={goNextPhoto}
+                    className="
+              absolute right-2 sm:right-3 top-1/2 -translate-y-1/2
+              w-10 h-10 rounded-full
+              bg-white/85 hover:bg-white
+              text-[#5A3A22] font-bold
+              flex items-center justify-center
+              shadow
+            "
+                    aria-label="Próxima foto"
+                    title="Próxima"
+                  >
+                    ›
+                  </button>
+                )}
+
+                {/* bolinhas (mobile-first) */}
+                {galleryPhotos.length > 1 && (
+                  <div className="absolute bottom-2 left-0 right-0 flex items-center justify-center gap-1.5 px-3">
+                    {galleryPhotos.slice(0, 10).map((p, i) => {
+                      const idx = i; // aqui é 0..9 (só preview)
+                      const isActive = idx === activePhotoIndex;
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => setActivePhotoIndex(idx)}
+                          className={`w-2 h-2 rounded-full transition ${isActive ? "bg-[#FFD700]" : "bg-white/70 hover:bg-white"
+                            }`}
+                          aria-label={`Ir para foto ${idx + 1}`}
+                          title={`Foto ${idx + 1}`}
+                        />
+                      );
+                    })}
+                    {galleryPhotos.length > 10 && (
+                      <span className="text-[11px] text-white/80 ml-1">
+                        +{galleryPhotos.length - 10}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {activePhoto?.caption ? (
+                <div className="px-4 py-3 text-sm text-[#5A3A22]">
+                  {activePhoto.caption}
+                </div>
+              ) : null}
+
+              {/* ações rápidas no mobile */}
+              {galleryPhotos.length > 1 && (
+                <div className="sm:hidden flex items-center justify-between gap-2 px-4 pb-4">
+                  <button
+                    type="button"
+                    onClick={goPrevPhoto}
+                    className="flex-1 bg-gray-100 hover:bg-gray-200 text-[#5A3A22] px-4 py-2 rounded-lg font-semibold"
+                  >
+                    Anterior
+                  </button>
+                  <button
+                    type="button"
+                    onClick={goNextPhoto}
+                    className="flex-1 bg-[#FFD700] hover:bg-[#FFEA70] text-[#5A3A22] px-4 py-2 rounded-lg font-semibold"
+                  >
+                    Próxima
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* dica disponibilidade */}
         <div className="mb-4">
           <p className="text-xs text-[#5A3A22] opacity-70">
@@ -1810,11 +2112,10 @@ export default function CaregiverDetail() {
                   <button
                     type="button"
                     onClick={toggleAllPets}
-                    className={`mb-3 px-3 py-1 rounded-full text-xs font-semibold border transition ${
-                      allPetsSelected
-                        ? "bg-[#5A3A22] text-white border-[#5A3A22]"
-                        : "bg-white text-[#5A3A22] border-[#D2A679] hover:bg-[#FFF3D0]"
-                    }`}
+                    className={`mb-3 px-3 py-1 rounded-full text-xs font-semibold border transition ${allPetsSelected
+                      ? "bg-[#5A3A22] text-white border-[#5A3A22]"
+                      : "bg-white text-[#5A3A22] border-[#D2A679] hover:bg-[#FFF3D0]"
+                      }`}
                   >
                     {allPetsSelected ? "Desmarcar todos" : "Selecionar todos os pets"}
                   </button>
@@ -1828,11 +2129,10 @@ export default function CaregiverDetail() {
                           key={pet.id}
                           type="button"
                           onClick={() => togglePet(pet.id)}
-                          className={`px-3 py-2 rounded-xl text-xs md:text-sm border flex items-center gap-2 transition ${
-                            active
-                              ? "bg-[#5A3A22] text-white border-[#5A3A22]"
-                              : "bg-white text-[#5A3A22] border-[#D2A679] hover:bg-[#FFF3D0]"
-                          }`}
+                          className={`px-3 py-2 rounded-xl text-xs md:text-sm border flex items-center gap-2 transition ${active
+                            ? "bg-[#5A3A22] text-white border-[#5A3A22]"
+                            : "bg-white text-[#5A3A22] border-[#D2A679] hover:bg-[#FFF3D0]"
+                            }`}
                         >
                           <img
                             src={pickPetImage(pet) || "/paw.png"}
@@ -1945,9 +2245,8 @@ export default function CaregiverDetail() {
                     return (
                       <div
                         key={rv.id}
-                        className={`pc-card pc-card-accent transition-all duration-300 ${
-                          revealed ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1"
-                        }`}
+                        className={`pc-card pc-card-accent transition-all duration-300 ${revealed ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1"
+                          }`}
                       >
                         <p className="text-sm text-[#5A3A22]/80">
                           <b>{rv.authorName || "Usuário"}</b> — {rv.rating} ★ —{" "}

@@ -27,19 +27,28 @@ const urlRequiresSSL = /sslmode=require/i.test(DATABASE_URL || "");
 
 const useSSL = dbSslFlag || looksLikeSupabase || urlRequiresSSL;
 
-// ✅ config recomendada pra Supabase: rejectUnauthorized false (evita erro de chain no Node/Windows)
+// ✅ recomendado pra Supabase: rejectUnauthorized false (evita erro de chain no Node/Windows)
 const sslConfig = useSSL ? { rejectUnauthorized: false } : false;
+
+// ✅ LIMITES IMPORTANTES (evita "Max client connections reached")
+const PG_POOL_MAX = Math.max(1, Math.min(20, Number(process.env.PG_POOL_MAX || 5)));
+const PG_CONN_TIMEOUT_MS = Number(process.env.PG_CONN_TIMEOUT_MS || 10000);
+const PG_IDLE_TIMEOUT_MS = Number(process.env.PG_IDLE_TIMEOUT_MS || 30000);
 
 const pool = new Pool({
   connectionString: DATABASE_URL,
   ssl: sslConfig,
+
+  // 🔥 o que faltava:
+  max: PG_POOL_MAX,
+
   // opcional: evita travar em conexões ruins
-  connectionTimeoutMillis: 10000,
-  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: PG_CONN_TIMEOUT_MS,
+  idleTimeoutMillis: PG_IDLE_TIMEOUT_MS,
 });
 
 pool.on("error", (err) => {
-  console.error("🔥 Erro inesperado no pool PostgreSQL:", err);
+  console.error("🔥 Erro inesperado no pool PostgreSQL:", err?.message || err);
 });
 
 // ✅ teste de conexão (roda ao iniciar)
@@ -49,11 +58,15 @@ async function testConnection() {
   try {
     const client = await pool.connect();
     const { rows } = await client.query("select now() as now, current_user as user");
-    console.log("🐘 PostgreSQL conectado com sucesso!", rows[0]);
+    console.log("🐘 PostgreSQL conectado com sucesso!", rows[0], {
+      poolMax: PG_POOL_MAX,
+      ssl: Boolean(useSSL),
+    });
     client.release();
   } catch (err) {
     console.error("❌ Falha ao conectar no PostgreSQL:", err.message);
     console.error("ℹ️ SSL ligado?", useSSL);
+    console.error("ℹ️ pool max:", PG_POOL_MAX);
   }
 }
 

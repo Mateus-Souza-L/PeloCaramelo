@@ -1,5 +1,28 @@
 // backend/src/server.js
+
+/**
+ * ✅ Fix definitivo para "fetch failed" (StorageUnknownError) no Supabase Storage
+ * Node 18+ (inclui 22) usa undici por baixo do fetch.
+ * Em alguns ambientes (Windows/ISP/IPv6), o DNS/IPv6 causa "fetch failed".
+ * - Força resolução IPv4 primeiro (dns)
+ * - Força undici a conectar usando IPv4 (dispatcher)
+ */
+const dns = require("dns");
+dns.setDefaultResultOrder("ipv4first");
+
+try {
+  const { Agent, setGlobalDispatcher } = require("undici");
+  setGlobalDispatcher(
+    new Agent({
+      connect: { family: 4 }, // ✅ força IPv4
+    })
+  );
+} catch {
+  // se por algum motivo undici não estiver disponível, segue sem quebrar
+}
+
 require("dotenv").config();
+
 const express = require("express");
 const cors = require("cors");
 const morgan = require("morgan");
@@ -76,6 +99,46 @@ app.get("/health/db", async (req, res) => {
   }
 });
 
+/**
+ * ✅ Debug: testa se o backend consegue alcançar o Storage do Supabase
+ * (se aqui falhar com fetch failed, é 100% rede/IPv6)
+ */
+app.get("/debug/storage-ping", async (req, res) => {
+  try {
+    const url = String(process.env.SUPABASE_URL || "").trim();
+    const key = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
+
+    if (!url || !key) {
+      return res.status(400).json({
+        ok: false,
+        error: "SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY ausentes no .env",
+      });
+    }
+
+    const r = await fetch(`${url}/storage/v1/bucket`, {
+      method: "GET",
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+      },
+    });
+
+    const text = await r.text().catch(() => "");
+    return res.status(200).json({
+      ok: true,
+      status: r.status,
+      statusText: r.statusText,
+      bodyPreview: text ? text.slice(0, 300) : null,
+    });
+  } catch (err) {
+    return res.status(200).json({
+      ok: false,
+      error: err?.message || String(err),
+      name: err?.name || null,
+    });
+  }
+});
+
 /* ===========================================================
    ✅ Logs
    =========================================================== */
@@ -103,7 +166,9 @@ app.get("/debug/test-email", async (req, res) => {
   try {
     const to = String(req.query.to || "").trim();
     if (!to) {
-      return res.status(400).json({ ok: false, error: "Passe ?to=seuemail@..." });
+      return res
+        .status(400)
+        .json({ ok: false, error: "Passe ?to=seuemail@..." });
     }
 
     const result = await sendEmail({
@@ -238,7 +303,6 @@ async function blockedGuard(req, res, next) {
   } catch (err) {
     console.error("[BLOCKED GUARD ERROR]", err);
     return next();
- compile
   }
 }
 
