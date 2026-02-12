@@ -1,6 +1,11 @@
 // src/pages/CaregiverDetail.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+
+// ✅ Calendário (react-calendar)
+import Calendar from "react-calendar";
+import "react-calendar/dist/Calendar.css";
+
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../components/ToastProvider";
 import {
@@ -1383,6 +1388,85 @@ export default function CaregiverDetail() {
     }
   };
 
+  // ✅ Calendário “expandido” (abre/fecha)
+  const [openPicker, setOpenPicker] = useState(null); // "start" | "end" | null
+
+  const closePickers = () => setOpenPicker(null);
+
+  const handlePickStart = (dateObj) => {
+    try {
+      const iso = toLocalKey(dateObj); // "YYYY-MM-DD"
+      handleStartChangeISO(iso);
+      setOpenPicker("end"); // opcional: já abre o fim
+    } catch {
+      // ignore
+    }
+  };
+
+  const handlePickEnd = (dateObj) => {
+    try {
+      const iso = toLocalKey(dateObj);
+      handleEndChangeISO(iso);
+      closePickers();
+    } catch {
+      // ignore
+    }
+  };
+
+  // ✅ Desabilita dias indisponíveis no calendário
+  const tileDisabledStart = ({ date, view }) => {
+    if (view !== "month") return false;
+    const key = toLocalKey(date);
+    return !isDateAvailable(key);
+  };
+
+  const tileDisabledEnd = ({ date, view }) => {
+    if (view !== "month") return false;
+
+    // precisa escolher entrada antes
+    if (!startDate) return true;
+
+    const key = toLocalKey(date);
+
+    // não permite antes da entrada
+    if (parseLocalKey(key) < parseLocalKey(startDate)) return true;
+
+    // só habilita se o intervalo inteiro estiver disponível
+    return !rangeAvailable(startDate, key);
+  };
+
+  const tileClassNameStart = ({ date, view }) => {
+    if (view !== "month") return "";
+
+    const key = toLocalKey(date);
+    const isToday = String(key || "") === String(todayKey || "");
+    const available = isDateAvailable(key);
+
+    if (isToday && !available) return "pc-cal-today-unavailable";
+    if (isToday && available) return "pc-cal-today-available";
+
+    if (!available) return "pc-cal-disabled";
+    return "";
+  };
+
+  const tileClassNameEnd = ({ date, view }) => {
+    if (view !== "month") return "";
+
+    const key = toLocalKey(date);
+    const isToday = String(key || "") === String(todayKey || "");
+
+    const enabledForEnd =
+      !!startDate &&
+      parseLocalKey(key) >= parseLocalKey(startDate) &&
+      rangeAvailable(startDate, key);
+
+    if (isToday && !enabledForEnd) return "pc-cal-today-unavailable";
+    if (isToday && enabledForEnd) return "pc-cal-today-available";
+
+    if (!enabledForEnd) return "pc-cal-disabled";
+    return "";
+  };
+
   // ---------- ACTIONS ----------
   const handlePreReserva = async () => {
     if (saving) return;
@@ -2038,27 +2122,115 @@ export default function CaregiverDetail() {
                   ))}
                 </select>
 
-                {/* ✅ Input BR: Entrada */}
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  placeholder="DD/MM/AAAA"
-                  value={startBR}
-                  onChange={(e) => onStartBRChange(e.target.value)}
-                  onBlur={onBlurStartBR}
-                  className="input"
-                />
+                {/* ✅ Entrada (BR + calendário expandido) */}
+                <div className="relative">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="Entrada (DD/MM/AAAA)"
+                    value={startBR}
+                    onChange={(e) => onStartBRChange(e.target.value)}
+                    onBlur={onBlurStartBR}
+                    onFocus={() => setOpenPicker("start")}
+                    className="input"
+                  />
 
-                {/* ✅ Input BR: Saída */}
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  placeholder="DD/MM/AAAA"
-                  value={endBR}
-                  onChange={(e) => onEndBRChange(e.target.value)}
-                  onBlur={onBlurEndBR}
-                  className="input"
-                />
+                  {openPicker === "start" && (
+                    <div className="absolute z-50 mt-2 w-full">
+                      <div className="bg-white rounded-2xl shadow-lg border p-2 min-w-[320px]">
+                        <div className="flex items-center justify-between px-2 py-1">
+                          <span className="text-xs text-[#5A3A22] font-semibold">Selecione a data de entrada</span>
+                          <button
+                            type="button"
+                            onClick={closePickers}
+                            className="text-xs px-2 py-1 rounded-lg bg-[#FFF8F0] border text-[#5A3A22]"
+                          >
+                            Fechar
+                          </button>
+                        </div>
+
+                        <Calendar
+                          className="pc-calendar-pop"
+                          locale="pt-BR"
+                          onChange={(d) => handlePickStart(d)}
+                          value={startDate ? parseLocalKey(startDate) : null}
+                          tileDisabled={tileDisabledStart}
+                          tileClassName={tileClassNameStart}
+                          formatShortWeekday={(locale, date) =>
+                            ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SÁB"][date.getDay()]
+                          }
+                          formatMonthYear={(locale, date) => {
+                            const txt = date.toLocaleDateString("pt-BR", {
+                              month: "long",
+                              year: "numeric",
+                            });
+                            return txt.charAt(0).toUpperCase() + txt.slice(1);
+                          }}
+                          prevLabel="‹"
+                          nextLabel="›"
+                          prev2Label="«"
+                          next2Label="»"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* ✅ Saída (BR + calendário expandido) */}
+                <div className="relative">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="Saída (DD/MM/AAAA)"
+                    value={endBR}
+                    onChange={(e) => onEndBRChange(e.target.value)}
+                    onBlur={onBlurEndBR}
+                    onFocus={() => setOpenPicker("end")}
+                    className="input"
+                  />
+
+                  {openPicker === "end" && (
+                    <div className="absolute z-50 mt-2 w-full">
+                      <div className="bg-white rounded-2xl shadow-lg border p-2 min-w-[320px]">
+                        <div className="flex items-center justify-between px-2 py-1">
+                          <span className="text-xs text-[#5A3A22] font-semibold">
+                            {startDate ? "Selecione a data de saída" : "Escolha primeiro a entrada"}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={closePickers}
+                            className="text-xs px-2 py-1 rounded-lg bg-[#FFF8F0] border text-[#5A3A22]"
+                          >
+                            Fechar
+                          </button>
+                        </div>
+
+                        <Calendar
+                          className="pc-calendar-pop"
+                          locale="pt-BR"
+                          onChange={(d) => handlePickEnd(d)}
+                          value={endDate ? parseLocalKey(endDate) : null}
+                          tileDisabled={tileDisabledEnd}
+                          tileClassName={tileClassNameEnd}
+                          formatShortWeekday={(locale, date) =>
+                            ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SÁB"][date.getDay()]
+                          }
+                          formatMonthYear={(locale, date) => {
+                            const txt = date.toLocaleDateString("pt-BR", {
+                              month: "long",
+                              year: "numeric",
+                            });
+                            return txt.charAt(0).toUpperCase() + txt.slice(1);
+                          }}
+                          prevLabel="‹"
+                          nextLabel="›"
+                          prev2Label="«"
+                          next2Label="»"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
 
                 <div className="flex items-center px-3 py-2 rounded-lg border text-[#5A3A22]">
                   Total: <b className="ml-1">R$ {Number(total || 0).toFixed(2)}</b>
@@ -2067,7 +2239,7 @@ export default function CaregiverDetail() {
                 <button
                   onClick={handlePreReserva}
                   disabled={saving}
-                  className="bg-[#5A3A22] hover:bg-[#95301F] disabled:opacity-60 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg font-semibold"
+                  className="h-[44px] bg-[#5A3A22] hover:bg-[#95301F] disabled:opacity-60 disabled:cursor-not-allowed text-white px-3 py-2 rounded-lg font-semibold whitespace-nowrap"
                 >
                   {saving ? "Enviando..." : "Enviar pré-reserva"}
                 </button>

@@ -32,7 +32,7 @@ body {
 }
 
 /* ============================= */
-/* REACT CALENDAR */
+/* REACT CALENDAR (BASE) */
 /* ============================= */
 .react-calendar {
   background: #fff;
@@ -43,6 +43,111 @@ body {
   font-family: "Lato", sans-serif;
 }
 
+/* ============================= */
+/* REACT CALENDAR - HEADER FIX (desktop + mobile) */
+/* ============================= */
+
+/* BASE (desktop) */
+.react-calendar__navigation {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  gap: 8px;
+  height: 56px;
+}
+
+.react-calendar__navigation button {
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-weight: 700;
+  color: var(--cor-marrom);
+  z-index: 2;
+}
+
+/* ✅ Desktop: label absoluto centralizado */
+@media (min-width: 641px) {
+  .react-calendar__navigation__label {
+    position: absolute;
+    top: 4px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: auto;
+    pointer-events: none;
+    text-align: center;
+  }
+
+  .react-calendar__navigation__label__labelText {
+    white-space: nowrap;
+    font-weight: 800;
+    font-size: 18px;
+    line-height: 1.2;
+    color: var(--cor-marrom);
+    text-transform: capitalize;
+  }
+}
+
+/* ✅ Mobile: 2 linhas (título em cima, botões embaixo) — sem sobrepor */
+@media (max-width: 640px) {
+  .react-calendar__navigation {
+    display: grid !important;
+    grid-template-columns: repeat(4, auto) !important;
+    grid-template-areas:
+      "label label label label"
+      "prev2 prev next next2";
+    gap: 8px;
+    height: auto !important;
+    justify-content: center;
+    align-items: center;
+    position: static !important;
+  }
+
+  .react-calendar__navigation__label {
+    grid-area: label;
+    position: static !important;
+    transform: none !important;
+    left: auto !important;
+    top: auto !important;
+    width: 100% !important;
+    text-align: center;
+    pointer-events: auto !important;
+    padding: 6px 8px;
+  }
+
+  .react-calendar__navigation__label__labelText {
+    white-space: nowrap;
+    font-weight: 800;
+    font-size: 18px;
+    line-height: 1.2;
+    color: var(--cor-marrom);
+    text-transform: capitalize;
+  }
+
+  .react-calendar__navigation__prev2-button { grid-area: prev2; }
+  .react-calendar__navigation__prev-button  { grid-area: prev;  }
+  .react-calendar__navigation__next-button  { grid-area: next;  }
+  .react-calendar__navigation__next2-button { grid-area: next2; }
+
+  .react-calendar__navigation button {
+    padding: 8px 10px;
+    min-width: 42px;
+    line-height: 1;
+  }
+}
+
+/* ✅ Melhora linha dos dias da semana */
+.react-calendar__month-view__weekdays {
+  text-transform: uppercase;
+  font-weight: 800;
+  color: rgba(90, 58, 34, 0.75);
+}
+
+.react-calendar__month-view__weekdays__weekday {
+  padding: 6px 0;
+}
+
+/* Tiles */
 .react-calendar__tile {
   padding: 0.75rem 0.5rem;
   text-align: center;
@@ -52,13 +157,14 @@ body {
   background: transparent;
 }
 
+/* Hover padrão */
 .react-calendar__tile:enabled:hover {
   background: var(--cor-destaque);
   color: #fff;
 }
 
 /* ✅ IMPORTANTE:
-   Você controla o "hoje" via pc-cal-today no tileClassName.
+   Você controla o "hoje" via pc-cal-* no tileClassName.
    Neutralizamos o estilo nativo do react-calendar (--now) pra não brigar. */
 .react-calendar__tile--now {
   background: transparent !important;
@@ -76,7 +182,7 @@ body {
   color: #fff !important;
 }
 
-/* Dias indisponíveis com X visual */
+/* Dias indisponíveis com X visual (classe usada em alguns lugares) */
 .unavailable-day {
   position: relative;
   color: #d28c8c !important;
@@ -89,6 +195,26 @@ body {
   color: rgba(149, 48, 31, 0.6);
   top: 2px;
   right: 4px;
+}
+
+/* ✅ padrão "apagado" para tiles disabled */
+.react-calendar__tile:disabled {
+  opacity: 0.35;
+  background: rgba(90, 58, 34, 0.04);
+  cursor: not-allowed;
+}
+
+/* ✅ HOJE disponível */
+.react-calendar__tile.pc-cal-today-available {
+  outline: 2px solid rgba(255, 215, 0, 0.9);
+  outline-offset: 2px;
+}
+
+/* ✅ HOJE indisponível */
+.react-calendar__tile.pc-cal-today-unavailable {
+  background: rgba(149, 48, 31, 0.10) !important;
+  outline: 2px dashed rgba(149, 48, 31, 0.55);
+  outline-offset: 2px;
 }
 
 /* Botão "Limpar seleção" */
@@ -134,15 +260,12 @@ input[type="password"]::-webkit-credentials-auto-fill-button {
 }
 .pc-card-accent {
   @apply border-l-4;
-  border-left-color: var(--cor-amarelo); /* amarelo ouro igual ao nome "Caramelo" */
+  border-left-color: var(--cor-amarelo);
 }
 
 /* ============================= */
 /* PELOCARAMELO - REACT CALENDAR STATES (Dashboard) */
-/* (✅ ESTE É O PADRÃO QUE VOCÊ USA NO tileClassName) */
 /* ============================= */
-
-/* garante que o tile aceite nosso estilo (mesmo com CSS do react-calendar) */
 .react-calendar__tile.pc-cal-saved,
 .react-calendar__tile.pc-cal-new,
 .react-calendar__tile.pc-cal-remove,
@@ -151,38 +274,31 @@ input[type="password"]::-webkit-credentials-auto-fill-button {
   font-weight: 700;
 }
 
-/* HOJE */
 .react-calendar__tile.pc-cal-today {
   background: var(--cor-destaque) !important;
   color: #fff !important;
 }
 
-/* SALVO (já está no servidor/cache) */
 .react-calendar__tile.pc-cal-saved {
   background: #15803d !important; /* green-700 */
   color: #fff !important;
 }
 
-/* NOVO (selecionado mas ainda não salvo) */
 .react-calendar__tile.pc-cal-new {
   background: #22c55e !important; /* green-500 */
   color: #fff !important;
 }
 
-/* REMOVER (estava salvo, agora desmarcado) */
 .react-calendar__tile.pc-cal-remove {
   background: #ef4444 !important; /* red-500 */
   color: #fff !important;
   text-decoration: line-through !important;
 }
 
-/* PASSADO (apenas visual, não impede os outros estados) */
 .react-calendar__tile.pc-cal-past {
   opacity: 0.55;
 }
 
-/* IMPORTANTE:
-   o react-calendar aplica estilos em disabled. Garantimos que nossos estados continuem visíveis. */
 .react-calendar__tile:disabled.pc-cal-saved,
 .react-calendar__tile:disabled.pc-cal-new,
 .react-calendar__tile:disabled.pc-cal-remove,
@@ -190,12 +306,10 @@ input[type="password"]::-webkit-credentials-auto-fill-button {
   opacity: 1 !important;
 }
 
-/* Se o dia é passado e está disabled, mantém legível mas “apagado” */
 .react-calendar__tile:disabled.pc-cal-past {
   opacity: 0.55 !important;
 }
 
-/* hover não pode “estragar” as cores dos estados */
 .react-calendar__tile:enabled.pc-cal-saved:hover,
 .react-calendar__tile:enabled.pc-cal-new:hover,
 .react-calendar__tile:enabled.pc-cal-remove:hover,
@@ -208,3 +322,50 @@ input[type="password"]::-webkit-credentials-auto-fill-button {
 /* ============================= */
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ============================= */
+/* REACT CALENDAR (popup) - botões em cima, mês embaixo */
+/* (aplica só no calendário do popup via className="pc-calendar-pop") */
+/* ============================= */
+.pc-calendar-pop .react-calendar__navigation {
+  display: grid !important;
+  grid-template-columns: repeat(4, auto) !important;
+  grid-template-areas:
+    "prev2 prev next next2"
+    "label label label label";
+  gap: 10px !important;
+  height: auto !important;
+  align-items: center !important;
+  justify-content: center !important;
+  position: static !important;
+}
+
+.pc-calendar-pop .react-calendar__navigation__prev2-button { grid-area: prev2 !important; }
+.pc-calendar-pop .react-calendar__navigation__prev-button  { grid-area: prev  !important; }
+.pc-calendar-pop .react-calendar__navigation__next-button  { grid-area: next  !important; }
+.pc-calendar-pop .react-calendar__navigation__next2-button { grid-area: next2 !important; }
+
+.pc-calendar-pop .react-calendar__navigation__label {
+  grid-area: label !important;
+  position: static !important;
+  transform: none !important;
+  width: 100% !important;
+  text-align: center !important;
+  pointer-events: auto !important;
+  padding: 6px 8px !important;
+  z-index: 1 !important;
+}
+
+.pc-calendar-pop .react-calendar__navigation__label__labelText {
+  font-weight: 800 !important;
+  font-size: 18px !important;
+  color: var(--cor-marrom) !important;
+  text-transform: capitalize;
+}
+
+.pc-calendar-pop .react-calendar__navigation button {
+  padding: 8px 10px !important;
+  min-width: 42px !important;
+  line-height: 1 !important;
+  z-index: 2 !important;
+}
