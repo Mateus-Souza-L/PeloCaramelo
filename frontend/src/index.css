@@ -369,3 +369,40 @@ input[type="password"]::-webkit-credentials-auto-fill-button {
   line-height: 1 !important;
   z-index: 2 !important;
 }
+
+/* ============================= */
+/* ✅ FIX MOBILE: Calendar popup não “corta” na tela */
+/* (somente <= 640px) */
+/* ============================= */
+@media (max-width: 640px) {
+  /* o wrapper que você usa: <div className="absolute z-50 mt-2 w-full"> */
+  .pc-calendar-popwrap {
+    position: fixed !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+
+    /* abaixo do input (ajuste fino se quiser) */
+    top: 220px !important;
+
+    /* garante que caiba na tela */
+    width: calc(100vw - 24px) !important;
+    max-width: 380px !important;
+
+    z-index: 9999 !important;
+    margin-top: 0 !important;
+  }
+
+  /* a “caixa” branca do popup */
+  .pc-calendar-popcard {
+    width: 100% !important;
+    min-width: 0 !important; /* mata o min-w-[320px] no mobile */
+    max-width: 100% !important;
+    overflow: hidden;
+  }
+
+  /* o calendário em si não pode estourar */
+  .pc-calendar-pop {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+}

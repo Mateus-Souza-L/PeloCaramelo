@@ -2136,8 +2136,8 @@ export default function CaregiverDetail() {
                   />
 
                   {openPicker === "start" && (
-                    <div className="absolute z-50 mt-2 w-full">
-                      <div className="bg-white rounded-2xl shadow-lg border p-2 min-w-[320px]">
+                    <div className="absolute z-50 mt-2 w-full pc-calendar-popwrap">
+                      <div className="bg-white rounded-2xl shadow-lg border p-2 min-w-[320px] pc-calendar-popcard">
                         <div className="flex items-center justify-between px-2 py-1">
                           <span className="text-xs text-[#5A3A22] font-semibold">Selecione a data de entrada</span>
                           <button
@@ -2190,8 +2190,8 @@ export default function CaregiverDetail() {
                   />
 
                   {openPicker === "end" && (
-                    <div className="absolute z-50 mt-2 w-full">
-                      <div className="bg-white rounded-2xl shadow-lg border p-2 min-w-[320px]">
+                    <div className="absolute z-50 mt-2 w-full pc-calendar-popwrap">
+                      <div className="bg-white rounded-2xl shadow-lg border p-2 min-w-[320px] pc-calendar-popcard">
                         <div className="flex items-center justify-between px-2 py-1">
                           <span className="text-xs text-[#5A3A22] font-semibold">
                             {startDate ? "Selecione a data de saída" : "Escolha primeiro a entrada"}
