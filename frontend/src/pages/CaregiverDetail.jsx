@@ -1706,8 +1706,8 @@ export default function CaregiverDetail() {
   );
 
   return (
-    <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] py-8 px-6">
-      <div className="max-w-[1400px] mx-auto bg-white rounded-2xl shadow p-6 border-l-4 border-[#FFD700]/80">
+    <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] py-12 md:py-16 px-4 md:px-6">
+      <div className="max-w-[1500px] mx-auto bg-white rounded-3xl shadow-lg p-6 md:p-10 border-l-4 border-[#FFD700]/80">
         {/* Header (ajustado no mobile, web intacto) */}
         <div className="flex flex-col sm:flex-row sm:items-start gap-4 mb-6">
           <div className="flex items-start gap-4">
