@@ -331,15 +331,12 @@ async function sendWelcomeEmail(user) {
     subject,
     html: renderWelcomeHtml({ name, role: safeRole }),
     text: renderWelcomeText({ name, role: safeRole }),
-    // replyTo padrão já está resolvido no sendEmail()
     ...(attachments.length ? { attachments } : {}),
   });
 }
 
 /* ===========================================================
    ✅ Orçamento de palestra (Comportamento)
-   - Envia para contato@pelocaramelo.com.br
-   - Reply-To = email do lead (pra responder direto)
    =========================================================== */
 
 function renderPalestraHtml(lead) {
@@ -444,9 +441,169 @@ async function sendPalestraQuoteEmail(lead) {
     subject,
     html: renderPalestraHtml(lead),
     text: renderPalestraText(lead),
-    // ✅ replyTo vira o e-mail do lead (se existir)
     replyTo: lead?.email ? String(lead.email).trim() : undefined,
   });
 }
 
-module.exports = { sendEmail, sendPalestraQuoteEmail, sendWelcomeEmail };
+/* ===========================================================
+   ✅ Admin: conta bloqueada / desbloqueada
+   =========================================================== */
+
+function formatDateTimeBR(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  try {
+    return d.toLocaleString("pt-BR", {
+      timeZone: "America/Sao_Paulo",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    // fallback simples
+    return d.toISOString();
+  }
+}
+
+function renderAccountBlockedHtml({ name, reason, blockedUntil }) {
+  const safeName = escapeHtml(name || "");
+  const safeReason = escapeHtml(reason || "Motivo não informado");
+  const untilBR = formatDateTimeBR(blockedUntil);
+
+  const bodyHtml = `
+    <p style="margin:0 0 12px;">
+      Olá${safeName ? `, <b>${safeName}</b>` : ""}.
+    </p>
+
+    <p style="margin:0 0 12px;">
+      Sua conta foi <b>temporariamente bloqueada</b> por violação das diretrizes da plataforma.
+    </p>
+
+    <p style="margin:0 0 12px;">
+      <b>Motivo:</b> ${safeReason}
+    </p>
+
+    ${
+      untilBR
+        ? `<p style="margin:0 0 12px;"><b>Bloqueio até:</b> ${escapeHtml(untilBR)}</p>`
+        : `<p style="margin:0 0 12px;"><b>Bloqueio:</b> por tempo indeterminado</p>`
+    }
+
+    <p style="margin:16px 0 0;">
+      Se você acredita que foi um engano, responda este e-mail para solicitar uma revisão.
+    </p>
+  `;
+
+  if (typeof baseTemplateFn === "function") {
+    return baseTemplateFn({
+      title: "Conta bloqueada",
+      preheader: "Sua conta foi temporariamente bloqueada na PeloCaramelo.",
+      bodyHtml,
+      cta: null,
+      footerNote: "Para pedir revisão, responda este e-mail com os detalhes do seu caso.",
+    });
+  }
+
+  return `<div style="font-family:Arial,sans-serif;line-height:1.5;color:#333">${bodyHtml}</div>`;
+}
+
+function renderAccountBlockedText({ name, reason, blockedUntil }) {
+  const untilBR = formatDateTimeBR(blockedUntil);
+  return [
+    "Conta bloqueada — PeloCaramelo",
+    "",
+    `Olá${name ? `, ${name}` : ""}.`,
+    "",
+    "Sua conta foi temporariamente bloqueada por violação das diretrizes da plataforma.",
+    `Motivo: ${reason || "Motivo não informado"}`,
+    untilBR ? `Bloqueio até: ${untilBR}` : "Bloqueio: por tempo indeterminado",
+    "",
+    "Se você acredita que foi um engano, responda este e-mail para solicitar uma revisão.",
+  ].join("\n");
+}
+
+async function sendAccountBlockedEmail(user, blockInfo = {}) {
+  const email = String(user?.email || "").trim();
+  if (!email) throw new Error("sendAccountBlockedEmail: user.email ausente.");
+
+  const name = String(user?.name || "").trim();
+  const reason = String(blockInfo?.reason || blockInfo?.blocked_reason || "").trim();
+  const blockedUntil = blockInfo?.blockedUntil || blockInfo?.blocked_until || null;
+
+  const subject = "Sua conta foi bloqueada — PeloCaramelo";
+
+  return sendEmail({
+    to: email,
+    subject,
+    html: renderAccountBlockedHtml({ name, reason, blockedUntil }),
+    text: renderAccountBlockedText({ name, reason, blockedUntil }),
+  });
+}
+
+function renderAccountUnblockedHtml({ name }) {
+  const safeName = escapeHtml(name || "");
+
+  const bodyHtml = `
+    <p style="margin:0 0 12px;">
+      Olá${safeName ? `, <b>${safeName}</b>` : ""}.
+    </p>
+
+    <p style="margin:0 0 12px;">
+      Sua conta foi <b>desbloqueada</b> e você já pode voltar a usar a plataforma normalmente.
+    </p>
+
+    <p style="margin:16px 0 0;">
+      Se você tiver qualquer dúvida, é só responder este e-mail 🙂
+    </p>
+  `;
+
+  if (typeof baseTemplateFn === "function") {
+    return baseTemplateFn({
+      title: "Conta desbloqueada",
+      preheader: "Sua conta foi desbloqueada na PeloCaramelo.",
+      bodyHtml,
+      cta: null,
+    });
+  }
+
+  return `<div style="font-family:Arial,sans-serif;line-height:1.5;color:#333">${bodyHtml}</div>`;
+}
+
+function renderAccountUnblockedText({ name }) {
+  return [
+    "Conta desbloqueada — PeloCaramelo",
+    "",
+    `Olá${name ? `, ${name}` : ""}.`,
+    "",
+    "Sua conta foi desbloqueada e você já pode voltar a usar a plataforma normalmente.",
+    "",
+    "Se você tiver qualquer dúvida, responda este e-mail 🙂",
+  ].join("\n");
+}
+
+async function sendAccountUnblockedEmail(user) {
+  const email = String(user?.email || "").trim();
+  if (!email) throw new Error("sendAccountUnblockedEmail: user.email ausente.");
+
+  const name = String(user?.name || "").trim();
+  const subject = "Sua conta foi desbloqueada — PeloCaramelo";
+
+  return sendEmail({
+    to: email,
+    subject,
+    html: renderAccountUnblockedHtml({ name }),
+    text: renderAccountUnblockedText({ name }),
+  });
+}
+
+module.exports = {
+  sendEmail,
+  sendPalestraQuoteEmail,
+  sendWelcomeEmail,
+  // ✅ novos exports
+  sendAccountBlockedEmail,
+  sendAccountUnblockedEmail,
+};

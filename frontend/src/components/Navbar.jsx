@@ -332,7 +332,8 @@ function CreateTutorProfileModal({ open, loading, onClose, onConfirm }) {
             Criar perfil de tutor(a)
           </div>
           <div style={{ marginTop: 8, color: "#333", lineHeight: 1.4, fontSize: 13 }}>
-            Ao confirmar, você poderá alternar para <b>Tutor</b> no Painel e fazer reservas normalmente.
+            Ao confirmar, você poderá alternar para <b>Tutor</b> no Painel e fazer reservas
+            normalmente.
           </div>
         </div>
 
@@ -446,9 +447,7 @@ function ConfirmLogoutModal({ open, onClose, onConfirm, loading = false }) {
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div style={{ padding: 18, borderBottom: "1px solid #eee", background: "#fff" }}>
-          <div style={{ fontSize: 18, fontWeight: 1000, color: colors.brown }}>
-            Sair da conta
-          </div>
+          <div style={{ fontSize: 18, fontWeight: 1000, color: colors.brown }}>Sair da conta</div>
           <div style={{ marginTop: 8, color: "#333", lineHeight: 1.4, fontSize: 13 }}>
             Tem certeza que deseja sair da sua conta?
           </div>
@@ -1029,7 +1028,7 @@ export default function Navbar() {
   }, [canUseBell, totalUnread, chatUnreadCount, reservationUnreadCount]);
 
   const panelLabel = useMemo(() => {
-    if (isAdminLike) return "Painel";
+    if (isAdminLike) return "Painel Admin";
     return isCaregiver ? "Painel Cuidador" : "Painel Tutor";
   }, [isAdminLike, isCaregiver]);
 
@@ -1241,7 +1240,10 @@ export default function Navbar() {
       {PanelDropdown}
 
       {isAdminLike && (
-        <Link to="/admin/users" className="bg-red-600 px-3 py-1 rounded-lg font-semibold">
+        <Link
+          to="/admin/users"
+          className="bg-[#95301F] px-3 py-1 rounded-lg font-semibold hover:brightness-95 transition"
+        >
           Painel Admin
         </Link>
       )}
@@ -1404,7 +1406,7 @@ export default function Navbar() {
             {isAdminLike && (
               <Link
                 to="/admin/users"
-                className="bg-red-600 px-3 py-2 rounded-lg font-semibold text-center"
+                className="bg-[#95301F] px-3 py-2 rounded-lg font-semibold text-center hover:brightness-95 transition"
                 onClick={closeMobile}
               >
                 Painel Admin

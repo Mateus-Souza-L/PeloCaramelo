@@ -1,5 +1,6 @@
 // backend/src/controllers/adminController.js
 const pool = require("../config/db");
+const { logAdminAction } = require("../services/adminAuditService");
 
 /* Helpers */
 function toStr(v) {
@@ -12,6 +13,16 @@ function toBool(v) {
   if (s === "true" || s === "1" || s === "yes") return true;
   if (s === "false" || s === "0" || s === "no") return false;
   return null;
+}
+
+function toInt(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.trunc(n) : null;
+}
+
+function clamp(n, min, max) {
+  if (!Number.isFinite(n)) return min;
+  return Math.max(min, Math.min(max, n));
 }
 
 function pickPgErr(err) {
@@ -103,11 +114,8 @@ function normalizeISO(v) {
 function parseBlockExtras(body) {
   const reason = toStr(body?.reason || "").trim();
 
-  const blockedDaysRaw =
-    body?.blockedDays ?? body?.blocked_days ?? body?.days ?? null;
-
-  const blockedUntilRaw =
-    body?.blockedUntil ?? body?.blocked_until ?? body?.until ?? null;
+  const blockedDaysRaw = body?.blockedDays ?? body?.blocked_days ?? body?.days ?? null;
+  const blockedUntilRaw = body?.blockedUntil ?? body?.blocked_until ?? body?.until ?? null;
 
   let blockedUntil = null;
 
@@ -225,7 +233,10 @@ async function deleteUserDependencies(client, userId) {
   }
 }
 
-/* GET /admin/users */
+/* ==========================================================
+   GET /admin/users  ✅ agora com filtros + paginação
+   Query: limit, offset, role, blocked=true/false, q
+   ========================================================== */
 async function listUsersController(req, res) {
   const client = await pool.connect();
   try {
@@ -239,7 +250,49 @@ async function listUsersController(req, res) {
       hasUntil ? "blocked_until" : "NULL::timestamptz AS blocked_until",
     ].join(",\n        ");
 
-    const { rows } = await client.query(`
+    const limit = clamp(toInt(req.query?.limit) ?? 50, 1, 200);
+    const offset = Math.max(0, toInt(req.query?.offset) ?? 0);
+
+    const roleRaw = toStr(req.query?.role).trim().toLowerCase();
+    const role =
+      roleRaw && roleRaw !== "all"
+        ? roleRaw
+        : null;
+
+    const blockedRaw = toStr(req.query?.blocked).trim();
+    const blocked = blockedRaw ? toBool(blockedRaw) : null;
+
+    const q = toStr(req.query?.q).trim();
+    const hasQ = !!q;
+
+    const where = [];
+    const params = [];
+    let p = 1;
+
+    if (role) {
+      where.push(`LOWER(role) = $${p++}`);
+      params.push(role);
+    }
+
+    if (blocked !== null) {
+      where.push(`blocked = $${p++}`);
+      params.push(blocked);
+    }
+
+    if (hasQ) {
+      where.push(`(
+        id::text ILIKE $${p} OR
+        name ILIKE $${p} OR
+        email ILIKE $${p} OR
+        role ILIKE $${p}
+      )`);
+      params.push(`%${q}%`);
+      p++;
+    }
+
+    const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+
+    const sql = `
       SELECT
         id,
         name,
@@ -249,10 +302,21 @@ async function listUsersController(req, res) {
         blocked,
         created_at
       FROM users
-      ORDER BY created_at DESC;
-    `);
+      ${whereSql}
+      ORDER BY created_at DESC
+      LIMIT $${p++} OFFSET $${p++};
+    `;
 
-    return res.json({ users: rows || [] });
+    params.push(limit, offset);
+
+    const { rows } = await client.query(sql, params);
+
+    return res.json({
+      users: rows || [],
+      limit,
+      offset,
+      meta: { returned: rows?.length || 0 },
+    });
   } catch (err) {
     console.error("Erro em GET /admin/users:", pickPgErr(err));
     return res.status(500).json({ error: "Erro ao listar usuários." });
@@ -336,6 +400,14 @@ async function setUserBlockedController(req, res) {
     const user = rows?.[0] || null;
     if (!user) return res.status(404).json({ error: "Usuário não encontrado." });
 
+    // ✅ AUDIT LOG (best-effort)
+    await logAdminAction(req, blocked ? "USER_BLOCKED" : "USER_UNBLOCKED", {
+      targetUserId: id,
+      blocked,
+      reason: blocked ? reason : null,
+      blockedUntil: blocked ? normalizeISO(blockedUntil) : null,
+    });
+
     return res.json({ user });
   } catch (err) {
     console.error("Erro em PATCH /admin/users/:id/block:", pickPgErr(err));
@@ -377,6 +449,10 @@ async function deleteUserController(req, res) {
     }
 
     await client.query("COMMIT");
+
+    // ✅ AUDIT LOG (best-effort)
+    await logAdminAction(req, "USER_DELETED", { targetUserId: id });
+
     return res.json({ success: true });
   } catch (err) {
     try {
@@ -386,8 +462,7 @@ async function deleteUserController(req, res) {
     if (err?.code === "23503") {
       console.error("Erro em DELETE /admin/users/:id (FK):", pickPgErr(err));
       return res.status(409).json({
-        error:
-          "Não foi possível excluir: existem dados relacionados a este usuário (FK).",
+        error: "Não foi possível excluir: existem dados relacionados a este usuário (FK).",
         pg: pickPgErr(err),
       });
     }
@@ -402,21 +477,75 @@ async function deleteUserController(req, res) {
   }
 }
 
-/* GET /admin/reservations */
+/* ==========================================================
+   GET /admin/reservations ✅ agora com filtros + paginação
+   Query: limit, offset, status, service, q
+   ========================================================== */
 async function listReservationsController(req, res) {
   try {
-    const { rows } = await pool.query(`
+    const limit = clamp(toInt(req.query?.limit) ?? 50, 1, 200);
+    const offset = Math.max(0, toInt(req.query?.offset) ?? 0);
+
+    const status = toStr(req.query?.status).trim();
+    const statusFilter = status && status !== "all" ? status : null;
+
+    const service = toStr(req.query?.service).trim();
+    const serviceFilter = service && service !== "all" ? service : null;
+
+    const q = toStr(req.query?.q).trim();
+    const hasQ = !!q;
+
+    const where = [];
+    const params = [];
+    let p = 1;
+
+    if (statusFilter) {
+      where.push(`r.status = $${p++}`);
+      params.push(statusFilter);
+    }
+
+    if (serviceFilter) {
+      where.push(`r.service = $${p++}`);
+      params.push(serviceFilter);
+    }
+
+    if (hasQ) {
+      where.push(`(
+        r.id::text ILIKE $${p} OR
+        COALESCE(t.name, r.tutor_name) ILIKE $${p} OR
+        COALESCE(c.name, r.caregiver_name) ILIKE $${p} OR
+        r.service ILIKE $${p} OR
+        r.status ILIKE $${p}
+      )`);
+      params.push(`%${q}%`);
+      p++;
+    }
+
+    const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+
+    const sql = `
       SELECT
         r.*,
-        COALESCE(t.name, r.tutor_name)     AS tutor_name,
-        COALESCE(c.name, r.caregiver_name) AS caregiver_name
+        COALESCE(t.name, r.tutor_name)      AS tutor_name,
+        COALESCE(c.name, r.caregiver_name)  AS caregiver_name
       FROM reservations r
       LEFT JOIN users t ON t.id = r.tutor_id
       LEFT JOIN users c ON c.id = r.caregiver_id
-      ORDER BY r.created_at DESC;
-    `);
+      ${whereSql}
+      ORDER BY r.created_at DESC NULLS LAST, r.id DESC
+      LIMIT $${p++} OFFSET $${p++};
+    `;
 
-    return res.json({ reservations: rows || [] });
+    params.push(limit, offset);
+
+    const { rows } = await pool.query(sql, params);
+
+    return res.json({
+      reservations: rows || [],
+      limit,
+      offset,
+      meta: { returned: rows?.length || 0 },
+    });
   } catch (err) {
     console.error("Erro em GET /admin/reservations:", pickPgErr(err));
     return res.status(500).json({ error: "Erro ao listar reservas." });
@@ -455,6 +584,10 @@ async function deleteReservationController(req, res) {
     }
 
     await client.query("COMMIT");
+
+    // ✅ AUDIT LOG (best-effort)
+    await logAdminAction(req, "RESERVATION_DELETED", { reservationId: id });
+
     return res.json({ success: true });
   } catch (err) {
     try {
@@ -464,8 +597,7 @@ async function deleteReservationController(req, res) {
     if (err?.code === "23503") {
       console.error("Erro em DELETE /admin/reservations/:id (FK):", pickPgErr(err));
       return res.status(409).json({
-        error:
-          "Não foi possível excluir a reserva: existem dados relacionados (FK).",
+        error: "Não foi possível excluir a reserva: existem dados relacionados (FK).",
         pg: pickPgErr(err),
       });
     }
@@ -519,6 +651,12 @@ async function createAdminController(req, res) {
     if (!rows?.length) {
       return res.status(404).json({ error: "Usuário não encontrado." });
     }
+
+    // ✅ AUDIT LOG (best-effort)
+    await logAdminAction(req, "ADMIN_CREATED", {
+      promotedEmail: email,
+      promotedUserId: rows?.[0]?.id || null,
+    });
 
     return res.json({ admin: rows[0] });
   } catch (err) {
@@ -608,8 +746,12 @@ async function setUserRoleController(req, res) {
       "role",
       "blocked",
       hasAdminLevel ? "admin_level" : "NULL::int AS admin_level",
-      (await columnExists(client, "users", "blocked_reason")) ? "blocked_reason" : "NULL::text AS blocked_reason",
-      (await columnExists(client, "users", "blocked_until")) ? "blocked_until" : "NULL::timestamptz AS blocked_until",
+      (await columnExists(client, "users", "blocked_reason"))
+        ? "blocked_reason"
+        : "NULL::text AS blocked_reason",
+      (await columnExists(client, "users", "blocked_until"))
+        ? "blocked_until"
+        : "NULL::timestamptz AS blocked_until",
       "created_at",
     ].join(", ");
 
@@ -626,12 +768,51 @@ async function setUserRoleController(req, res) {
     const user = rows?.[0] || null;
     if (!user) return res.status(404).json({ error: "Usuário não encontrado." });
 
+    // ✅ AUDIT LOG (best-effort)
+    await logAdminAction(req, "USER_ROLE_CHANGED", {
+      targetUserId: id,
+      newRole: roleRaw,
+    });
+
     return res.json({ user });
   } catch (err) {
     console.error("Erro em PATCH /admin/users/:id/role:", pickPgErr(err));
     return res.status(500).json({ error: "Erro ao alterar role do usuário." });
   } finally {
     client.release();
+  }
+}
+
+/* GET /admin/audit-logs */
+async function listAuditLogsController(req, res) {
+  const limit = Math.min(Math.max(Number(req.query?.limit || 50), 1), 200);
+  const offset = Math.max(Number(req.query?.offset || 0), 0);
+
+  try {
+    const { rows } = await pool.query(
+      `
+      SELECT
+        id,
+        created_at,
+        admin_id,
+        admin_email,
+        admin_role,
+        action_type,
+        target_type,
+        target_id,
+        reason,
+        meta
+      FROM public.admin_audit_logs
+      ORDER BY created_at DESC
+      LIMIT $1 OFFSET $2;
+      `,
+      [limit, offset]
+    );
+
+    return res.json({ logs: rows || [], limit, offset });
+  } catch (err) {
+    console.error("Erro em GET /admin/audit-logs:", pickPgErr(err));
+    return res.status(500).json({ error: "Erro ao listar audit logs." });
   }
 }
 
@@ -642,6 +823,6 @@ module.exports = {
   listReservationsController,
   deleteReservationController,
   createAdminController,
-  setUserRoleController, // ✅ NOVO
+  setUserRoleController,
+  listAuditLogsController,
 };
-

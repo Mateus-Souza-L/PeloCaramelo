@@ -13,7 +13,8 @@ const {
   listReservationsController,
   deleteReservationController,
   createAdminController,
-  setUserRoleController, // ✅ NOVO
+  setUserRoleController,
+  listAuditLogsController, // 
 } = require("../controllers/adminController");
 
 const {
@@ -35,7 +36,7 @@ router.get("/users", listUsersController);
 
 router.patch("/users/:id/block", setUserBlockedController);
 
-// ✅ NOVO: alterar role (somente admin master)
+// ✅ alterar role (somente admin master)
 router.patch("/users/:id/role", adminMasterMiddleware, setUserRoleController);
 
 router.delete("/users/:id", adminMasterMiddleware, deleteUserController);
@@ -44,7 +45,11 @@ router.delete("/users/:id", adminMasterMiddleware, deleteUserController);
 
 router.get("/reservations", listReservationsController);
 
-router.delete("/reservations/:id", adminMasterMiddleware, deleteReservationController);
+router.delete(
+  "/reservations/:id",
+  adminMasterMiddleware,
+  deleteReservationController
+);
 
 /* ===================== Avaliações ===================== */
 
@@ -53,5 +58,9 @@ router.get("/reviews", listAllReviews);
 router.patch("/reviews/:id/hide", hideReview);
 
 router.patch("/reviews/:id/unhide", unhideReview);
+
+/* ===================== Audit Logs ===================== */
+
+router.get("/audit-logs", listAuditLogsController);
 
 module.exports = router;

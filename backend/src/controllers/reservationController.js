@@ -20,6 +20,9 @@ const { sendEmail } = require("../services/emailService");
 const { newReservationEmail } = require("../email/templates/newReservationEmail");
 const { reservationAcceptedEmail } = require("../email/templates/reservationAcceptedEmail");
 
+// ✅ Admin audit (DB)
+const { ACTIONS, auditLog } = require("../utils/adminAudit");
+
 /* ===========================================================
    HELPERS (ids, datas, body)
    =========================================================== */
@@ -696,27 +699,46 @@ async function getUserDisplayNameById(id) {
    DB FALLBACKS (se model não tiver)
    =========================================================== */
 
-async function updateReservationStatusDb(id, status, reason = null) {
-  if (typeof reservationModel.updateReservationStatus === "function") {
-    return reservationModel.updateReservationStatus(id, status, reason);
-  }
-
+async function updateReservationStatusDb(
+  id,
+  status,
+  reason = null,
+  {
+    canceledBy = null, // 'tutor' | 'caregiver' | 'admin' | 'system'
+    cancelCategory = null, // ex.: 'price','schedule','behavior','communication','health','no_show','other'
+  } = {}
+) {
+  // Se existir model, tenta usar ele — mas precisamos garantir novos campos.
+  // Então, mesmo com model, preferimos o SQL aqui (consistência do admin).
   const rid = toPosInt(id);
   if (!rid) return null;
 
   const cleanedReason = typeof reason === "string" && reason.trim() ? reason.trim() : null;
 
-  // fallback: mantém compat (se o model não existir)
-  const sql = `
+  const isCancel = normalizeStatusInput(status) === "Cancelada";
+  const isReject = normalizeStatusInput(status) === "Recusada";
+
+  const cBy = isCancel ? (typeof canceledBy === "string" ? canceledBy.trim() : null) : null;
+  const cCat = isCancel ? (typeof cancelCategory === "string" ? cancelCategory.trim() : null) : null;
+
+  // fallback SQL (fonte de verdade do status + colunas novas)
+    const sql = `
     UPDATE reservations
-      SET status = $2,
-          reject_reason = CASE WHEN $2 = 'Recusada' THEN $3 ELSE NULL END,
-          cancel_reason = CASE WHEN $2 = 'Cancelada' THEN $3 ELSE NULL END,
+      SET status = ($2::text),
+
+          reject_reason = CASE WHEN ($2::text) = ('Recusada'::text) THEN $3 ELSE NULL END,
+
+          cancel_reason  = CASE WHEN ($2::text) = ('Cancelada'::text) THEN $3 ELSE NULL END,
+          cancel_reason_category = CASE WHEN ($2::text) = ('Cancelada'::text) THEN $4 ELSE NULL END,
+          canceled_by = CASE WHEN ($2::text) = ('Cancelada'::text) THEN $5 ELSE NULL END,
+          canceled_at = CASE WHEN ($2::text) = ('Cancelada'::text) THEN NOW() ELSE NULL END,
+
           updated_at = NOW()
     WHERE id = $1
     RETURNING *
   `;
-  const { rows } = await pool.query(sql, [rid, status, cleanedReason]);
+
+  const { rows } = await pool.query(sql, [rid, status, cleanedReason, cCat, cBy]);
   return rows?.[0] || null;
 }
 
@@ -1227,6 +1249,10 @@ async function updateReservationStatusController(req, res) {
     const cancelReasonRaw = body.cancelReason ?? body.cancel_reason ?? null;
     const cancelReason = cleanNonEmptyString(cancelReasonRaw);
 
+    // (opcional) categoria do motivo (se o front mandar)
+    const cancelCategoryRaw = body.cancelReasonCategory ?? body.cancel_reason_category ?? null;
+    const cancelCategory = cleanNonEmptyString(cancelCategoryRaw) || "other";
+
     if (!nextStatus) {
       return res.status(400).json({ error: "Status é obrigatório.", code: "MISSING_STATUS" });
     }
@@ -1297,7 +1323,10 @@ async function updateReservationStatusController(req, res) {
       }
 
       // ✅ salva motivo do cancelamento (se vier)
-      const updated = await updateReservationStatusDb(id, "Cancelada", cancelReason);
+      const updated = await updateReservationStatusDb(id, "Cancelada", cancelReason, {
+        canceledBy: "tutor",
+        cancelCategory,
+      });
 
       await notifyReservationEventSafe({
         reservation: updated,
@@ -1308,6 +1337,22 @@ async function updateReservationStatusController(req, res) {
           prevStatus: currentStatus,
           nextStatus: "Cancelada",
           cancelReason: cancelReason || null,
+        },
+      });
+
+      // ✅ AUDIT LOG (DB)
+      await auditLog(pool, {
+        adminId: user.id, // aqui é "ator" (pode ser tutor também) — audit serve para rastrear ações relevantes
+        adminEmail: user.email || null,
+        actionType: ACTIONS.RES_CANCEL,
+        targetType: "reservation",
+        targetId: String(updated?.id ?? id),
+        reason: cancelReason || null,
+        meta: {
+          prevStatus: currentStatus,
+          nextStatus: "Cancelada",
+          canceledBy: "tutor",
+          cancelCategory,
         },
       });
 
@@ -1431,7 +1476,10 @@ async function updateReservationStatusController(req, res) {
       const updated = await updateReservationStatusDb(
         id,
         nextStatus,
-        nextStatus === "Recusada" ? rejectReason : null
+        nextStatus === "Recusada" ? rejectReason : null,
+        nextStatus === "Cancelada"
+          ? { canceledBy: "caregiver", cancelCategory } // (hoje cuidador não cancela, mas fica pronto)
+          : {}
       );
 
       await notifyReservationEventSafe({
@@ -1439,6 +1487,28 @@ async function updateReservationStatusController(req, res) {
         actorUser: user,
         type: "status",
         payload: { reservationId: updated?.id, prevStatus: currentStatus, nextStatus },
+      });
+
+      // ✅ AUDIT LOG (DB)
+      await auditLog(pool, {
+        adminId: user.id,
+        adminEmail: user.email || null,
+        actionType:
+          nextStatus === "Recusada"
+            ? ACTIONS.RES_STATUS_CHANGE
+            : nextStatus === "Aceita"
+              ? ACTIONS.RES_STATUS_CHANGE
+              : nextStatus === "Concluída"
+                ? ACTIONS.RES_COMPLETE
+                : ACTIONS.RES_STATUS_CHANGE,
+        targetType: "reservation",
+        targetId: String(updated?.id ?? id),
+        reason: nextStatus === "Recusada" ? (rejectReason || null) : null,
+        meta: {
+          prevStatus: currentStatus,
+          nextStatus,
+          actorRole: "caregiver",
+        },
       });
 
       // ✅ e-mail: Reserva aceita (para o tutor) — best-effort
@@ -1646,7 +1716,14 @@ async function updateReservationStatusController(req, res) {
       const updated = await updateReservationStatusDb(
         id,
         nextStatus,
-        nextStatus === "Recusada" ? rejectReason : null
+        nextStatus === "Recusada"
+          ? rejectReason
+          : nextStatus === "Cancelada"
+            ? cancelReason
+            : null,
+        nextStatus === "Cancelada"
+          ? { canceledBy: "admin", cancelCategory }
+          : {}
       );
 
       await notifyReservationEventSafe({
@@ -1654,6 +1731,33 @@ async function updateReservationStatusController(req, res) {
         actorUser: user,
         type: "status",
         payload: { reservationId: updated?.id, prevStatus: currentStatus, nextStatus },
+      });
+
+      // ✅ AUDIT LOG (DB)
+      await auditLog(pool, {
+        adminId: user.id,
+        adminEmail: user.email || null,
+        actionType:
+          nextStatus === "Cancelada"
+            ? ACTIONS.RES_CANCEL
+            : nextStatus === "Concluída"
+              ? ACTIONS.RES_COMPLETE
+              : ACTIONS.RES_STATUS_CHANGE,
+        targetType: "reservation",
+        targetId: String(updated?.id ?? id),
+        reason:
+          nextStatus === "Cancelada"
+            ? (cancelReason || null)
+            : nextStatus === "Recusada"
+              ? (rejectReason || null)
+              : null,
+        meta: {
+          prevStatus: currentStatus,
+          nextStatus,
+          actorRole: "admin",
+          canceledBy: nextStatus === "Cancelada" ? "admin" : null,
+          cancelCategory: nextStatus === "Cancelada" ? cancelCategory : null,
+        },
       });
 
       return res.json({ reservation: normalizeReservationResponse(updated) });

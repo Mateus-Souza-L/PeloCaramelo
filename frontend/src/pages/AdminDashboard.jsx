@@ -1,152 +1,42 @@
-// src/pages/AdminDashboard.jsx
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useLocation } from "react-router-dom";
+// frontend/src/pages/AdminDashboard.jsx
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  adminDeleteReservation,
+  adminDeleteUser,
+  adminListAuditLogs,
+  adminListReservations,
+  adminListUsers,
+  adminSetUserBlocked,
+  adminSetUserRole,
+  adminListReviews,
+  adminHideReview,
+  adminUnhideReview,
+} from "../services/adminApi";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../components/ToastProvider";
-import { authRequest } from "../services/api";
+import { formatDateBR } from "../utils/date";
 
-/* ---------- helpers ---------- */
-const toStr = (v) => (v == null ? "" : String(v));
-
-function pick(obj, keys, fallback = "") {
-  for (const k of keys) {
-    if (obj && obj[k] != null) return obj[k];
-  }
-  return fallback;
+function toStr(v) {
+  return v == null ? "" : String(v);
 }
 
-function fmtDate(v) {
-  if (!v) return "";
-  const s = String(v);
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
-  const dt = new Date(s);
-  if (!Number.isNaN(dt.getTime())) return dt.toISOString().slice(0, 10);
-  return s;
+function roleLabel(role) {
+  const r = String(role || "").toLowerCase();
+  if (r === "admin_master") return "Admin Master";
+  if (r === "admin") return "Admin";
+  if (r === "caregiver") return "Cuidador";
+  return "Tutor";
 }
 
-function escapeCSV(val) {
-  const s = toStr(val);
-  const needsQuotes = /[",\n\r;]/.test(s);
-  const escaped = s.replace(/"/g, '""');
-  return needsQuotes ? `"${escaped}"` : escaped;
+function moneyBR(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "-";
+  return `R$ ${n.toFixed(2)}`;
 }
 
-function downloadTextFile(filename, text, mime = "text/csv;charset=utf-8") {
-  const blob = new Blob([text], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
+/* ===================== Modal padrão ===================== */
 
-function toCSV(rows, columns) {
-  const header = columns.map((c) => escapeCSV(c.label)).join(";");
-  const lines = rows.map((row) =>
-    columns
-      .map((c) => {
-        const v = c.value ? c.value(row) : row?.[c.key];
-        return escapeCSV(v);
-      })
-      .join(";")
-  );
-  return [header, ...lines].join("\n");
-}
-
-function normUser(u) {
-  if (!u) return null;
-  const id = pick(u, ["id", "user_id", "uuid"]);
-  const name = pick(u, ["name", "nome", "full_name", "fullName"], "");
-  const email = pick(u, ["email"], "");
-  const role = pick(u, ["role", "perfil", "user_role"], "");
-
-  const isBlockedRaw = pick(u, ["isBlocked", "is_blocked", "blocked"], false);
-  const isBlocked = Boolean(isBlockedRaw);
-
-  const blockedReason = pick(u, ["blockedReason", "blocked_reason", "block_reason"], "");
-  const blockedUntil = pick(u, ["blockedUntil", "blocked_until", "block_until"], "");
-  const createdAt = pick(u, ["createdAt", "created_at", "created", "created_on"], "");
-
-  return { ...u, id, name, email, role, isBlocked, blockedReason, blockedUntil, createdAt };
-}
-
-function normReservation(r) {
-  if (!r) return null;
-  const id = pick(r, ["id", "reservation_id"]);
-  const status = pick(r, ["status"], "");
-  const startDate = pick(r, ["startDate", "start_date", "start", "start_day"], "");
-  const endDate = pick(r, ["endDate", "end_date", "end", "end_day"], "");
-  const createdAt = pick(r, ["createdAt", "created_at"], "");
-
-  const tutorName = pick(r, ["tutorName", "tutor_name", "tutor_nome", "tutor"], "");
-  const caregiverName = pick(r, ["caregiverName", "caregiver_name", "caregiver_nome", "caregiver"], "");
-
-  const tutorId = pick(r, ["tutorId", "tutor_id"], "");
-  const caregiverId = pick(r, ["caregiverId", "caregiver_id"], "");
-
-  return {
-    ...r,
-    id,
-    status,
-    startDate,
-    endDate,
-    createdAt,
-    tutorName,
-    caregiverName,
-    tutorId,
-    caregiverId,
-  };
-}
-
-function normReview(rv) {
-  if (!rv) return null;
-  const id = pick(rv, ["id", "review_id"]);
-  const reservationId = pick(rv, ["reservationId", "reservation_id"], "");
-  const rating = pick(rv, ["rating", "nota", "score"], "");
-  const comment = pick(rv, ["comment", "comentario", "text", "message"], "");
-  const createdAt = pick(rv, ["createdAt", "created_at"], "");
-
-  const isHidden = Boolean(pick(rv, ["isHidden", "is_hidden"], false));
-  const hiddenReason = pick(rv, ["hiddenReason", "hidden_reason"], "");
-  const hiddenAt = pick(rv, ["hiddenAt", "hidden_at"], "");
-
-  const tutorId = pick(rv, ["tutorId", "tutor_id", "authorId", "author_id"], "");
-  const tutorName = pick(rv, ["tutorName", "tutor_name", "authorName", "author_name"], "");
-  const caregiverId = pick(rv, ["caregiverId", "caregiver_id"], "");
-  const caregiverName = pick(rv, ["caregiverName", "caregiver_name"], "");
-
-  return {
-    ...rv,
-    id,
-    reservationId,
-    rating,
-    comment,
-    createdAt,
-    isHidden,
-    hiddenReason,
-    hiddenAt,
-    tutorId,
-    tutorName,
-    caregiverId,
-    caregiverName,
-  };
-}
-
-/* ---------- modal ---------- */
-function ConfirmModal({
-  open,
-  title,
-  description,
-  confirmText = "Confirmar",
-  danger = false,
-  onCancel,
-  onConfirm,
-  busy,
-  children,
-}) {
+function ModalBase({ open, title, subtitle, children, onClose }) {
   if (!open) return null;
 
   return (
@@ -154,1152 +44,1231 @@ function ConfirmModal({
       style={{
         position: "fixed",
         inset: 0,
-        background: "rgba(0,0,0,0.5)",
+        background: "rgba(0,0,0,0.55)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        zIndex: 50,
+        zIndex: 9999,
         padding: 16,
       }}
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget && !busy) onCancel?.();
+        if (e.target === e.currentTarget) onClose?.();
       }}
     >
       <div
         style={{
-          width: "min(620px, 100%)",
+          width: "min(760px, 100%)",
           background: "#fff",
           borderRadius: 18,
-          boxShadow: "0 12px 30px rgba(0,0,0,0.2)",
           overflow: "hidden",
+          boxShadow: "0 12px 30px rgba(0,0,0,0.22)",
+          border: "1px solid #eee",
         }}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div style={{ padding: 18, borderBottom: "1px solid #eee" }}>
-          <div style={{ fontSize: 18, fontWeight: 900, color: "#5A3A22" }}>{title}</div>
-          {description ? (
-            <div style={{ marginTop: 8, color: "#333", lineHeight: 1.35, whiteSpace: "pre-line" }}>
-              {description}
+        <div style={{ padding: 18, borderBottom: "1px solid #eee", background: "#fff" }}>
+          <div style={{ fontSize: 18, fontWeight: 1000, color: "#5A3A22" }}>{title}</div>
+          {subtitle ? (
+            <div style={{ marginTop: 6, color: "#333", lineHeight: 1.35, fontSize: 13 }}>
+              {subtitle}
             </div>
           ) : null}
         </div>
 
-        {children ? <div style={{ padding: 18 }}>{children}</div> : null}
-
-        <div
-          style={{
-            padding: 18,
-            display: "flex",
-            gap: 10,
-            justifyContent: "flex-end",
-            background: "#fafafa",
-            borderTop: children ? "1px solid #eee" : "none",
-          }}
-        >
-          <button
-            type="button"
-            disabled={busy}
-            onClick={onCancel}
-            style={{
-              padding: "10px 14px",
-              borderRadius: 12,
-              border: "1px solid #ddd",
-              background: "#fff",
-              cursor: busy ? "not-allowed" : "pointer",
-              fontWeight: 800,
-            }}
-          >
-            Cancelar
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={onConfirm}
-            style={{
-              padding: "10px 14px",
-              borderRadius: 12,
-              border: "1px solid transparent",
-              background: danger ? "#95301F" : "#FFD700",
-              color: danger ? "#fff" : "#5A3A22",
-              cursor: busy ? "not-allowed" : "pointer",
-              fontWeight: 1000,
-            }}
-          >
-            {busy ? "Processando..." : confirmText}
-          </button>
-        </div>
+        <div style={{ padding: 18, background: "#EBCBA9" }}>{children}</div>
       </div>
     </div>
   );
 }
 
-export default function AdminDashboard() {
-  const location = useLocation();
-  const { user, token } = useAuth();
-  const { showToast } = useToast();
-
-  const [tab, setTab] = useState("users");
-
-  useEffect(() => {
-    const p = (location.pathname || "").toLowerCase();
-    if (p.includes("/admin/reservations")) setTab("reservations");
-    else if (p.includes("/admin/reviews")) setTab("reviews");
-    else setTab("users");
-  }, [location.pathname]);
-
-  const [usersList, setUsersList] = useState([]);
-  const [reservationsList, setReservationsList] = useState([]);
-  const [reviewsList, setReviewsList] = useState([]);
-
-  const [loadingUsers, setLoadingUsers] = useState(false);
-  const [loadingRes, setLoadingRes] = useState(false);
-  const [loadingReviews, setLoadingReviews] = useState(false);
-
-  const [qUsers, setQUsers] = useState("");
-  const [qRes, setQRes] = useState("");
-  const [qReviews, setQReviews] = useState("");
-  const [showHidden, setShowHidden] = useState(true);
-
-  const [selectedUsers, setSelectedUsers] = useState(() => new Set());
-  const [selectedRes, setSelectedRes] = useState(() => new Set());
-  const [selectedReviews, setSelectedReviews] = useState(() => new Set());
-
-  const usersSelectAllRef = useRef(null);
-  const resSelectAllRef = useRef(null);
-  const reviewsSelectAllRef = useRef(null);
-
-  const [confirmState, setConfirmState] = useState({
-    open: false,
-    title: "",
-    description: "",
-    confirmText: "Confirmar",
-    danger: false,
-    action: null,
-    withReason: false,
-    withUntil: false,
-  });
-  const [busyConfirm, setBusyConfirm] = useState(false);
-  const [reasonText, setReasonText] = useState("");
-  const [blockDays, setBlockDays] = useState(7);
-  const [blockUntil, setBlockUntil] = useState("");
-
-  const roleLower = String(user?.role || "").toLowerCase();
-  const isAdmin = roleLower.includes("admin");
-  const isAdminMaster = roleLower === "admin_master";
-
-  const ENDPOINTS = useMemo(
-    () => ({
-      listUsers: "/admin/users",
-      listReservations: "/admin/reservations",
-      listReviews: "/admin/reviews",
-
-      setUserBlocked: (id) => `/admin/users/${id}/block`,
-      setUserRole: (id) => `/admin/users/${id}/role`, // ✅ NOVO
-      deleteUser: (id) => `/admin/users/${id}`,
-
-      updateReservationStatus: (id) => `/reservations/${id}/status`,
-      deleteReservation: (id) => `/admin/reservations/${id}`,
-
-      hideReview: (id) => `/admin/reviews/${id}/hide`,
-      unhideReview: (id) => `/admin/reviews/${id}/unhide`,
-    }),
-    []
-  );
-
-  const loadUsers = useCallback(async () => {
-    if (!token || !isAdmin) return;
-    setLoadingUsers(true);
-    try {
-      const data = await authRequest(ENDPOINTS.listUsers, token);
-      const arr = Array.isArray(data) ? data : data?.users || [];
-      setUsersList(arr.map(normUser).filter(Boolean));
-    } catch {
-      setUsersList([]);
-      showToast?.("Erro ao carregar usuários (admin).", "error");
-    } finally {
-      setLoadingUsers(false);
-    }
-  }, [token, isAdmin, ENDPOINTS, showToast]);
-
-  const loadReservations = useCallback(async () => {
-    if (!token || !isAdmin) return;
-    setLoadingRes(true);
-    try {
-      const data = await authRequest(ENDPOINTS.listReservations, token);
-      const arr = Array.isArray(data) ? data : data?.reservations || [];
-      setReservationsList(arr.map(normReservation).filter(Boolean));
-    } catch {
-      setReservationsList([]);
-      showToast?.("Erro ao carregar reservas (admin).", "error");
-    } finally {
-      setLoadingRes(false);
-    }
-  }, [token, isAdmin, ENDPOINTS, showToast]);
-
-  const loadReviews = useCallback(async () => {
-    if (!token || !isAdmin) return;
-    setLoadingReviews(true);
-    try {
-      const data = await authRequest(ENDPOINTS.listReviews, token);
-      const arr = Array.isArray(data) ? data : data?.items || data?.reviews || [];
-      setReviewsList(arr.map(normReview).filter(Boolean));
-    } catch {
-      setReviewsList([]);
-      showToast?.("Erro ao carregar avaliações (admin).", "error");
-    } finally {
-      setLoadingReviews(false);
-    }
-  }, [token, isAdmin, ENDPOINTS, showToast]);
-
-  useEffect(() => {
-    if (!token || !isAdmin) return;
-    loadUsers();
-    loadReservations();
-    loadReviews();
-  }, [token, isAdmin, loadUsers, loadReservations, loadReviews]);
-
-  const users = useMemo(() => {
-    const q = qUsers.trim().toLowerCase();
-    if (!q) return usersList;
-    return usersList.filter((u) => {
-      const hay = `${toStr(u.id)} ${toStr(u.name)} ${toStr(u.email)} ${toStr(u.role)}`.toLowerCase();
-      return hay.includes(q);
-    });
-  }, [usersList, qUsers]);
-
-  const reservations = useMemo(() => {
-    const q = qRes.trim().toLowerCase();
-    if (!q) return reservationsList;
-    return reservationsList.filter((r) => {
-      const hay = `${toStr(r.id)} ${toStr(r.status)} ${toStr(r.tutorName)} ${toStr(r.caregiverName)} ${fmtDate(
-        r.startDate
-      )} ${fmtDate(r.endDate)}`.toLowerCase();
-      return hay.includes(q);
-    });
-  }, [reservationsList, qRes]);
-
-  const reviews = useMemo(() => {
-    const q = qReviews.trim().toLowerCase();
-    const base = showHidden ? reviewsList : reviewsList.filter((r) => !r.isHidden);
-    if (!q) return base;
-    return base.filter((r) => {
-      const hay = `${toStr(r.id)} ${toStr(r.reservationId)} ${toStr(r.tutorName)} ${toStr(r.caregiverName)} ${toStr(
-        r.comment
-      )} ${toStr(r.rating)} ${fmtDate(r.createdAt)}`.toLowerCase();
-      return hay.includes(q);
-    });
-  }, [reviewsList, qReviews, showHidden]);
-
-  const metrics = useMemo(() => {
-    const totalUsers = usersList.length;
-    const blockedUsers = usersList.filter((u) => Boolean(u?.isBlocked)).length;
-    const admins = usersList.filter((u) => String(u?.role || "").toLowerCase().includes("admin")).length;
-    const tutors = usersList.filter((u) => String(u?.role || "").toLowerCase() === "tutor").length;
-    const caregivers = usersList.filter((u) => String(u?.role || "").toLowerCase() === "caregiver").length;
-
-    const totalRes = reservationsList.length;
-    const byStatus = reservationsList.reduce((acc, r) => {
-      const s = String(r?.status || "unknown").toLowerCase().trim();
-      acc[s] = (acc[s] || 0) + 1;
-      return acc;
-    }, {});
-
-    const totalReviews = reviewsList.length;
-    const hiddenReviews = reviewsList.filter((r) => Boolean(r?.isHidden)).length;
-    const visibleReviews = totalReviews - hiddenReviews;
-
-    return {
-      users: { totalUsers, blockedUsers, admins, tutors, caregivers },
-      reservations: { totalRes, byStatus },
-      reviews: { totalReviews, hiddenReviews, visibleReviews },
-    };
-  }, [usersList, reservationsList, reviewsList]);
-
-  useEffect(() => {
-    if (!usersSelectAllRef.current) return;
-    const total = users.length;
-    const selectedCount = users.filter((u) => selectedUsers.has(String(u.id))).length;
-    usersSelectAllRef.current.indeterminate = selectedCount > 0 && selectedCount < total;
-  }, [users, selectedUsers]);
-
-  useEffect(() => {
-    if (!resSelectAllRef.current) return;
-    const total = reservations.length;
-    const selectedCount = reservations.filter((r) => selectedRes.has(String(r.id))).length;
-    resSelectAllRef.current.indeterminate = selectedCount > 0 && selectedCount < total;
-  }, [reservations, selectedRes]);
-
-  useEffect(() => {
-    if (!reviewsSelectAllRef.current) return;
-    const total = reviews.length;
-    const selectedCount = reviews.filter((r) => selectedReviews.has(String(r.id))).length;
-    reviewsSelectAllRef.current.indeterminate = selectedCount > 0 && selectedCount < total;
-  }, [reviews, selectedReviews]);
-
-  const toggleSet = (setter) => (id) => {
-    const key = String(id);
-    setter((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
-
-  const toggleUser = toggleSet(setSelectedUsers);
-  const toggleRes = toggleSet(setSelectedRes);
-  const toggleReview = toggleSet(setSelectedReviews);
-
-  const selectAll = (items, setter) => (checked, idKey = "id") => {
-    const ids = items.map((x) => String(x[idKey])).filter(Boolean);
-    setter((prev) => {
-      const next = new Set(prev);
-      if (checked) ids.forEach((id) => next.add(id));
-      else ids.forEach((id) => next.delete(id));
-      return next;
-    });
-  };
-
-  const selectAllUsers = selectAll(users, setSelectedUsers);
-  const selectAllRes = selectAll(reservations, setSelectedRes);
-  const selectAllReviews = selectAll(reviews, setSelectedReviews);
-
-  const clearSelection = () => {
-    setSelectedUsers(new Set());
-    setSelectedRes(new Set());
-    setSelectedReviews(new Set());
-  };
-
-  const openConfirm = ({ title, description, confirmText, danger, action, withReason = false, withUntil = false }) => {
-    setReasonText("");
-    setBlockDays(7);
-    setBlockUntil("");
-    setConfirmState({
-      open: true,
-      title,
-      description,
-      confirmText: confirmText || "Confirmar",
-      danger: !!danger,
-      action: typeof action === "function" ? action : null,
-      withReason,
-      withUntil,
-    });
-  };
-
-  const closeConfirm = () => {
-    if (busyConfirm) return;
-    setConfirmState((s) => ({ ...s, open: false }));
-  };
-
-  const runConfirm = async () => {
-    if (!confirmState.action) return closeConfirm();
-    setBusyConfirm(true);
-    try {
-      await confirmState.action({ reasonText, blockDays, blockUntil });
-      closeConfirm();
-    } catch {
-      showToast?.("Falha ao executar ação.", "error");
-    } finally {
-      setBusyConfirm(false);
-    }
-  };
-
-  const selectedUserIds = useMemo(() => Array.from(selectedUsers), [selectedUsers]);
-
-  const bulkSetBlocked = (blocked) => {
-    if (!selectedUserIds.length) return showToast?.("Selecione usuários.", "info");
-
-    openConfirm({
-      title: blocked ? "Bloquear usuários selecionados?" : "Desbloquear usuários selecionados?",
-      description: `Isso ${blocked ? "bloqueará" : "desbloqueará"} ${selectedUserIds.length} usuário(s).`,
-      confirmText: blocked ? "Bloquear" : "Desbloquear",
-      danger: !!blocked,
-      withReason: blocked,
-      withUntil: blocked,
-      action: async ({ reasonText, blockDays, blockUntil }) => {
-        const reason = (reasonText || "").trim() || (blocked ? "Bloqueio administrativo" : "");
-        const payload = { blocked, reason };
-
-        if (blocked) {
-          if (blockUntil) payload.blockedUntil = blockUntil;
-          else payload.blockedDays = Number(blockDays || 7);
-        }
-
-        await Promise.all(
-          selectedUserIds.map((id) =>
-            authRequest(ENDPOINTS.setUserBlocked(id), token, { method: "PATCH", body: payload })
-          )
-        );
-
-        showToast?.(blocked ? "Usuários bloqueados." : "Usuários desbloqueados.", "success");
-        await loadUsers();
-        clearSelection();
-      },
-    });
-  };
-
-  // ✅ NOVO: alterar role (somente admin_master)
-  const bulkSetRole = (role) => {
-    if (!isAdminMaster) return showToast?.("Apenas admin master pode alterar roles.", "error");
-    if (!selectedUserIds.length) return showToast?.("Selecione usuários.", "info");
-
-    const label = role === "admin" ? "Tornar admin" : role === "tutor" ? "Voltar para tutor" : `Definir: ${role}`;
-
-    openConfirm({
-      title: `${label} para os selecionados?`,
-      description: `Isso alterará a role de ${selectedUserIds.length} usuário(s).`,
-      confirmText: label,
-      danger: role === "admin",
-      action: async () => {
-        await Promise.all(
-          selectedUserIds.map((id) =>
-            authRequest(ENDPOINTS.setUserRole(id), token, { method: "PATCH", body: { role } })
-          )
-        );
-        showToast?.("Roles atualizadas.", "success");
-        await loadUsers();
-        clearSelection();
-      },
-    });
-  };
-
-  const bulkDeleteUsers = () => {
-    if (!selectedUserIds.length) return showToast?.("Selecione usuários.", "info");
-    openConfirm({
-      title: "Excluir usuários selecionados?",
-      description: `Você está prestes a excluir ${selectedUserIds.length} usuário(s).\n⚠️ Irreversível. Recomendo BLOQUEAR ao invés de excluir.`,
-      confirmText: "Excluir",
-      danger: true,
-      action: async () => {
-        await Promise.all(
-          selectedUserIds.map((id) => authRequest(ENDPOINTS.deleteUser(id), token, { method: "DELETE" }))
-        );
-        showToast?.("Usuários excluídos.", "success");
-        await loadUsers();
-        clearSelection();
-      },
-    });
-  };
-
-  const selectedResIds = useMemo(() => Array.from(selectedRes), [selectedRes]);
-
-  const bulkDeleteReservations = () => {
-    if (!selectedResIds.length) return showToast?.("Selecione reservas.", "info");
-    openConfirm({
-      title: "Excluir reservas selecionadas?",
-      description: `Você está prestes a excluir ${selectedResIds.length} reserva(s).\n⚠️ Irreversível.`,
-      confirmText: "Excluir",
-      danger: true,
-      action: async () => {
-        await Promise.all(
-          selectedResIds.map((id) => authRequest(ENDPOINTS.deleteReservation(id), token, { method: "DELETE" }))
-        );
-        showToast?.("Reservas excluídas.", "success");
-        await loadReservations();
-        clearSelection();
-      },
-    });
-  };
-
-  const bulkSetReservationStatus = (status) => {
-    if (!selectedResIds.length) return showToast?.("Selecione reservas.", "info");
-    const label = status === "canceled" ? "Cancelar" : status === "completed" ? "Concluir" : `Alterar (${status})`;
-    openConfirm({
-      title: `${label} reservas selecionadas?`,
-      description: `Isso afetará ${selectedResIds.length} reserva(s).`,
-      confirmText: label,
-      danger: status === "canceled",
-      action: async () => {
-        await Promise.all(
-          selectedResIds.map((id) =>
-            authRequest(ENDPOINTS.updateReservationStatus(id), token, { method: "PATCH", body: { status } })
-          )
-        );
-        showToast?.("Reservas atualizadas.", "success");
-        await loadReservations();
-        clearSelection();
-      },
-    });
-  };
-
-  const selectedReviewIds = useMemo(() => Array.from(selectedReviews), [selectedReviews]);
-
-  const bulkHideReviews = () => {
-    if (!selectedReviewIds.length) return showToast?.("Selecione avaliações.", "info");
-    openConfirm({
-      title: "Ocultar avaliações selecionadas?",
-      description: `Isso ocultará ${selectedReviewIds.length} avaliação(ões) do site.\nRecomendado para ofensas / spam / fora das diretrizes.`,
-      confirmText: "Ocultar",
-      danger: true,
-      withReason: true,
-      action: async ({ reasonText }) => {
-        const reason = (reasonText || "").trim() || "Violação de diretrizes / conteúdo inadequado";
-        await Promise.all(
-          selectedReviewIds.map((id) => authRequest(ENDPOINTS.hideReview(id), token, { method: "PATCH", body: { reason } }))
-        );
-        showToast?.("Avaliações ocultadas.", "success");
-        await loadReviews();
-        clearSelection();
-      },
-    });
-  };
-
-  const bulkUnhideReviews = () => {
-    if (!selectedReviewIds.length) return showToast?.("Selecione avaliações.", "info");
-    openConfirm({
-      title: "Reexibir avaliações selecionadas?",
-      description: `Isso reexibirá ${selectedReviewIds.length} avaliação(ões).`,
-      confirmText: "Reexibir",
-      action: async () => {
-        await Promise.all(
-          selectedReviewIds.map((id) => authRequest(ENDPOINTS.unhideReview(id), token, { method: "PATCH" }))
-        );
-        showToast?.("Avaliações reexibidas.", "success");
-        await loadReviews();
-        clearSelection();
-      },
-    });
-  };
-
-  const exportUsersCSV = () => {
-    if (!users.length) return showToast?.("Nada para exportar.", "info");
-    const cols = [
-      { key: "id", label: "id" },
-      { key: "name", label: "nome" },
-      { key: "email", label: "email" },
-      { key: "role", label: "role" },
-      { key: "isBlocked", label: "bloqueado", value: (u) => (u.isBlocked ? "sim" : "nao") },
-      { key: "blockedReason", label: "motivo_bloqueio", value: (u) => toStr(u.blockedReason || "") },
-      { key: "blockedUntil", label: "bloqueado_ate", value: (u) => fmtDate(u.blockedUntil) },
-      { key: "createdAt", label: "criado_em", value: (u) => fmtDate(u.createdAt) },
-    ];
-    downloadTextFile(`usuarios_${new Date().toISOString().slice(0, 10)}.csv`, toCSV(users, cols));
-    showToast?.("CSV de usuários baixado.", "success");
-  };
-
-  const exportReservationsCSV = () => {
-    if (!reservations.length) return showToast?.("Nada para exportar.", "info");
-    const cols = [
-      { key: "id", label: "id" },
-      { key: "status", label: "status" },
-      { key: "startDate", label: "inicio", value: (r) => fmtDate(r.startDate) },
-      { key: "endDate", label: "fim", value: (r) => fmtDate(r.endDate) },
-      { key: "tutorName", label: "tutor_nome" },
-      { key: "caregiverName", label: "cuidador_nome" },
-      { key: "tutorId", label: "tutor_id" },
-      { key: "caregiverId", label: "cuidador_id" },
-      { key: "createdAt", label: "criado_em", value: (r) => fmtDate(r.createdAt) },
-    ];
-    downloadTextFile(`reservas_${new Date().toISOString().slice(0, 10)}.csv`, toCSV(reservations, cols));
-    showToast?.("CSV de reservas baixado.", "success");
-  };
-
-  const exportReviewsCSV = () => {
-    if (!reviews.length) return showToast?.("Nada para exportar.", "info");
-    const cols = [
-      { key: "id", label: "id" },
-      { key: "reservationId", label: "reserva_id" },
-      { key: "rating", label: "nota" },
-      { key: "comment", label: "comentario" },
-      { key: "tutorName", label: "tutor_nome" },
-      { key: "caregiverName", label: "cuidador_nome" },
-      { key: "isHidden", label: "oculta", value: (r) => (r.isHidden ? "sim" : "nao") },
-      { key: "hiddenReason", label: "motivo_ocultar" },
-      { key: "createdAt", label: "criado_em", value: (r) => fmtDate(r.createdAt) },
-    ];
-    downloadTextFile(`avaliacoes_${new Date().toISOString().slice(0, 10)}.csv`, toCSV(reviews, cols));
-    showToast?.("CSV de avaliações baixado.", "success");
-  };
-
-  const colors = {
-    brown: "#5A3A22",
-    yellow: "#FFD700",
-    beige: "#EBCBA9",
-    red: "#95301F",
-    shadow: "0 10px 24px rgba(0,0,0,0.14)",
-    border: "#f0e5d7",
-    soft: "#faf7ef",
-  };
-
-  const containerStyle = { maxWidth: 1180, margin: "0 auto" };
-
-  const cardStyle = {
-    background: "#fff",
-    borderRadius: 18,
-    boxShadow: colors.shadow,
-    border: `1px solid ${colors.border}`,
-  };
-
-  const pillBtn = (active = false) => ({
-    padding: "10px 14px",
-    borderRadius: 999,
-    border: "1px solid #ddd",
-    background: active ? colors.yellow : "#fff",
-    color: colors.brown,
-    fontWeight: 1000,
-    cursor: "pointer",
-  });
-
-  const btn = (variant = "light") => {
-    const base = {
-      padding: "10px 14px",
-      borderRadius: 12,
-      cursor: "pointer",
-      fontWeight: 900,
-      border: "1px solid #ddd",
-      background: "#fff",
-      color: "#111",
-    };
-    if (variant === "danger") return { ...base, border: "1px solid transparent", background: colors.red, color: "#fff" };
-    if (variant === "dark") return { ...base, border: "1px solid transparent", background: "#111", color: "#fff" };
-    if (variant === "brand") return { ...base, border: "1px solid transparent", background: colors.yellow, color: colors.brown };
-    return base;
-  };
-
-  const MetricCard = ({ title, value, subtitle }) => (
-    <div
-      style={{
-        padding: 14,
-        borderRadius: 16,
-        border: `1px solid ${colors.border}`,
-        background: "#fff",
-        boxShadow: "0 8px 18px rgba(0,0,0,0.08)",
-        minHeight: 86,
-      }}
-    >
-      <div style={{ fontWeight: 1000, color: colors.brown, fontSize: 13 }}>{title}</div>
-      <div style={{ marginTop: 6, fontSize: 22, fontWeight: 1100, color: "#111" }}>{value}</div>
-      {subtitle ? <div style={{ marginTop: 6, fontSize: 12, color: "#666" }}>{subtitle}</div> : null}
-    </div>
-  );
-
-  if (!token) {
-    return (
-      <div style={{ padding: 16, background: colors.beige, minHeight: "100vh" }}>
-        <div style={{ ...containerStyle }}>
-          <div style={{ ...cardStyle, padding: 18 }}>
-            <div style={{ fontSize: 18, fontWeight: 900, color: colors.brown }}>Você não está logado</div>
-            <div style={{ marginTop: 8, color: "#333" }}>Faça login novamente para acessar o painel admin.</div>
-          </div>
+function ConfirmModal({
+  open,
+  title,
+  subtitle,
+  confirmText = "Confirmar",
+  cancelText = "Cancelar",
+  loading = false,
+  onClose,
+  onConfirm,
+}) {
+  return (
+    <ModalBase open={open} title={title} subtitle={subtitle} onClose={loading ? null : onClose}>
+      <div className="bg-white rounded-2xl border border-black/10 p-4">
+        <div className="flex justify-end gap-2 mt-3">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={loading}
+            className={[
+              "px-4 py-2 rounded-xl font-extrabold border",
+              loading ? "opacity-70 cursor-not-allowed" : "hover:bg-black/5",
+            ].join(" ")}
+            style={{ borderColor: "#ddd", color: "#5A3A22", background: "#fff" }}
+          >
+            {cancelText}
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={loading}
+            className={[
+              "px-4 py-2 rounded-xl font-extrabold",
+              loading ? "opacity-80 cursor-not-allowed" : "hover:opacity-90",
+            ].join(" ")}
+            style={{ background: "#95301F", color: "#fff" }}
+          >
+            {loading ? "Aguarde…" : confirmText}
+          </button>
         </div>
       </div>
-    );
-  }
+    </ModalBase>
+  );
+}
 
-  if (!isAdmin) {
-    return (
-      <div style={{ padding: 16, background: colors.beige, minHeight: "100vh" }}>
-        <div style={{ ...containerStyle }}>
-          <div style={{ ...cardStyle, padding: 18 }}>
-            <div style={{ fontSize: 18, fontWeight: 900, color: colors.brown }}>Acesso restrito</div>
-            <div style={{ marginTop: 8, color: "#333" }}>
-              Você precisa estar logado como <b>admin</b> para acessar este painel.
-              <div style={{ marginTop: 8, fontSize: 12, color: "#666" }}>
-                Role atual: <b>{toStr(user?.role)}</b>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
+function HideReviewModal({ open, review, loading = false, onClose, onConfirm }) {
+  const [reason, setReason] = useState("");
 
-  const selectedCount = tab === "users" ? selectedUsers.size : tab === "reservations" ? selectedRes.size : selectedReviews.size;
+  useEffect(() => {
+    if (!open) return;
+    setReason("");
+  }, [open]);
+
+  const rid = toStr(review?.id);
 
   return (
-    <div style={{ padding: 16, background: colors.beige, minHeight: "100vh" }}>
-      <ConfirmModal
-        open={confirmState.open}
-        title={confirmState.title}
-        description={confirmState.description}
-        confirmText={confirmState.confirmText}
-        danger={confirmState.danger}
-        busy={busyConfirm}
-        onCancel={closeConfirm}
-        onConfirm={runConfirm}
-      >
-        {confirmState.withReason ? (
-          <div>
-            <div style={{ fontWeight: 900, color: colors.brown, marginBottom: 8 }}>
-              {confirmState.withUntil ? "Motivo do bloqueio" : "Motivo (recomendado)"}
-            </div>
-            <textarea
-              value={reasonText}
-              onChange={(e) => setReasonText(e.target.value)}
-              placeholder="Ex.: Violação de diretrizes, spam, ofensas..."
-              rows={4}
-              style={{
-                width: "100%",
-                padding: 12,
-                borderRadius: 12,
-                border: "1px solid #ddd",
-                outline: "none",
-                resize: "vertical",
-              }}
-            />
+    <ModalBase
+      open={open}
+      title="Ocultar avaliação"
+      subtitle={rid ? `Avaliação #${rid}` : "Informe o motivo (opcional) e confirme."}
+      onClose={loading ? null : onClose}
+    >
+      <div className="bg-white rounded-2xl border border-black/10 p-4">
+        <label className="block text-sm font-extrabold text-[#5A3A22]">Motivo (opcional)</label>
+        <textarea
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          disabled={loading}
+          rows={4}
+          className="mt-2 w-full rounded-xl border border-black/10 p-3 text-sm outline-none focus:ring-2 focus:ring-black/10"
+          placeholder="Ex.: Linguagem ofensiva / dados pessoais / conteúdo inadequado…"
+        />
 
-            {confirmState.withUntil ? (
-              <div style={{ marginTop: 12 }}>
-                <div style={{ fontWeight: 900, color: colors.brown, marginBottom: 8 }}>Tempo de bloqueio</div>
-
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                  <input
-                    type="number"
-                    min={1}
-                    value={blockDays}
-                    onChange={(e) => setBlockDays(Number(e.target.value || 1))}
-                    style={{
-                      width: 110,
-                      padding: "10px 12px",
-                      borderRadius: 12,
-                      border: "1px solid #ddd",
-                      outline: "none",
-                    }}
-                  />
-                  <div style={{ color: "#333", fontWeight: 800 }}>dias</div>
-
-                  <div style={{ color: "#666" }}>ou até</div>
-
-                  <input
-                    type="date"
-                    value={blockUntil}
-                    onChange={(e) => setBlockUntil(e.target.value)}
-                    style={{
-                      padding: "10px 12px",
-                      borderRadius: 12,
-                      border: "1px solid #ddd",
-                      outline: "none",
-                    }}
-                  />
-
-                  <div style={{ color: "#666", fontSize: 12, width: "100%" }}>
-                    Se você preencher a data, ela tem prioridade. Se deixar vazio, usa “dias”.
-                  </div>
-                </div>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-      </ConfirmModal>
-
-      <div style={containerStyle}>
-        <div style={{ ...cardStyle, padding: 18 }}>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-            <div style={{ fontSize: 22, fontWeight: 1000, color: colors.brown }}>Admin — PeloCaramelo</div>
-
-            <div style={{ marginLeft: "auto", display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button
-                type="button"
-                onClick={() => {
-                  loadUsers();
-                  loadReservations();
-                  loadReviews();
-                }}
-                style={btn("light")}
-              >
-                Atualizar
-              </button>
-
-              <button type="button" onClick={clearSelection} style={btn("light")}>
-                Limpar seleção
-              </button>
-            </div>
-          </div>
-
-          <div style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button type="button" onClick={() => setTab("users")} style={pillBtn(tab === "users")}>
-              Usuários ({usersList.length})
-            </button>
-            <button type="button" onClick={() => setTab("reservations")} style={pillBtn(tab === "reservations")}>
-              Reservas ({reservationsList.length})
-            </button>
-            <button type="button" onClick={() => setTab("reviews")} style={pillBtn(tab === "reviews")}>
-              Avaliações ({reviewsList.length})
-            </button>
-          </div>
-
-          <div style={{ marginTop: 14 }}>
-            <div style={{ fontWeight: 1100, color: colors.brown, marginBottom: 10 }}>Métricas</div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: 10 }}>
-              <div style={{ gridColumn: "span 4" }}>
-                <MetricCard
-                  title="Usuários"
-                  value={metrics.users.totalUsers}
-                  subtitle={`Admins: ${metrics.users.admins} • Tutores: ${metrics.users.tutors} • Cuidadores: ${metrics.users.caregivers}`}
-                />
-              </div>
-              <div style={{ gridColumn: "span 4" }}>
-                <MetricCard title="Usuários bloqueados" value={metrics.users.blockedUsers} subtitle="Total marcados como bloqueados" />
-              </div>
-              <div style={{ gridColumn: "span 4" }}>
-                <MetricCard title="Reservas" value={metrics.reservations.totalRes} subtitle="Total no sistema" />
-              </div>
-
-              <div style={{ gridColumn: "span 6" }}>
-                <MetricCard
-                  title="Reservas por status"
-                  value={`${Object.keys(metrics.reservations.byStatus).length} status`}
-                  subtitle={
-                    Object.entries(metrics.reservations.byStatus)
-                      .sort((a, b) => b[1] - a[1])
-                      .slice(0, 5)
-                      .map(([k, v]) => `${k}: ${v}`)
-                      .join(" • ") || "Sem dados"
-                  }
-                />
-              </div>
-              <div style={{ gridColumn: "span 3" }}>
-                <MetricCard title="Avaliações" value={metrics.reviews.totalReviews} subtitle="Total registradas" />
-              </div>
-              <div style={{ gridColumn: "span 3" }}>
-                <MetricCard title="Avaliações ocultas" value={metrics.reviews.hiddenReviews} subtitle={`Visíveis: ${metrics.reviews.visibleReviews}`} />
-              </div>
-            </div>
-          </div>
-
-          <div
-            style={{
-              marginTop: 14,
-              padding: 12,
-              borderRadius: 14,
-              background: colors.soft,
-              border: `1px solid ${colors.border}`,
-              display: "flex",
-              gap: 10,
-              flexWrap: "wrap",
-              alignItems: "center",
-            }}
+        <div className="flex justify-end gap-2 mt-3">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={loading}
+            className={[
+              "px-4 py-2 rounded-xl font-extrabold border",
+              loading ? "opacity-70 cursor-not-allowed" : "hover:bg-black/5",
+            ].join(" ")}
+            style={{ borderColor: "#ddd", color: "#5A3A22", background: "#fff" }}
           >
-            <div style={{ fontWeight: 1000, color: colors.brown }}>Selecionados: {selectedCount}</div>
-
-            {tab === "users" ? (
-              <>
-                {isAdminMaster ? (
-                  <>
-                    <button type="button" onClick={() => bulkSetRole("tutor")} style={btn("light")}>
-                      Voltar para tutor
-                    </button>
-                    <button type="button" onClick={() => bulkSetRole("admin")} style={btn("brand")}>
-                      Tornar admin
-                    </button>
-                  </>
-                ) : null}
-
-                <button type="button" onClick={() => bulkSetBlocked(false)} style={btn("light")}>
-                  Desbloquear
-                </button>
-                <button type="button" onClick={() => bulkSetBlocked(true)} style={btn("danger")}>
-                  Bloquear
-                </button>
-                <button type="button" onClick={bulkDeleteUsers} style={btn("dark")}>
-                  Excluir
-                </button>
-                <span style={{ flex: 1 }} />
-                <button type="button" onClick={exportUsersCSV} style={btn("light")}>
-                  Exportar CSV
-                </button>
-              </>
-            ) : tab === "reservations" ? (
-              <>
-                <button type="button" onClick={() => bulkSetReservationStatus("completed")} style={btn("light")}>
-                  Concluir
-                </button>
-                <button type="button" onClick={() => bulkSetReservationStatus("canceled")} style={btn("danger")}>
-                  Cancelar
-                </button>
-                <button type="button" onClick={bulkDeleteReservations} style={btn("dark")}>
-                  Excluir
-                </button>
-                <span style={{ flex: 1 }} />
-                <button type="button" onClick={exportReservationsCSV} style={btn("light")}>
-                  Exportar CSV
-                </button>
-              </>
-            ) : (
-              <>
-                <button type="button" onClick={bulkUnhideReviews} style={btn("light")}>
-                  Reexibir
-                </button>
-                <button type="button" onClick={bulkHideReviews} style={btn("danger")}>
-                  Ocultar
-                </button>
-                <span style={{ flex: 1 }} />
-                <button type="button" onClick={exportReviewsCSV} style={btn("light")}>
-                  Exportar CSV
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-
-        <div style={{ marginTop: 14, ...cardStyle, padding: 14 }}>
-          {tab === "users" ? (
-            <>
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                <input
-                  value={qUsers}
-                  onChange={(e) => setQUsers(e.target.value)}
-                  placeholder="Buscar usuário (id, nome, email, role)..."
-                  style={{
-                    flex: 1,
-                    minWidth: 240,
-                    padding: "10px 12px",
-                    borderRadius: 12,
-                    border: "1px solid #ddd",
-                    outline: "none",
-                  }}
-                />
-                <div style={{ color: "#555", fontWeight: 900 }}>
-                  {loadingUsers ? "Carregando..." : `Exibindo ${users.length}`}
-                </div>
-              </div>
-
-              <div style={{ marginTop: 12, overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 900 }}>
-                  <thead>
-                    <tr style={{ textAlign: "left", borderBottom: "1px solid #eee" }}>
-                      <th style={{ padding: 10, width: 46 }}>
-                        <input
-                          ref={usersSelectAllRef}
-                          type="checkbox"
-                          onChange={(e) => selectAllUsers(e.target.checked)}
-                          checked={users.length > 0 && users.every((u) => selectedUsers.has(String(u.id)))}
-                        />
-                      </th>
-                      <th style={{ padding: 10 }}>ID</th>
-                      <th style={{ padding: 10 }}>Nome</th>
-                      <th style={{ padding: 10 }}>Email</th>
-                      <th style={{ padding: 10 }}>Role</th>
-                      <th style={{ padding: 10 }}>Status</th>
-                      <th style={{ padding: 10 }}>Criado</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {users.map((u) => {
-                      const id = String(u.id || "");
-                      const checked = selectedUsers.has(id);
-                      return (
-                        <tr key={id} style={{ borderBottom: "1px solid #f2f2f2" }}>
-                          <td style={{ padding: 10 }}>
-                            <input type="checkbox" checked={checked} onChange={() => toggleUser(id)} />
-                          </td>
-                          <td style={{ padding: 10, fontWeight: 1000, color: colors.brown }}>{id}</td>
-                          <td style={{ padding: 10 }}>{u.name || "-"}</td>
-                          <td style={{ padding: 10 }}>{u.email || "-"}</td>
-                          <td style={{ padding: 10 }}>{u.role || "-"}</td>
-                          <td style={{ padding: 10 }}>
-                            <span
-                              style={{
-                                padding: "6px 10px",
-                                borderRadius: 999,
-                                fontWeight: 1000,
-                                background: u.isBlocked ? "#ffe6e6" : "#eaffea",
-                                color: u.isBlocked ? colors.red : "#156b15",
-                                border: "1px solid #eee",
-                              }}
-                              title={
-                                u.isBlocked
-                                  ? `Motivo: ${toStr(u.blockedReason || "-")}\nAté: ${fmtDate(u.blockedUntil) || "-"}`
-                                  : ""
-                              }
-                            >
-                              {u.isBlocked ? "Bloqueado" : "Ativo"}
-                            </span>
-                          </td>
-                          <td style={{ padding: 10 }}>{fmtDate(u.createdAt) || "-"}</td>
-                        </tr>
-                      );
-                    })}
-                    {!loadingUsers && users.length === 0 ? (
-                      <tr>
-                        <td colSpan={7} style={{ padding: 14, color: "#555" }}>
-                          Nenhum usuário encontrado.
-                        </td>
-                      </tr>
-                    ) : null}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          ) : tab === "reservations" ? (
-            <>
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                <input
-                  value={qRes}
-                  onChange={(e) => setQRes(e.target.value)}
-                  placeholder="Buscar reserva (id, status, tutor, cuidador, datas)..."
-                  style={{
-                    flex: 1,
-                    minWidth: 240,
-                    padding: "10px 12px",
-                    borderRadius: 12,
-                    border: "1px solid #ddd",
-                    outline: "none",
-                  }}
-                />
-                <div style={{ color: "#555", fontWeight: 900 }}>
-                  {loadingRes ? "Carregando..." : `Exibindo ${reservations.length}`}
-                </div>
-              </div>
-
-              <div style={{ marginTop: 12, overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1050 }}>
-                  <thead>
-                    <tr style={{ textAlign: "left", borderBottom: "1px solid #eee" }}>
-                      <th style={{ padding: 10, width: 46 }}>
-                        <input
-                          ref={resSelectAllRef}
-                          type="checkbox"
-                          onChange={(e) => selectAllRes(e.target.checked)}
-                          checked={reservations.length > 0 && reservations.every((r) => selectedRes.has(String(r.id)))}
-                        />
-                      </th>
-                      <th style={{ padding: 10 }}>ID</th>
-                      <th style={{ padding: 10 }}>Status</th>
-                      <th style={{ padding: 10 }}>Início</th>
-                      <th style={{ padding: 10 }}>Fim</th>
-                      <th style={{ padding: 10 }}>Tutor</th>
-                      <th style={{ padding: 10 }}>Cuidador</th>
-                      <th style={{ padding: 10 }}>Criado</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {reservations.map((r) => {
-                      const id = String(r.id || "");
-                      const checked = selectedRes.has(id);
-                      return (
-                        <tr key={id} style={{ borderBottom: "1px solid #f2f2f2" }}>
-                          <td style={{ padding: 10 }}>
-                            <input type="checkbox" checked={checked} onChange={() => toggleRes(id)} />
-                          </td>
-                          <td style={{ padding: 10, fontWeight: 1000, color: colors.brown }}>{id}</td>
-                          <td style={{ padding: 10 }}>{r.status || "-"}</td>
-                          <td style={{ padding: 10 }}>{fmtDate(r.startDate) || "-"}</td>
-                          <td style={{ padding: 10 }}>{fmtDate(r.endDate) || "-"}</td>
-                          <td style={{ padding: 10 }}>{r.tutorName ? r.tutorName : r.tutorId ? `ID ${r.tutorId}` : "-"}</td>
-                          <td style={{ padding: 10 }}>
-                            {r.caregiverName ? r.caregiverName : r.caregiverId ? `ID ${r.caregiverId}` : "-"}
-                          </td>
-                          <td style={{ padding: 10 }}>{fmtDate(r.createdAt) || "-"}</td>
-                        </tr>
-                      );
-                    })}
-                    {!loadingRes && reservations.length === 0 ? (
-                      <tr>
-                        <td colSpan={8} style={{ padding: 14, color: "#555" }}>
-                          Nenhuma reserva encontrada.
-                        </td>
-                      </tr>
-                    ) : null}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          ) : (
-            <>
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                <input
-                  value={qReviews}
-                  onChange={(e) => setQReviews(e.target.value)}
-                  placeholder="Buscar avaliação (id, reserva, tutor, cuidador, nota, comentário)..."
-                  style={{
-                    flex: 1,
-                    minWidth: 240,
-                    padding: "10px 12px",
-                    borderRadius: 12,
-                    border: "1px solid #ddd",
-                    outline: "none",
-                  }}
-                />
-
-                <label style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 900, color: colors.brown }}>
-                  <input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} />
-                  Mostrar ocultas
-                </label>
-
-                <div style={{ color: "#555", fontWeight: 900 }}>
-                  {loadingReviews ? "Carregando..." : `Exibindo ${reviews.length}`}
-                </div>
-              </div>
-
-              <div style={{ marginTop: 12, overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1150 }}>
-                  <thead>
-                    <tr style={{ textAlign: "left", borderBottom: "1px solid #eee" }}>
-                      <th style={{ padding: 10, width: 46 }}>
-                        <input
-                          ref={reviewsSelectAllRef}
-                          type="checkbox"
-                          onChange={(e) => selectAllReviews(e.target.checked)}
-                          checked={reviews.length > 0 && reviews.every((r) => selectedReviews.has(String(r.id)))}
-                        />
-                      </th>
-                      <th style={{ padding: 10 }}>ID</th>
-                      <th style={{ padding: 10 }}>Reserva</th>
-                      <th style={{ padding: 10 }}>Nota</th>
-                      <th style={{ padding: 10, minWidth: 320 }}>Comentário</th>
-                      <th style={{ padding: 10 }}>Tutor</th>
-                      <th style={{ padding: 10 }}>Cuidador</th>
-                      <th style={{ padding: 10 }}>Status</th>
-                      <th style={{ padding: 10 }}>Data</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {reviews.map((r) => {
-                      const id = String(r.id || "");
-                      const checked = selectedReviews.has(id);
-                      return (
-                        <tr key={id} style={{ borderBottom: "1px solid #f2f2f2" }}>
-                          <td style={{ padding: 10 }}>
-                            <input type="checkbox" checked={checked} onChange={() => toggleReview(id)} />
-                          </td>
-                          <td style={{ padding: 10, fontWeight: 1000, color: colors.brown }}>{id}</td>
-                          <td style={{ padding: 10 }}>{r.reservationId || "-"}</td>
-                          <td style={{ padding: 10 }}>{toStr(r.rating) || "-"}</td>
-                          <td style={{ padding: 10, color: "#333" }}>{r.comment ? r.comment : "-"}</td>
-                          <td style={{ padding: 10 }}>{r.tutorName ? r.tutorName : r.tutorId ? `ID ${r.tutorId}` : "-"}</td>
-                          <td style={{ padding: 10 }}>
-                            {r.caregiverName ? r.caregiverName : r.caregiverId ? `ID ${r.caregiverId}` : "-"}
-                          </td>
-                          <td style={{ padding: 10 }}>
-                            <span
-                              style={{
-                                padding: "6px 10px",
-                                borderRadius: 999,
-                                fontWeight: 1000,
-                                background: r.isHidden ? "#ffe6e6" : "#eaffea",
-                                color: r.isHidden ? colors.red : "#156b15",
-                                border: "1px solid #eee",
-                              }}
-                              title={r.isHidden ? `Motivo: ${r.hiddenReason || "-"}\nEm: ${fmtDate(r.hiddenAt) || "-"}` : ""}
-                            >
-                              {r.isHidden ? "Oculta" : "Visível"}
-                            </span>
-                          </td>
-                          <td style={{ padding: 10 }}>{fmtDate(r.createdAt) || "-"}</td>
-                        </tr>
-                      );
-                    })}
-
-                    {!loadingReviews && reviews.length === 0 ? (
-                      <tr>
-                        <td colSpan={9} style={{ padding: 14, color: "#555" }}>
-                          Nenhuma avaliação encontrada.
-                        </td>
-                      </tr>
-                    ) : null}
-                  </tbody>
-                </table>
-              </div>
-
-              <div style={{ marginTop: 10, color: "#666", fontSize: 13 }}>
-                Recomendação: use <b>Ocultar</b> (com motivo) para conteúdo ofensivo/spam. Você pode reexibir depois.
-              </div>
-            </>
-          )}
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={() => onConfirm?.(reason)}
+            disabled={loading}
+            className={[
+              "px-4 py-2 rounded-xl font-extrabold",
+              loading ? "opacity-80 cursor-not-allowed" : "hover:opacity-90",
+            ].join(" ")}
+            style={{ background: "#FFD700", color: "#5A3A22" }}
+          >
+            {loading ? "Ocultando…" : "Ocultar"}
+          </button>
         </div>
       </div>
+    </ModalBase>
+  );
+}
+
+/* ===================== Dashboard ===================== */
+
+export default function AdminDashboard() {
+  const { token, user } = useAuth();
+  const { showToast } = useToast();
+
+  const myRole = String(user?.role || "").toLowerCase();
+  const isMaster = myRole === "admin_master";
+  const canManageRoles = isMaster;
+
+  const [tab, setTab] = useState("users"); // users | reservations | reviews | logs
+  const [loading, setLoading] = useState(false);
+
+  // data
+  const [users, setUsers] = useState([]);
+  const [reservations, setReservations] = useState([]);
+  const [reviews, setReviews] = useState([]);
+  const [logs, setLogs] = useState([]);
+
+  // -------- Pagination (per tab) --------
+  const [usersOffset, setUsersOffset] = useState(0);
+  const usersLimit = 50;
+
+  const [resOffset, setResOffset] = useState(0);
+  const resLimit = 50;
+
+  const [reviewOffset, setReviewOffset] = useState(0);
+  const reviewLimit = 200; // backend já está ok com 200
+
+  const [logOffset, setLogOffset] = useState(0);
+  const logLimit = 50;
+
+  // -------- Filters (Users) --------
+  const [userRoleFilter, setUserRoleFilter] = useState("all"); // all | tutor | caregiver | admin | admin_master
+  const [userBlockedFilter, setUserBlockedFilter] = useState("all"); // all | blocked | unblocked
+  const [userSearch, setUserSearch] = useState("");
+
+  // -------- Filters (Reservations) --------
+  const [resStatusFilter, setResStatusFilter] = useState("all"); // all | Pendente | Aceita | ...
+  const [resServiceFilter, setResServiceFilter] = useState("all"); // all | Hospedagem | Passeio | etc
+  const [resSearch, setResSearch] = useState("");
+
+  // -------- Filters (Reviews) --------
+  const [reviewHiddenFilter, setReviewHiddenFilter] = useState("all"); // all | hidden | visible
+  const [reviewRatingFilter, setReviewRatingFilter] = useState("all"); // all | 1..5
+  const [reviewSearch, setReviewSearch] = useState("");
+
+  // -------- Modals reviews --------
+  const [hideModalOpen, setHideModalOpen] = useState(false);
+  const [hideModalLoading, setHideModalLoading] = useState(false);
+  const [reviewToHide, setReviewToHide] = useState(null);
+
+  const [unhideConfirmOpen, setUnhideConfirmOpen] = useState(false);
+  const [unhideLoading, setUnhideLoading] = useState(false);
+  const [reviewToUnhide, setReviewToUnhide] = useState(null);
+
+  /* ===================== UI: botões padrão ===================== */
+
+  function btnBase() {
+    return "px-3 py-1.5 rounded-xl font-extrabold transition active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed";
+  }
+  function btnPrimary() {
+    return `${btnBase()} bg-[#FFD700] text-[#5A3A22] hover:opacity-90`;
+  }
+  function btnDark() {
+    return `${btnBase()} bg-[#5A3A22] text-white hover:opacity-90`;
+  }
+  function btnDanger() {
+    return `${btnBase()} bg-[#95301F] text-white hover:opacity-90`;
+  }
+  function btnNeutral() {
+    return `${btnBase()} bg-white/70 border border-black/10 text-[#5A3A22] hover:bg-white`;
+  }
+
+  /* ===================== LOADERS (sob demanda) ===================== */
+
+  const loadUsers = useCallback(
+    async (offset = usersOffset) => {
+      if (!token) return;
+
+      const role = userRoleFilter === "all" ? null : userRoleFilter;
+      const blocked =
+        userBlockedFilter === "blocked" ? true : userBlockedFilter === "unblocked" ? false : null;
+
+      setLoading(true);
+      try {
+        const data = await adminListUsers(token, {
+          limit: usersLimit,
+          offset,
+          role,
+          blocked,
+          q: userSearch,
+        });
+
+        const list = data?.users || data?.items || [];
+        setUsers(Array.isArray(list) ? list : []);
+        setUsersOffset(data?.offset ?? offset);
+      } catch (err) {
+        showToast(err?.message || "Erro ao carregar usuários.", "error");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [token, showToast, usersLimit, usersOffset, userRoleFilter, userBlockedFilter, userSearch]
+  );
+
+  const loadReservations = useCallback(
+    async (offset = resOffset) => {
+      if (!token) return;
+
+      const status = resStatusFilter === "all" ? null : resStatusFilter;
+      const service = resServiceFilter === "all" ? null : resServiceFilter;
+
+      setLoading(true);
+      try {
+        const data = await adminListReservations(token, {
+          limit: resLimit,
+          offset,
+          status,
+          service,
+          q: resSearch,
+        });
+
+        const list = data?.reservations || data?.items || [];
+        setReservations(Array.isArray(list) ? list : []);
+        setResOffset(data?.offset ?? offset);
+      } catch (err) {
+        showToast(err?.message || "Erro ao carregar reservas.", "error");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [token, showToast, resLimit, resOffset, resStatusFilter, resServiceFilter, resSearch]
+  );
+
+  const loadReviews = useCallback(
+    async (offset = reviewOffset) => {
+      if (!token) return;
+
+      const hidden =
+        reviewHiddenFilter === "hidden" ? true : reviewHiddenFilter === "visible" ? false : null;
+
+      const rating = reviewRatingFilter === "all" ? null : Number(reviewRatingFilter);
+
+      setLoading(true);
+      try {
+        const data = await adminListReviews(token, {
+          limit: reviewLimit,
+          offset,
+          hidden,
+          rating: Number.isFinite(rating) ? rating : null,
+        });
+
+        const list = data?.items || data?.reviews || [];
+        setReviews(Array.isArray(list) ? list : []);
+        setReviewOffset(data?.meta?.offset ?? data?.offset ?? offset);
+      } catch (err) {
+        showToast(err?.message || "Erro ao carregar avaliações.", "error");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [token, showToast, reviewLimit, reviewOffset, reviewHiddenFilter, reviewRatingFilter]
+  );
+
+  const loadLogs = useCallback(
+    async (offset = 0) => {
+      if (!token) return;
+      setLoading(true);
+      try {
+        const data = await adminListAuditLogs(token, { limit: logLimit, offset });
+        setLogs(data?.logs || []);
+        setLogOffset(data?.offset || offset);
+      } catch (err) {
+        showToast(err?.message || "Erro ao carregar audit logs.", "error");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [token, showToast, logLimit]
+  );
+
+  // ✅ carrega apenas a aba atual
+  useEffect(() => {
+    if (tab === "users") loadUsers(0);
+    if (tab === "reservations") loadReservations(0);
+    if (tab === "reviews") loadReviews(0);
+    if (tab === "logs") loadLogs(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
+
+  /* ===================== STATS (rápidos, baseado no que está carregado) ===================== */
+
+  const stats = useMemo(() => {
+    const totalUsers = users?.length || 0;
+    const blockedUsers = (users || []).filter((u) => !!u?.blocked).length;
+    const totalReservations = reservations?.length || 0;
+    const totalReviews = reviews?.length || 0;
+    const hiddenReviews = (reviews || []).filter((rv) => !!rv?.is_hidden).length;
+
+    return { totalUsers, blockedUsers, totalReservations, totalReviews, hiddenReviews };
+  }, [users, reservations, reviews]);
+
+  /* ===================== FILTERS client (busca local complementar) ===================== */
+
+  const usersFilteredClient = useMemo(() => {
+    const q = toStr(userSearch).trim().toLowerCase();
+    if (!q) return users || [];
+    return (users || []).filter((u) => {
+      const hay = [u?.id, u?.name, u?.email, u?.role]
+        .map((x) => toStr(x).toLowerCase())
+        .join(" | ");
+      return hay.includes(q);
+    });
+  }, [users, userSearch]);
+
+  const reservationsFilteredClient = useMemo(() => {
+    const q = toStr(resSearch).trim().toLowerCase();
+    if (!q) return reservations || [];
+    return (reservations || []).filter((r) => {
+      const hay = [r?.id, r?.tutor_name, r?.caregiver_name, r?.service, r?.status]
+        .map((x) => toStr(x).toLowerCase())
+        .join(" | ");
+      return hay.includes(q);
+    });
+  }, [reservations, resSearch]);
+
+  const reviewsFilteredClient = useMemo(() => {
+    const q = toStr(reviewSearch).trim().toLowerCase();
+    if (!q) return reviews || [];
+    return (reviews || []).filter((rv) => {
+      const hay = [
+        rv?.comment,
+        rv?.tutor_name,
+        rv?.caregiver_name,
+        rv?.reviewer_name,
+        rv?.reviewed_name,
+        rv?.service,
+        rv?.reservation_id,
+        rv?.id,
+      ]
+        .map((x) => toStr(x).toLowerCase())
+        .join(" | ");
+      return hay.includes(q);
+    });
+  }, [reviews, reviewSearch]);
+
+  /* ===================== ACTIONS: USERS ===================== */
+
+  async function handleToggleBlocked(u) {
+    const id = toStr(u?.id);
+    const next = !u?.blocked;
+
+    let reason = null;
+    if (next) {
+      reason = window.prompt("Motivo do bloqueio (opcional):", "") || "";
+      reason = reason.trim() || null;
+    }
+
+    try {
+      const data = await adminSetUserBlocked(token, id, { blocked: next, reason });
+      const updated = data?.user || { ...u, blocked: next };
+      setUsers((prev) => prev.map((x) => (toStr(x.id) === id ? updated : x)));
+      showToast(next ? "Usuário bloqueado." : "Usuário desbloqueado.", "success");
+    } catch (err) {
+      showToast(err?.message || "Erro ao atualizar bloqueio.", "error");
+    }
+  }
+
+  async function handleDeleteUser(u) {
+    const id = toStr(u?.id);
+    const ok = confirm(
+      `Excluir usuário ${toStr(u?.name)} (${toStr(
+        u?.email
+      )})?\n\nIsso remove também dependências (reservas, pets, etc).`
+    );
+    if (!ok) return;
+
+    try {
+      await adminDeleteUser(token, id);
+      setUsers((prev) => prev.filter((x) => toStr(x.id) !== id));
+      showToast("Usuário excluído.", "success");
+    } catch (err) {
+      showToast(err?.message || "Erro ao excluir usuário.", "error");
+    }
+  }
+
+  async function handleChangeRole(u) {
+    if (!canManageRoles) {
+      showToast("Apenas admin_master pode alterar roles.", "error");
+      return;
+    }
+
+    const id = toStr(u?.id);
+    const current = String(u?.role || "").toLowerCase();
+    const next = prompt("Nova role (tutor | caregiver | admin):", current);
+    if (!next) return;
+
+    const role = String(next).trim().toLowerCase();
+    if (!["tutor", "caregiver", "admin"].includes(role)) {
+      showToast("Role inválida.", "error");
+      return;
+    }
+
+    try {
+      const data = await adminSetUserRole(token, id, role);
+      const updated = data?.user || { ...u, role };
+      setUsers((prev) => prev.map((x) => (toStr(x.id) === id ? updated : x)));
+      showToast("Role atualizada.", "success");
+    } catch (err) {
+      showToast(err?.message || "Erro ao alterar role.", "error");
+    }
+  }
+
+  /* ===================== ACTIONS: RESERVATIONS ===================== */
+
+  async function handleDeleteReservation(r) {
+    const id = toStr(r?.id);
+    const ok = confirm(`Excluir a reserva #${id}?`);
+    if (!ok) return;
+
+    try {
+      await adminDeleteReservation(token, id);
+      setReservations((prev) => prev.filter((x) => toStr(x.id) !== id));
+      showToast("Reserva excluída.", "success");
+    } catch (err) {
+      showToast(err?.message || "Erro ao excluir reserva.", "error");
+    }
+  }
+
+  /* ===================== ACTIONS: REVIEWS ===================== */
+
+  function openHideReview(rv) {
+    setReviewToHide(rv);
+    setHideModalOpen(true);
+  }
+  function closeHideReview() {
+    if (hideModalLoading) return;
+    setHideModalOpen(false);
+    setReviewToHide(null);
+  }
+
+  async function confirmHideReview(reason) {
+    const id = toStr(reviewToHide?.id);
+    if (!id) return;
+
+    setHideModalLoading(true);
+    try {
+      await adminHideReview(token, id, { reason: toStr(reason).trim() || null });
+
+      setReviews((prev) =>
+        (prev || []).map((rv) =>
+          toStr(rv?.id) === id
+            ? {
+                ...rv,
+                is_hidden: true,
+                hidden_reason: toStr(reason).trim() || rv?.hidden_reason,
+              }
+            : rv
+        )
+      );
+
+      showToast("Avaliação ocultada.", "success");
+      closeHideReview();
+    } catch (err) {
+      showToast(err?.message || "Erro ao ocultar avaliação.", "error");
+    } finally {
+      setHideModalLoading(false);
+    }
+  }
+
+  function openUnhideReview(rv) {
+    setReviewToUnhide(rv);
+    setUnhideConfirmOpen(true);
+  }
+  function closeUnhideReview() {
+    if (unhideLoading) return;
+    setUnhideConfirmOpen(false);
+    setReviewToUnhide(null);
+  }
+
+  async function confirmUnhideReview() {
+    const id = toStr(reviewToUnhide?.id);
+    if (!id) return;
+
+    setUnhideLoading(true);
+    try {
+      await adminUnhideReview(token, id);
+
+      setReviews((prev) =>
+        (prev || []).map((rv) =>
+          toStr(rv?.id) === id
+            ? { ...rv, is_hidden: false, hidden_reason: null, hidden_at: null }
+            : rv
+        )
+      );
+
+      showToast("Avaliação reexibida.", "success");
+      closeUnhideReview();
+    } catch (err) {
+      showToast(err?.message || "Erro ao reexibir avaliação.", "error");
+    } finally {
+      setUnhideLoading(false);
+    }
+  }
+
+  /* ===================== UI ===================== */
+
+  function TabButton({ value, children }) {
+    const active = tab === value;
+    return (
+      <button
+        onClick={() => setTab(value)}
+        className={[
+          "px-4 py-2 rounded-full text-sm font-semibold transition",
+          active ? "bg-[#5A3A22] text-white" : "bg-white/60 hover:bg-white text-[#5A3A22]",
+        ].join(" ")}
+      >
+        {children}
+      </button>
+    );
+  }
+
+  function StatCard({ label, value, hint }) {
+    return (
+      <div className="bg-white/80 rounded-2xl border border-black/10 p-4">
+        <div className="text-xs font-bold text-[#5A3A22]/70">{label}</div>
+        <div className="text-2xl font-extrabold text-[#5A3A22] mt-1">{value}</div>
+        {hint ? <div className="text-xs text-[#5A3A22]/70 mt-1">{hint}</div> : null}
+      </div>
+    );
+  }
+
+  const reviewBadge = (rv) =>
+    rv?.is_hidden ? (
+      <span className="inline-flex items-center gap-2 px-2 py-1 rounded-full bg-red-100 text-red-800 font-extrabold text-xs">
+        🔴 Oculta
+      </span>
+    ) : (
+      <span className="inline-flex items-center gap-2 px-2 py-1 rounded-full bg-green-100 text-green-800 font-extrabold text-xs">
+        🟢 Visível
+      </span>
+    );
+
+  function Pager({ onPrev, onNext, offset, limit }) {
+    return (
+      <div className="flex items-center justify-between gap-2 mt-3">
+        <div className="text-sm text-[#5A3A22]/80">
+          Mostrando até {limit} itens (offset {offset})
+        </div>
+        <div className="flex gap-2">
+          <button onClick={onPrev} className={btnNeutral()}>
+            Anterior
+          </button>
+          <button onClick={onNext} className={btnNeutral()}>
+            Próximo
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ✅ Card no tamanho padrão do restante do site (WEB + mobile)
+  // - max-w-7xl (padrão de páginas mais “cheias”)
+  // - px-3 no mobile pra não espremar
+  return (
+    <div className="min-h-[calc(100vh-120px)] px-3 sm:px-6 lg:px-10 py-6">
+      <div className="max-w-7xl mx-auto">
+        <div className="bg-white/80 rounded-2xl shadow-sm border border-black/10 p-4 sm:p-5">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+            <div>
+              <h1 className="text-xl sm:text-2xl font-extrabold text-[#5A3A22]">Painel Admin</h1>
+              <p className="text-sm text-[#5A3A22]/80">
+                {isMaster ? "Você está como Admin Master." : "Você está como Admin."}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <TabButton value="users">Usuários</TabButton>
+              <TabButton value="reservations">Reservas</TabButton>
+              <TabButton value="reviews">Avaliações</TabButton>
+              <TabButton value="logs">Audit Logs</TabButton>
+            </div>
+          </div>
+
+          {/* STATS */}
+          <div className="mt-4 grid grid-cols-2 lg:grid-cols-5 gap-3">
+            <StatCard label="Usuários" value={stats.totalUsers} />
+            <StatCard label="Bloqueados" value={stats.blockedUsers} hint="nesta página" />
+            <StatCard label="Reservas" value={stats.totalReservations} hint="nesta página" />
+            <StatCard label="Avaliações" value={stats.totalReviews} />
+            <StatCard label="Ocultas" value={stats.hiddenReviews} hint="nesta página" />
+          </div>
+
+          <div className="mt-4">
+            {loading && <div className="text-sm text-[#5A3A22]/70">Carregando…</div>}
+
+            {/* USERS */}
+            {tab === "users" && (
+              <div className="mt-3">
+                {/* filtros */}
+                <div className="flex flex-col lg:flex-row gap-3 lg:items-end lg:justify-between">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div>
+                      <div className="text-xs font-bold text-[#5A3A22]/70 mb-1">Role</div>
+                      <select
+                        value={userRoleFilter}
+                        onChange={(e) => setUserRoleFilter(e.target.value)}
+                        className="w-full rounded-xl border border-black/10 px-3 py-2 text-sm bg-white"
+                      >
+                        <option value="all">Todas</option>
+                        <option value="tutor">Tutor</option>
+                        <option value="caregiver">Cuidador</option>
+                        <option value="admin">Admin</option>
+                        <option value="admin_master">Admin Master</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <div className="text-xs font-bold text-[#5A3A22]/70 mb-1">Bloqueado</div>
+                      <select
+                        value={userBlockedFilter}
+                        onChange={(e) => setUserBlockedFilter(e.target.value)}
+                        className="w-full rounded-xl border border-black/10 px-3 py-2 text-sm bg-white"
+                      >
+                        <option value="all">Todos</option>
+                        <option value="unblocked">Somente NÃO</option>
+                        <option value="blocked">Somente SIM</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <div className="text-xs font-bold text-[#5A3A22]/70 mb-1">Buscar</div>
+                      <input
+                        value={userSearch}
+                        onChange={(e) => setUserSearch(e.target.value)}
+                        className="w-full rounded-xl border border-black/10 px-3 py-2 text-sm bg-white outline-none focus:ring-2 focus:ring-black/10"
+                        placeholder="Nome, email, id…"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button onClick={() => loadUsers(0)} className={btnPrimary()}>
+                      Aplicar filtros
+                    </button>
+                  </div>
+                </div>
+
+                {/* DESKTOP tabela */}
+                <div className="hidden md:block mt-3 overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-[#5A3A22]">
+                        <th className="py-2">ID</th>
+                        <th className="py-2">Nome</th>
+                        <th className="py-2">Email</th>
+                        <th className="py-2">Role</th>
+                        <th className="py-2">Bloqueado</th>
+                        <th className="py-2">Criado</th>
+                        <th className="py-2">Ações</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(usersFilteredClient || []).map((u) => (
+                        <tr key={toStr(u.id)} className="border-t border-black/10">
+                          <td className="py-2 pr-2">{toStr(u.id)}</td>
+                          <td className="py-2 pr-2">{toStr(u.name)}</td>
+                          <td className="py-2 pr-2">{toStr(u.email)}</td>
+                          <td className="py-2 pr-2">
+                            <span className="px-2 py-1 rounded-full bg-[#EBCBA9]/60 text-[#5A3A22] font-semibold">
+                              {roleLabel(u.role)}
+                            </span>
+                          </td>
+                          <td className="py-2 pr-2">
+                            {u.blocked ? (
+                              <span className="text-red-700 font-semibold">Sim</span>
+                            ) : (
+                              <span className="text-green-700 font-semibold">Não</span>
+                            )}
+                          </td>
+                          <td className="py-2 pr-2">{u.created_at ? formatDateBR(u.created_at) : "-"}</td>
+                          <td className="py-2">
+                            <div className="flex flex-wrap gap-2">
+                              <button onClick={() => handleToggleBlocked(u)} className={btnPrimary()}>
+                                {u.blocked ? "Desbloquear" : "Bloquear"}
+                              </button>
+
+                              <button
+                                onClick={() => handleChangeRole(u)}
+                                disabled={!canManageRoles}
+                                className={canManageRoles ? btnDark() : btnNeutral()}
+                                title={
+                                  canManageRoles
+                                    ? "Alterar role"
+                                    : "Apenas admin_master pode alterar roles"
+                                }
+                              >
+                                Role
+                              </button>
+
+                              <button onClick={() => handleDeleteUser(u)} className={btnDanger()}>
+                                Excluir
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+
+                      {!usersFilteredClient?.length && (
+                        <tr>
+                          <td colSpan={7} className="py-6 text-center text-[#5A3A22]/70">
+                            Nenhum usuário encontrado.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* MOBILE lista */}
+                <div className="md:hidden mt-3 space-y-3">
+                  {(usersFilteredClient || []).map((u) => (
+                    <div
+                      key={toStr(u.id)}
+                      className="bg-white rounded-2xl border border-black/10 p-3"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="font-extrabold text-[#5A3A22]">{toStr(u.name) || "-"}</div>
+                          <div className="text-sm text-[#5A3A22]/80 break-all">
+                            {toStr(u.email) || "-"}
+                          </div>
+                        </div>
+                        <span className="px-2 py-1 rounded-full bg-[#EBCBA9]/60 text-[#5A3A22] font-semibold text-xs">
+                          {roleLabel(u.role)}
+                        </span>
+                      </div>
+
+                      <div className="mt-2 text-sm text-[#5A3A22]/80 flex flex-wrap gap-3">
+                        <span>
+                          <b>Bloqueado:</b> {u.blocked ? "Sim" : "Não"}
+                        </span>
+                        <span>
+                          <b>Criado:</b> {u.created_at ? formatDateBR(u.created_at) : "-"}
+                        </span>
+                        <span>
+                          <b>ID:</b> {toStr(u.id)}
+                        </span>
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button onClick={() => handleToggleBlocked(u)} className={btnPrimary()}>
+                          {u.blocked ? "Desbloquear" : "Bloquear"}
+                        </button>
+
+                        <button
+                          onClick={() => handleChangeRole(u)}
+                          disabled={!canManageRoles}
+                          className={canManageRoles ? btnDark() : btnNeutral()}
+                          title={
+                            canManageRoles ? "Alterar role" : "Apenas admin_master pode alterar roles"
+                          }
+                        >
+                          Role
+                        </button>
+
+                        <button onClick={() => handleDeleteUser(u)} className={btnDanger()}>
+                          Excluir
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+
+                  {!usersFilteredClient?.length && (
+                    <div className="py-6 text-center text-[#5A3A22]/70">
+                      Nenhum usuário encontrado.
+                    </div>
+                  )}
+                </div>
+
+                {/* paginação */}
+                <Pager
+                  offset={usersOffset}
+                  limit={usersLimit}
+                  onPrev={() => loadUsers(Math.max(usersOffset - usersLimit, 0))}
+                  onNext={() => loadUsers(usersOffset + usersLimit)}
+                />
+              </div>
+            )}
+
+            {/* RESERVATIONS */}
+            {tab === "reservations" && (
+              <div className="mt-3">
+                {/* filtros */}
+                <div className="flex flex-col lg:flex-row gap-3 lg:items-end lg:justify-between">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div>
+                      <div className="text-xs font-bold text-[#5A3A22]/70 mb-1">Status</div>
+                      <select
+                        value={resStatusFilter}
+                        onChange={(e) => setResStatusFilter(e.target.value)}
+                        className="w-full rounded-xl border border-black/10 px-3 py-2 text-sm bg-white"
+                      >
+                        <option value="all">Todos</option>
+                        <option value="Pendente">Pendente</option>
+                        <option value="Aceita">Aceita</option>
+                        <option value="Recusada">Recusada</option>
+                        <option value="Cancelada">Cancelada</option>
+                        <option value="Concluída">Concluída</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <div className="text-xs font-bold text-[#5A3A22]/70 mb-1">Serviço</div>
+                      <select
+                        value={resServiceFilter}
+                        onChange={(e) => setResServiceFilter(e.target.value)}
+                        className="w-full rounded-xl border border-black/10 px-3 py-2 text-sm bg-white"
+                      >
+                        <option value="all">Todos</option>
+                        <option value="Hospedagem">Hospedagem</option>
+                        <option value="Passeio">Passeio</option>
+                        <option value="Visita">Visita</option>
+                        <option value="Creche">Creche</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <div className="text-xs font-bold text-[#5A3A22]/70 mb-1">Buscar</div>
+                      <input
+                        value={resSearch}
+                        onChange={(e) => setResSearch(e.target.value)}
+                        className="w-full rounded-xl border border-black/10 px-3 py-2 text-sm bg-white outline-none focus:ring-2 focus:ring-black/10"
+                        placeholder="Tutor, cuidador, id, serviço…"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button onClick={() => loadReservations(0)} className={btnPrimary()}>
+                      Aplicar filtros
+                    </button>
+                  </div>
+                </div>
+
+                {/* DESKTOP tabela */}
+                <div className="hidden md:block mt-3 overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-[#5A3A22]">
+                        <th className="py-2">ID</th>
+                        <th className="py-2">Tutor</th>
+                        <th className="py-2">Cuidador</th>
+                        <th className="py-2">Serviço</th>
+                        <th className="py-2">Status</th>
+                        <th className="py-2">Período</th>
+                        <th className="py-2">Total</th>
+                        <th className="py-2">Ações</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(reservationsFilteredClient || []).map((r) => (
+                        <tr key={toStr(r.id)} className="border-t border-black/10">
+                          <td className="py-2 pr-2">{toStr(r.id)}</td>
+                          <td className="py-2 pr-2">{toStr(r.tutor_name)}</td>
+                          <td className="py-2 pr-2">{toStr(r.caregiver_name)}</td>
+                          <td className="py-2 pr-2">{toStr(r.service)}</td>
+                          <td className="py-2 pr-2">{toStr(r.status)}</td>
+                          <td className="py-2 pr-2">
+                            {r.start_date ? formatDateBR(r.start_date) : "-"} {" → "}
+                            {r.end_date ? formatDateBR(r.end_date) : "-"}
+                          </td>
+                          <td className="py-2 pr-2">{moneyBR(r.total)}</td>
+                          <td className="py-2">
+                            <button onClick={() => handleDeleteReservation(r)} className={btnDanger()}>
+                              Excluir
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+
+                      {!reservationsFilteredClient?.length && (
+                        <tr>
+                          <td colSpan={8} className="py-6 text-center text-[#5A3A22]/70">
+                            Nenhuma reserva encontrada.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* MOBILE lista */}
+                <div className="md:hidden mt-3 space-y-3">
+                  {(reservationsFilteredClient || []).map((r) => (
+                    <div
+                      key={toStr(r.id)}
+                      className="bg-white rounded-2xl border border-black/10 p-3"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="font-extrabold text-[#5A3A22]">
+                          Reserva #{toStr(r.id)}
+                        </div>
+                        <span className="px-2 py-1 rounded-full bg-[#EBCBA9]/60 text-[#5A3A22] font-extrabold text-xs">
+                          {toStr(r.status) || "-"}
+                        </span>
+                      </div>
+
+                      <div className="mt-2 text-sm text-[#5A3A22]/80 space-y-1">
+                        <div>
+                          <b>Tutor:</b> {toStr(r.tutor_name) || "-"}
+                        </div>
+                        <div>
+                          <b>Cuidador:</b> {toStr(r.caregiver_name) || "-"}
+                        </div>
+                        <div>
+                          <b>Serviço:</b> {toStr(r.service) || "-"}
+                        </div>
+                        <div>
+                          <b>Período:</b>{" "}
+                          {r.start_date ? formatDateBR(r.start_date) : "-"} {" → "}
+                          {r.end_date ? formatDateBR(r.end_date) : "-"}
+                        </div>
+                        <div>
+                          <b>Total:</b> {moneyBR(r.total)}
+                        </div>
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button onClick={() => handleDeleteReservation(r)} className={btnDanger()}>
+                          Excluir
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+
+                  {!reservationsFilteredClient?.length && (
+                    <div className="py-6 text-center text-[#5A3A22]/70">
+                      Nenhuma reserva encontrada.
+                    </div>
+                  )}
+                </div>
+
+                {/* paginação */}
+                <Pager
+                  offset={resOffset}
+                  limit={resLimit}
+                  onPrev={() => loadReservations(Math.max(resOffset - resLimit, 0))}
+                  onNext={() => loadReservations(resOffset + resLimit)}
+                />
+              </div>
+            )}
+
+            {/* REVIEWS */}
+            {tab === "reviews" && (
+              <div className="mt-3">
+                {/* filtros */}
+                <div className="flex flex-col lg:flex-row gap-3 lg:items-end lg:justify-between">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div>
+                      <div className="text-xs font-bold text-[#5A3A22]/70 mb-1">Ocultas</div>
+                      <select
+                        value={reviewHiddenFilter}
+                        onChange={(e) => setReviewHiddenFilter(e.target.value)}
+                        className="w-full rounded-xl border border-black/10 px-3 py-2 text-sm bg-white"
+                      >
+                        <option value="all">Todas</option>
+                        <option value="visible">Somente visíveis</option>
+                        <option value="hidden">Somente ocultas</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <div className="text-xs font-bold text-[#5A3A22]/70 mb-1">Nota</div>
+                      <select
+                        value={reviewRatingFilter}
+                        onChange={(e) => setReviewRatingFilter(e.target.value)}
+                        className="w-full rounded-xl border border-black/10 px-3 py-2 text-sm bg-white"
+                      >
+                        <option value="all">Todas</option>
+                        <option value="5">5</option>
+                        <option value="4">4</option>
+                        <option value="3">3</option>
+                        <option value="2">2</option>
+                        <option value="1">1</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <div className="text-xs font-bold text-[#5A3A22]/70 mb-1">Buscar</div>
+                      <input
+                        value={reviewSearch}
+                        onChange={(e) => setReviewSearch(e.target.value)}
+                        className="w-full rounded-xl border border-black/10 px-3 py-2 text-sm bg-white outline-none focus:ring-2 focus:ring-black/10"
+                        placeholder="Nome, comentário, id, serviço…"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button onClick={() => loadReviews(0)} className={btnPrimary()}>
+                      Aplicar filtros
+                    </button>
+                  </div>
+                </div>
+
+                {/* tabela (mantive como estava; reviews já está OK no mobile na sua demanda anterior) */}
+                <div className="mt-3 overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-[#5A3A22]">
+                        <th className="py-2">ID</th>
+                        <th className="py-2">Nota</th>
+                        <th className="py-2">Comentário</th>
+                        <th className="py-2">Tutor</th>
+                        <th className="py-2">Cuidador</th>
+                        <th className="py-2">Status</th>
+                        <th className="py-2">Criada</th>
+                        <th className="py-2">Ações</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(reviewsFilteredClient || []).map((rv) => {
+                        const id = toStr(rv?.id);
+                        const hidden = !!rv?.is_hidden;
+
+                        return (
+                          <tr key={id} className="border-t border-black/10">
+                            <td className="py-2 pr-2">{id}</td>
+                            <td className="py-2 pr-2">
+                              <span className="px-2 py-1 rounded-full bg-[#EBCBA9]/60 text-[#5A3A22] font-extrabold">
+                                {toStr(rv?.rating)}
+                              </span>
+                            </td>
+                            <td className="py-2 pr-2 max-w-[360px]">
+                              <div className="line-clamp-2">{toStr(rv?.comment)}</div>
+                              {hidden && rv?.hidden_reason ? (
+                                <div className="mt-1 text-xs text-red-700 font-semibold">
+                                  Motivo: {toStr(rv.hidden_reason)}
+                                </div>
+                              ) : null}
+                            </td>
+                            <td className="py-2 pr-2">
+                              {toStr(rv?.tutor_name || rv?.reviewer_name)}
+                            </td>
+                            <td className="py-2 pr-2">
+                              {toStr(rv?.caregiver_name || rv?.reviewed_name)}
+                            </td>
+                            <td className="py-2 pr-2">{reviewBadge(rv)}</td>
+                            <td className="py-2 pr-2">
+                              {rv?.created_at ? formatDateBR(rv.created_at) : "-"}
+                            </td>
+                            <td className="py-2">
+                              {!hidden ? (
+                                <button onClick={() => openHideReview(rv)} className={btnPrimary()}>
+                                  Ocultar
+                                </button>
+                              ) : (
+                                <button onClick={() => openUnhideReview(rv)} className={btnDark()}>
+                                  Reexibir
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+
+                      {!reviewsFilteredClient?.length && (
+                        <tr>
+                          <td colSpan={8} className="py-6 text-center text-[#5A3A22]/70">
+                            Nenhuma avaliação encontrada com esses filtros.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <Pager
+                  offset={reviewOffset}
+                  limit={reviewLimit}
+                  onPrev={() => loadReviews(Math.max(reviewOffset - reviewLimit, 0))}
+                  onNext={() => loadReviews(reviewOffset + reviewLimit)}
+                />
+              </div>
+            )}
+
+            {/* LOGS */}
+            {tab === "logs" && (
+              <div className="mt-3">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-[#5A3A22]">
+                        <th className="py-2">Data</th>
+                        <th className="py-2">Ação</th>
+                        <th className="py-2">Alvo</th>
+                        <th className="py-2">Admin</th>
+                        <th className="py-2">Motivo</th>
+                        <th className="py-2">Meta</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(logs || []).map((l) => (
+                        <tr key={toStr(l.id)} className="border-t border-black/10">
+                          <td className="py-2 pr-2">
+                            {l.created_at ? formatDateBR(l.created_at) : "-"}
+                          </td>
+                          <td className="py-2 pr-2">
+                            <span className="px-2 py-1 rounded-full bg-[#EBCBA9]/60 text-[#5A3A22] font-semibold">
+                              {toStr(l.action_type)}
+                            </span>
+                          </td>
+                          <td className="py-2 pr-2">
+                            {toStr(l.target_type)} #{toStr(l.target_id)}
+                          </td>
+                          <td className="py-2 pr-2">
+                            {toStr(l.admin_email) || `id:${toStr(l.admin_id)}`}{" "}
+                            <span className="text-xs text-[#5A3A22]/70">({toStr(l.admin_role)})</span>
+                          </td>
+                          <td className="py-2 pr-2">{toStr(l.reason)}</td>
+                          <td className="py-2 pr-2">
+                            <pre className="text-xs bg-black/5 p-2 rounded-lg max-w-[520px] overflow-auto">
+                              {l.meta ? JSON.stringify(l.meta, null, 2) : ""}
+                            </pre>
+                          </td>
+                        </tr>
+                      ))}
+
+                      {!logs?.length && (
+                        <tr>
+                          <td colSpan={6} className="py-6 text-center text-[#5A3A22]/70">
+                            Nenhum log encontrado.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <Pager
+                  offset={logOffset}
+                  limit={logLimit}
+                  onPrev={() => loadLogs(Math.max(logOffset - logLimit, 0))}
+                  onNext={() => loadLogs(logOffset + logLimit)}
+                />
+              </div>
+            )}
+          </div>
+
+          <div className="mt-5 flex justify-end gap-2">
+            <button
+              onClick={() => {
+                if (tab === "users") loadUsers(usersOffset);
+                if (tab === "reservations") loadReservations(resOffset);
+                if (tab === "reviews") loadReviews(reviewOffset);
+                if (tab === "logs") loadLogs(logOffset);
+              }}
+              className={btnPrimary()}
+            >
+              Recarregar
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* MODAIS */}
+      <HideReviewModal
+        open={hideModalOpen}
+        review={reviewToHide}
+        loading={hideModalLoading}
+        onClose={closeHideReview}
+        onConfirm={confirmHideReview}
+      />
+
+      <ConfirmModal
+        open={unhideConfirmOpen}
+        title="Reexibir avaliação"
+        subtitle={`Confirma reexibir a avaliação #${toStr(reviewToUnhide?.id)}?`}
+        confirmText="Reexibir"
+        loading={unhideLoading}
+        onClose={closeUnhideReview}
+        onConfirm={confirmUnhideReview}
+      />
     </div>
   );
 }
