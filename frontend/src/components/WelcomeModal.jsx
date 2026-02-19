@@ -207,8 +207,7 @@ export default function WelcomeModal({
 
             {/* Nota final */}
             <p className="mt-4 text-xs sm:text-sm text-[#5A3A22]/75 leading-relaxed">
-              *Dica rápida:* se você não encontrar o e-mail do guia agora, procure por
-              “PeloCaramelo” e marque como confiável.
+              *Dica rápida: Se você não encontrar o e-mail do guia agora, peça o guia em contato@pelocaramelo.com.br 🐾
             </p>
 
             {/* Observação importante: só fecha no X */}

@@ -2876,10 +2876,24 @@ export default function Dashboard() {
               <div className="flex justify-center">
                 <Calendar
                   className="mx-auto"
+                  // ✅ evita o “botão por cima do texto” (remove as setas duplas)
+                  prev2Label={null}
+                  next2Label={null}
+
+                  // ✅ label igual ao padrão que usamos no Buscar (centralizado e “Fevereiro de 2026”)
+                  navigationLabel={({ date, view }) => {
+                    if (view !== "month") return null;
+                    const month = date.toLocaleString("pt-BR", { month: "long" });
+                    const year = date.getFullYear();
+                    return (
+                      <span className="block w-full text-center font-semibold text-[#5A3A22]">
+                        {month.charAt(0).toUpperCase() + month.slice(1)} de {year}
+                      </span>
+                    );
+                  }}
+
                   activeStartDate={currentMonth}
-                  onActiveStartDateChange={({ activeStartDate }) =>
-                    setCurrentMonth(activeStartDate)
-                  }
+                  onActiveStartDateChange={({ activeStartDate }) => setCurrentMonth(activeStartDate)}
                   onClickDay={(date) => {
                     if (date < today) return;
 
