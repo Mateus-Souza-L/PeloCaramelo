@@ -34,6 +34,13 @@ function moneyBR(v) {
   return `R$ ${n.toFixed(2)}`;
 }
 
+function addDaysISO(days) {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + Number(days || 0));
+  return d.toISOString(); // backend pode tratar
+}
+
 /* ===================== Modal padrão ===================== */
 
 function ModalBase({ open, title, subtitle, children, onClose }) {
@@ -90,7 +97,15 @@ function ConfirmModal({
   loading = false,
   onClose,
   onConfirm,
+  confirmStyle = "danger", // danger | primary | dark
 }) {
+  const btnStyle =
+    confirmStyle === "primary"
+      ? { background: "#FFD700", color: "#5A3A22" }
+      : confirmStyle === "dark"
+        ? { background: "#5A3A22", color: "#fff" }
+        : { background: "#95301F", color: "#fff" };
+
   return (
     <ModalBase open={open} title={title} subtitle={subtitle} onClose={loading ? null : onClose}>
       <div className="bg-white rounded-2xl border border-black/10 p-4">
@@ -115,7 +130,7 @@ function ConfirmModal({
               "px-4 py-2 rounded-xl font-extrabold",
               loading ? "opacity-80 cursor-not-allowed" : "hover:opacity-90",
             ].join(" ")}
-            style={{ background: "#95301F", color: "#fff" }}
+            style={btnStyle}
           >
             {loading ? "Aguarde…" : confirmText}
           </button>
@@ -184,6 +199,283 @@ function HideReviewModal({ open, review, loading = false, onClose, onConfirm }) 
   );
 }
 
+/* ===================== Novos Modais: Bloqueio / Role ===================== */
+
+function BlockUserModal({
+  open,
+  user,
+  mode = "block", // block | unblock
+  loading = false,
+  onClose,
+  onConfirm,
+}) {
+  const [reason, setReason] = useState("");
+  const [durationType, setDurationType] = useState("indeterminate"); // indeterminate | days
+  const [daysPreset, setDaysPreset] = useState("7"); // 1,3,7,15,30,90,custom
+  const [customDays, setCustomDays] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+    setReason("");
+    setDurationType("indeterminate");
+    setDaysPreset("7");
+    setCustomDays("");
+  }, [open]);
+
+  const uName = toStr(user?.name) || "-";
+  const uEmail = toStr(user?.email) || "-";
+  const uid = toStr(user?.id);
+
+  const isBlock = mode === "block";
+
+  const finalDays =
+    durationType === "days"
+      ? daysPreset === "custom"
+        ? Number(customDays || 0)
+        : Number(daysPreset || 0)
+      : null;
+
+  const blockedUntilISO =
+    isBlock && durationType === "days" && Number.isFinite(finalDays) && finalDays > 0
+      ? addDaysISO(finalDays)
+      : null;
+
+  const blockedUntilLabel = useMemo(() => {
+    if (!blockedUntilISO) return null;
+    try {
+      return formatDateBR(blockedUntilISO);
+    } catch {
+      return null;
+    }
+  }, [blockedUntilISO]);
+
+  const canSubmit =
+    !loading &&
+    (!isBlock ||
+      durationType === "indeterminate" ||
+      (Number.isFinite(finalDays) && finalDays > 0));
+
+  return (
+    <ModalBase
+      open={open}
+      title={isBlock ? "Bloquear usuário" : "Desbloquear usuário"}
+      subtitle={
+        uid
+          ? `${uName} • ${uEmail} • ID #${uid}`
+          : `${uName} • ${uEmail}`
+      }
+      onClose={loading ? null : onClose}
+    >
+      <div className="bg-white rounded-2xl border border-black/10 p-4">
+        <div className="grid grid-cols-1 gap-3">
+          <div>
+            <label className="block text-sm font-extrabold text-[#5A3A22]">
+              Motivo {isBlock ? "do bloqueio" : "do desbloqueio"} (opcional)
+            </label>
+            <textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              disabled={loading}
+              rows={4}
+              className="mt-2 w-full rounded-xl border border-black/10 p-3 text-sm outline-none focus:ring-2 focus:ring-black/10"
+              placeholder={
+                isBlock
+                  ? "Ex.: Violação de termos / tentativa de golpe / spam…"
+                  : "Ex.: Revisado e liberado / bloqueio indevido…"
+              }
+            />
+          </div>
+
+          {isBlock && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-extrabold text-[#5A3A22]">
+                  Tempo do bloqueio
+                </label>
+                <select
+                  value={durationType}
+                  onChange={(e) => setDurationType(e.target.value)}
+                  disabled={loading}
+                  className="mt-2 w-full rounded-xl border border-black/10 px-3 py-2 text-sm bg-white"
+                >
+                  <option value="indeterminate">Indeterminado</option>
+                  <option value="days">Por X dias</option>
+                </select>
+              </div>
+
+              {durationType === "days" && (
+                <div>
+                  <label className="block text-sm font-extrabold text-[#5A3A22]">
+                    Duração
+                  </label>
+                  <div className="mt-2 flex gap-2">
+                    <select
+                      value={daysPreset}
+                      onChange={(e) => setDaysPreset(e.target.value)}
+                      disabled={loading}
+                      className="w-full rounded-xl border border-black/10 px-3 py-2 text-sm bg-white"
+                    >
+                      <option value="1">1 dia</option>
+                      <option value="3">3 dias</option>
+                      <option value="7">7 dias</option>
+                      <option value="15">15 dias</option>
+                      <option value="30">30 dias</option>
+                      <option value="90">90 dias</option>
+                      <option value="custom">Custom</option>
+                    </select>
+
+                    {daysPreset === "custom" && (
+                      <input
+                        value={customDays}
+                        onChange={(e) => setCustomDays(e.target.value.replace(/[^\d]/g, ""))}
+                        disabled={loading}
+                        inputMode="numeric"
+                        className="w-32 rounded-xl border border-black/10 px-3 py-2 text-sm bg-white outline-none focus:ring-2 focus:ring-black/10"
+                        placeholder="Dias"
+                      />
+                    )}
+                  </div>
+
+                  <div className="mt-2 text-xs text-[#5A3A22]/75">
+                    {blockedUntilLabel ? (
+                      <>
+                        Vai ficar bloqueado até:{" "}
+                        <b className="text-[#5A3A22]">{blockedUntilLabel}</b>
+                      </>
+                    ) : durationType === "indeterminate" ? (
+                      "Bloqueio sem data para expirar."
+                    ) : (
+                      "Selecione uma duração válida."
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 mt-4">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={loading}
+            className={[
+              "px-4 py-2 rounded-xl font-extrabold border",
+              loading ? "opacity-70 cursor-not-allowed" : "hover:bg-black/5",
+            ].join(" ")}
+            style={{ borderColor: "#ddd", color: "#5A3A22", background: "#fff" }}
+          >
+            Cancelar
+          </button>
+
+          <button
+            type="button"
+            onClick={() =>
+              onConfirm?.({
+                reason: toStr(reason).trim() || null,
+                duration_type: isBlock ? durationType : null,
+                duration_days: isBlock && durationType === "days" ? finalDays : null,
+                blocked_until: blockedUntilISO, // backend pode usar ou ignorar por enquanto
+              })
+            }
+            disabled={!canSubmit}
+            className={[
+              "px-4 py-2 rounded-xl font-extrabold",
+              !canSubmit ? "opacity-60 cursor-not-allowed" : "hover:opacity-90",
+            ].join(" ")}
+            style={{
+              background: isBlock ? "#95301F" : "#5A3A22",
+              color: "#fff",
+            }}
+          >
+            {loading ? "Aguarde…" : isBlock ? "Bloquear" : "Desbloquear"}
+          </button>
+        </div>
+      </div>
+    </ModalBase>
+  );
+}
+
+function RoleModal({
+  open,
+  user,
+  canManageRoles,
+  loading = false,
+  onClose,
+  onConfirm,
+}) {
+  const [role, setRole] = useState("tutor");
+
+  useEffect(() => {
+    if (!open) return;
+    const current = String(user?.role || "tutor").toLowerCase();
+    setRole(["tutor", "caregiver", "admin"].includes(current) ? current : "tutor");
+  }, [open, user]);
+
+  const uName = toStr(user?.name) || "-";
+  const uEmail = toStr(user?.email) || "-";
+  const uid = toStr(user?.id);
+
+  return (
+    <ModalBase
+      open={open}
+      title="Alterar role"
+      subtitle={uid ? `${uName} • ${uEmail} • ID #${uid}` : `${uName} • ${uEmail}`}
+      onClose={loading ? null : onClose}
+    >
+      <div className="bg-white rounded-2xl border border-black/10 p-4">
+        {!canManageRoles ? (
+          <div className="text-sm text-[#5A3A22]/80">
+            Apenas <b>admin_master</b> pode alterar roles.
+          </div>
+        ) : (
+          <>
+            <label className="block text-sm font-extrabold text-[#5A3A22]">Nova role</label>
+            <select
+              value={role}
+              onChange={(e) => setRole(e.target.value)}
+              disabled={loading}
+              className="mt-2 w-full rounded-xl border border-black/10 px-3 py-2 text-sm bg-white"
+            >
+              <option value="tutor">Tutor</option>
+              <option value="caregiver">Cuidador</option>
+              <option value="admin">Admin</option>
+            </select>
+          </>
+        )}
+
+        <div className="flex justify-end gap-2 mt-4">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={loading}
+            className={[
+              "px-4 py-2 rounded-xl font-extrabold border",
+              loading ? "opacity-70 cursor-not-allowed" : "hover:bg-black/5",
+            ].join(" ")}
+            style={{ borderColor: "#ddd", color: "#5A3A22", background: "#fff" }}
+          >
+            Cancelar
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onConfirm?.(role)}
+            disabled={loading || !canManageRoles}
+            className={[
+              "px-4 py-2 rounded-xl font-extrabold",
+              loading || !canManageRoles ? "opacity-60 cursor-not-allowed" : "hover:opacity-90",
+            ].join(" ")}
+            style={{ background: "#FFD700", color: "#5A3A22" }}
+          >
+            {loading ? "Aguarde…" : "Salvar"}
+          </button>
+        </div>
+      </div>
+    </ModalBase>
+  );
+}
+
 /* ===================== Dashboard ===================== */
 
 export default function AdminDashboard() {
@@ -193,6 +485,17 @@ export default function AdminDashboard() {
   const myRole = String(user?.role || "").toLowerCase();
   const isMaster = myRole === "admin_master";
   const canManageRoles = isMaster;
+
+  const myId = toStr(user?.id);
+
+  function isSelf(u) {
+    return myId && toStr(u?.id) === myId;
+  }
+
+  function isTargetAdminMaster(u) {
+    return String(u?.role || "").toLowerCase() === "admin_master";
+  }
+
 
   const [tab, setTab] = useState("users"); // users | reservations | reviews | logs
   const [loading, setLoading] = useState(false);
@@ -211,24 +514,24 @@ export default function AdminDashboard() {
   const resLimit = 50;
 
   const [reviewOffset, setReviewOffset] = useState(0);
-  const reviewLimit = 200; // backend já está ok com 200
+  const reviewLimit = 200;
 
   const [logOffset, setLogOffset] = useState(0);
   const logLimit = 50;
 
   // -------- Filters (Users) --------
-  const [userRoleFilter, setUserRoleFilter] = useState("all"); // all | tutor | caregiver | admin | admin_master
-  const [userBlockedFilter, setUserBlockedFilter] = useState("all"); // all | blocked | unblocked
+  const [userRoleFilter, setUserRoleFilter] = useState("all");
+  const [userBlockedFilter, setUserBlockedFilter] = useState("all");
   const [userSearch, setUserSearch] = useState("");
 
   // -------- Filters (Reservations) --------
-  const [resStatusFilter, setResStatusFilter] = useState("all"); // all | Pendente | Aceita | ...
-  const [resServiceFilter, setResServiceFilter] = useState("all"); // all | Hospedagem | Passeio | etc
+  const [resStatusFilter, setResStatusFilter] = useState("all");
+  const [resServiceFilter, setResServiceFilter] = useState("all");
   const [resSearch, setResSearch] = useState("");
 
   // -------- Filters (Reviews) --------
-  const [reviewHiddenFilter, setReviewHiddenFilter] = useState("all"); // all | hidden | visible
-  const [reviewRatingFilter, setReviewRatingFilter] = useState("all"); // all | 1..5
+  const [reviewHiddenFilter, setReviewHiddenFilter] = useState("all");
+  const [reviewRatingFilter, setReviewRatingFilter] = useState("all");
   const [reviewSearch, setReviewSearch] = useState("");
 
   // -------- Modals reviews --------
@@ -239,6 +542,24 @@ export default function AdminDashboard() {
   const [unhideConfirmOpen, setUnhideConfirmOpen] = useState(false);
   const [unhideLoading, setUnhideLoading] = useState(false);
   const [reviewToUnhide, setReviewToUnhide] = useState(null);
+
+  // -------- Modals users/actions --------
+  const [blockModalOpen, setBlockModalOpen] = useState(false);
+  const [blockModalLoading, setBlockModalLoading] = useState(false);
+  const [blockUser, setBlockUser] = useState(null);
+  const [blockMode, setBlockMode] = useState("block"); // block | unblock
+
+  const [deleteUserOpen, setDeleteUserOpen] = useState(false);
+  const [deleteUserLoading, setDeleteUserLoading] = useState(false);
+  const [userToDelete, setUserToDelete] = useState(null);
+
+  const [roleModalOpen, setRoleModalOpen] = useState(false);
+  const [roleModalLoading, setRoleModalLoading] = useState(false);
+  const [userToRole, setUserToRole] = useState(null);
+
+  const [deleteResOpen, setDeleteResOpen] = useState(false);
+  const [deleteResLoading, setDeleteResLoading] = useState(false);
+  const [resToDelete, setResToDelete] = useState(null);
 
   /* ===================== UI: botões padrão ===================== */
 
@@ -375,7 +696,7 @@ export default function AdminDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
 
-  /* ===================== STATS (rápidos, baseado no que está carregado) ===================== */
+  /* ===================== STATS ===================== */
 
   const stats = useMemo(() => {
     const totalUsers = users?.length || 0;
@@ -387,7 +708,7 @@ export default function AdminDashboard() {
     return { totalUsers, blockedUsers, totalReservations, totalReviews, hiddenReviews };
   }, [users, reservations, reviews]);
 
-  /* ===================== FILTERS client (busca local complementar) ===================== */
+  /* ===================== FILTERS client ===================== */
 
   const usersFilteredClient = useMemo(() => {
     const q = toStr(userSearch).trim().toLowerCase();
@@ -433,84 +754,146 @@ export default function AdminDashboard() {
 
   /* ===================== ACTIONS: USERS ===================== */
 
-  async function handleToggleBlocked(u) {
-    const id = toStr(u?.id);
+  function openBlockModal(u) {
     const next = !u?.blocked;
+    setBlockUser(u);
+    setBlockMode(next ? "block" : "unblock");
+    setBlockModalOpen(true);
+  }
 
-    let reason = null;
-    if (next) {
-      reason = window.prompt("Motivo do bloqueio (opcional):", "") || "";
-      reason = reason.trim() || null;
-    }
+  function closeBlockModal() {
+    if (blockModalLoading) return;
+    setBlockModalOpen(false);
+    setBlockUser(null);
+  }
 
+  async function confirmBlockModal(payload) {
+    const u = blockUser;
+    const id = toStr(u?.id);
+    if (!id) return;
+
+    const next = blockMode === "block";
+
+    setBlockModalLoading(true);
     try {
-      const data = await adminSetUserBlocked(token, id, { blocked: next, reason });
+      const body = {
+        blocked: next,
+        reason: payload?.reason ?? null,
+        // extras (backend pode ignorar agora; no próximo passo vamos suportar)
+        duration_type: payload?.duration_type ?? null,
+        duration_days: payload?.duration_days ?? null,
+        blocked_until: payload?.blocked_until ?? null,
+      };
+
+      const data = await adminSetUserBlocked(token, id, body);
+
       const updated = data?.user || { ...u, blocked: next };
       setUsers((prev) => prev.map((x) => (toStr(x.id) === id ? updated : x)));
+
       showToast(next ? "Usuário bloqueado." : "Usuário desbloqueado.", "success");
+      closeBlockModal();
     } catch (err) {
       showToast(err?.message || "Erro ao atualizar bloqueio.", "error");
+    } finally {
+      setBlockModalLoading(false);
     }
   }
 
-  async function handleDeleteUser(u) {
-    const id = toStr(u?.id);
-    const ok = confirm(
-      `Excluir usuário ${toStr(u?.name)} (${toStr(
-        u?.email
-      )})?\n\nIsso remove também dependências (reservas, pets, etc).`
-    );
-    if (!ok) return;
+  function openDeleteUser(u) {
+    setUserToDelete(u);
+    setDeleteUserOpen(true);
+  }
+  function closeDeleteUser() {
+    if (deleteUserLoading) return;
+    setDeleteUserOpen(false);
+    setUserToDelete(null);
+  }
 
+  async function confirmDeleteUser() {
+    const u = userToDelete;
+    const id = toStr(u?.id);
+    if (!id) return;
+
+    setDeleteUserLoading(true);
     try {
       await adminDeleteUser(token, id);
       setUsers((prev) => prev.filter((x) => toStr(x.id) !== id));
       showToast("Usuário excluído.", "success");
+      closeDeleteUser();
     } catch (err) {
       showToast(err?.message || "Erro ao excluir usuário.", "error");
+    } finally {
+      setDeleteUserLoading(false);
     }
   }
 
-  async function handleChangeRole(u) {
+  function openRoleModal(u) {
+    setUserToRole(u);
+    setRoleModalOpen(true);
+  }
+  function closeRoleModal() {
+    if (roleModalLoading) return;
+    setRoleModalOpen(false);
+    setUserToRole(null);
+  }
+
+  async function confirmRoleModal(role) {
     if (!canManageRoles) {
       showToast("Apenas admin_master pode alterar roles.", "error");
       return;
     }
 
+    const u = userToRole;
     const id = toStr(u?.id);
-    const current = String(u?.role || "").toLowerCase();
-    const next = prompt("Nova role (tutor | caregiver | admin):", current);
-    if (!next) return;
+    if (!id) return;
 
-    const role = String(next).trim().toLowerCase();
-    if (!["tutor", "caregiver", "admin"].includes(role)) {
+    const nextRole = String(role || "").trim().toLowerCase();
+    if (!["tutor", "caregiver", "admin"].includes(nextRole)) {
       showToast("Role inválida.", "error");
       return;
     }
 
+    setRoleModalLoading(true);
     try {
-      const data = await adminSetUserRole(token, id, role);
-      const updated = data?.user || { ...u, role };
+      const data = await adminSetUserRole(token, id, nextRole);
+      const updated = data?.user || { ...u, role: nextRole };
       setUsers((prev) => prev.map((x) => (toStr(x.id) === id ? updated : x)));
       showToast("Role atualizada.", "success");
+      closeRoleModal();
     } catch (err) {
       showToast(err?.message || "Erro ao alterar role.", "error");
+    } finally {
+      setRoleModalLoading(false);
     }
   }
 
   /* ===================== ACTIONS: RESERVATIONS ===================== */
 
-  async function handleDeleteReservation(r) {
-    const id = toStr(r?.id);
-    const ok = confirm(`Excluir a reserva #${id}?`);
-    if (!ok) return;
+  function openDeleteReservation(r) {
+    setResToDelete(r);
+    setDeleteResOpen(true);
+  }
+  function closeDeleteReservation() {
+    if (deleteResLoading) return;
+    setDeleteResOpen(false);
+    setResToDelete(null);
+  }
 
+  async function confirmDeleteReservation() {
+    const r = resToDelete;
+    const id = toStr(r?.id);
+    if (!id) return;
+
+    setDeleteResLoading(true);
     try {
       await adminDeleteReservation(token, id);
       setReservations((prev) => prev.filter((x) => toStr(x.id) !== id));
       showToast("Reserva excluída.", "success");
+      closeDeleteReservation();
     } catch (err) {
       showToast(err?.message || "Erro ao excluir reserva.", "error");
+    } finally {
+      setDeleteResLoading(false);
     }
   }
 
@@ -538,10 +921,10 @@ export default function AdminDashboard() {
         (prev || []).map((rv) =>
           toStr(rv?.id) === id
             ? {
-                ...rv,
-                is_hidden: true,
-                hidden_reason: toStr(reason).trim() || rv?.hidden_reason,
-              }
+              ...rv,
+              is_hidden: true,
+              hidden_reason: toStr(reason).trim() || rv?.hidden_reason,
+            }
             : rv
         )
       );
@@ -646,9 +1029,6 @@ export default function AdminDashboard() {
     );
   }
 
-  // ✅ Card no tamanho padrão do restante do site (WEB + mobile)
-  // - max-w-7xl (padrão de páginas mais “cheias”)
-  // - px-3 no mobile pra não espremar
   return (
     <div className="min-h-[calc(100vh-120px)] px-3 sm:px-6 lg:px-10 py-6">
       <div className="max-w-7xl mx-auto">
@@ -765,27 +1145,43 @@ export default function AdminDashboard() {
                               <span className="text-green-700 font-semibold">Não</span>
                             )}
                           </td>
-                          <td className="py-2 pr-2">{u.created_at ? formatDateBR(u.created_at) : "-"}</td>
+                          <td className="py-2 pr-2">
+                            {u.created_at ? formatDateBR(u.created_at) : "-"}
+                          </td>
                           <td className="py-2">
                             <div className="flex flex-wrap gap-2">
-                              <button onClick={() => handleToggleBlocked(u)} className={btnPrimary()}>
+                              <button
+                                onClick={() => openBlockModal(u)}
+                                disabled={isSelf(u)}
+                                className={isSelf(u) ? btnNeutral() : btnPrimary()}
+                                title={isSelf(u) ? "Você não pode bloquear a si mesmo" : ""}
+                              >
                                 {u.blocked ? "Desbloquear" : "Bloquear"}
                               </button>
 
                               <button
-                                onClick={() => handleChangeRole(u)}
-                                disabled={!canManageRoles}
-                                className={canManageRoles ? btnDark() : btnNeutral()}
+                                onClick={() => openRoleModal(u)}
+                                disabled={!canManageRoles || isSelf(u) || isTargetAdminMaster(u)}
+                                className={!canManageRoles || isSelf(u) || isTargetAdminMaster(u) ? btnNeutral() : btnDark()}
                                 title={
-                                  canManageRoles
-                                    ? "Alterar role"
-                                    : "Apenas admin_master pode alterar roles"
+                                  !canManageRoles
+                                    ? "Apenas admin_master pode alterar roles"
+                                    : isSelf(u)
+                                      ? "Você não pode alterar sua própria role"
+                                      : isTargetAdminMaster(u)
+                                        ? "Não é permitido alterar o admin_master"
+                                        : "Alterar role"
                                 }
                               >
                                 Role
                               </button>
 
-                              <button onClick={() => handleDeleteUser(u)} className={btnDanger()}>
+                              <button
+                                onClick={() => openDeleteUser(u)}
+                                disabled={isSelf(u)}
+                                className={isSelf(u) ? btnNeutral() : btnDanger()}
+                                title={isSelf(u) ? "Você não pode excluir a si mesmo" : ""}
+                              >
                                 Excluir
                               </button>
                             </div>
@@ -807,16 +1203,11 @@ export default function AdminDashboard() {
                 {/* MOBILE lista */}
                 <div className="md:hidden mt-3 space-y-3">
                   {(usersFilteredClient || []).map((u) => (
-                    <div
-                      key={toStr(u.id)}
-                      className="bg-white rounded-2xl border border-black/10 p-3"
-                    >
+                    <div key={toStr(u.id)} className="bg-white rounded-2xl border border-black/10 p-3">
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <div className="font-extrabold text-[#5A3A22]">{toStr(u.name) || "-"}</div>
-                          <div className="text-sm text-[#5A3A22]/80 break-all">
-                            {toStr(u.email) || "-"}
-                          </div>
+                          <div className="text-sm text-[#5A3A22]/80 break-all">{toStr(u.email) || "-"}</div>
                         </div>
                         <span className="px-2 py-1 rounded-full bg-[#EBCBA9]/60 text-[#5A3A22] font-semibold text-xs">
                           {roleLabel(u.role)}
@@ -836,22 +1227,38 @@ export default function AdminDashboard() {
                       </div>
 
                       <div className="mt-3 flex flex-wrap gap-2">
-                        <button onClick={() => handleToggleBlocked(u)} className={btnPrimary()}>
+                        <button
+                          onClick={() => openBlockModal(u)}
+                          disabled={isSelf(u)}
+                          className={isSelf(u) ? btnNeutral() : btnPrimary()}
+                          title={isSelf(u) ? "Você não pode bloquear a si mesmo" : ""}
+                        >
                           {u.blocked ? "Desbloquear" : "Bloquear"}
                         </button>
 
                         <button
-                          onClick={() => handleChangeRole(u)}
-                          disabled={!canManageRoles}
-                          className={canManageRoles ? btnDark() : btnNeutral()}
+                          onClick={() => openRoleModal(u)}
+                          disabled={!canManageRoles || isSelf(u) || isTargetAdminMaster(u)}
+                          className={!canManageRoles || isSelf(u) || isTargetAdminMaster(u) ? btnNeutral() : btnDark()}
                           title={
-                            canManageRoles ? "Alterar role" : "Apenas admin_master pode alterar roles"
+                            !canManageRoles
+                              ? "Apenas admin_master pode alterar roles"
+                              : isSelf(u)
+                                ? "Você não pode alterar sua própria role"
+                                : isTargetAdminMaster(u)
+                                  ? "Não é permitido alterar o admin_master"
+                                  : "Alterar role"
                           }
                         >
                           Role
                         </button>
 
-                        <button onClick={() => handleDeleteUser(u)} className={btnDanger()}>
+                        <button
+                          onClick={() => openDeleteUser(u)}
+                          disabled={isSelf(u)}
+                          className={isSelf(u) ? btnNeutral() : btnDanger()}
+                          title={isSelf(u) ? "Você não pode excluir a si mesmo" : ""}
+                        >
                           Excluir
                         </button>
                       </div>
@@ -859,9 +1266,7 @@ export default function AdminDashboard() {
                   ))}
 
                   {!usersFilteredClient?.length && (
-                    <div className="py-6 text-center text-[#5A3A22]/70">
-                      Nenhum usuário encontrado.
-                    </div>
+                    <div className="py-6 text-center text-[#5A3A22]/70">Nenhum usuário encontrado.</div>
                   )}
                 </div>
 
@@ -959,7 +1364,7 @@ export default function AdminDashboard() {
                           </td>
                           <td className="py-2 pr-2">{moneyBR(r.total)}</td>
                           <td className="py-2">
-                            <button onClick={() => handleDeleteReservation(r)} className={btnDanger()}>
+                            <button onClick={() => openDeleteReservation(r)} className={btnDanger()}>
                               Excluir
                             </button>
                           </td>
@@ -980,14 +1385,9 @@ export default function AdminDashboard() {
                 {/* MOBILE lista */}
                 <div className="md:hidden mt-3 space-y-3">
                   {(reservationsFilteredClient || []).map((r) => (
-                    <div
-                      key={toStr(r.id)}
-                      className="bg-white rounded-2xl border border-black/10 p-3"
-                    >
+                    <div key={toStr(r.id)} className="bg-white rounded-2xl border border-black/10 p-3">
                       <div className="flex items-start justify-between gap-3">
-                        <div className="font-extrabold text-[#5A3A22]">
-                          Reserva #{toStr(r.id)}
-                        </div>
+                        <div className="font-extrabold text-[#5A3A22]">Reserva #{toStr(r.id)}</div>
                         <span className="px-2 py-1 rounded-full bg-[#EBCBA9]/60 text-[#5A3A22] font-extrabold text-xs">
                           {toStr(r.status) || "-"}
                         </span>
@@ -1004,8 +1404,7 @@ export default function AdminDashboard() {
                           <b>Serviço:</b> {toStr(r.service) || "-"}
                         </div>
                         <div>
-                          <b>Período:</b>{" "}
-                          {r.start_date ? formatDateBR(r.start_date) : "-"} {" → "}
+                          <b>Período:</b> {r.start_date ? formatDateBR(r.start_date) : "-"} {" → "}
                           {r.end_date ? formatDateBR(r.end_date) : "-"}
                         </div>
                         <div>
@@ -1014,7 +1413,7 @@ export default function AdminDashboard() {
                       </div>
 
                       <div className="mt-3 flex flex-wrap gap-2">
-                        <button onClick={() => handleDeleteReservation(r)} className={btnDanger()}>
+                        <button onClick={() => openDeleteReservation(r)} className={btnDanger()}>
                           Excluir
                         </button>
                       </div>
@@ -1022,9 +1421,7 @@ export default function AdminDashboard() {
                   ))}
 
                   {!reservationsFilteredClient?.length && (
-                    <div className="py-6 text-center text-[#5A3A22]/70">
-                      Nenhuma reserva encontrada.
-                    </div>
+                    <div className="py-6 text-center text-[#5A3A22]/70">Nenhuma reserva encontrada.</div>
                   )}
                 </div>
 
@@ -1091,7 +1488,6 @@ export default function AdminDashboard() {
                   </div>
                 </div>
 
-                {/* tabela (mantive como estava; reviews já está OK no mobile na sua demanda anterior) */}
                 <div className="mt-3 overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
@@ -1127,16 +1523,10 @@ export default function AdminDashboard() {
                                 </div>
                               ) : null}
                             </td>
-                            <td className="py-2 pr-2">
-                              {toStr(rv?.tutor_name || rv?.reviewer_name)}
-                            </td>
-                            <td className="py-2 pr-2">
-                              {toStr(rv?.caregiver_name || rv?.reviewed_name)}
-                            </td>
+                            <td className="py-2 pr-2">{toStr(rv?.tutor_name || rv?.reviewer_name)}</td>
+                            <td className="py-2 pr-2">{toStr(rv?.caregiver_name || rv?.reviewed_name)}</td>
                             <td className="py-2 pr-2">{reviewBadge(rv)}</td>
-                            <td className="py-2 pr-2">
-                              {rv?.created_at ? formatDateBR(rv.created_at) : "-"}
-                            </td>
+                            <td className="py-2 pr-2">{rv?.created_at ? formatDateBR(rv.created_at) : "-"}</td>
                             <td className="py-2">
                               {!hidden ? (
                                 <button onClick={() => openHideReview(rv)} className={btnPrimary()}>
@@ -1190,9 +1580,7 @@ export default function AdminDashboard() {
                     <tbody>
                       {(logs || []).map((l) => (
                         <tr key={toStr(l.id)} className="border-t border-black/10">
-                          <td className="py-2 pr-2">
-                            {l.created_at ? formatDateBR(l.created_at) : "-"}
-                          </td>
+                          <td className="py-2 pr-2">{l.created_at ? formatDateBR(l.created_at) : "-"}</td>
                           <td className="py-2 pr-2">
                             <span className="px-2 py-1 rounded-full bg-[#EBCBA9]/60 text-[#5A3A22] font-semibold">
                               {toStr(l.action_type)}
@@ -1251,7 +1639,7 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* MODAIS */}
+      {/* MODAIS: Reviews */}
       <HideReviewModal
         open={hideModalOpen}
         review={reviewToHide}
@@ -1265,9 +1653,56 @@ export default function AdminDashboard() {
         title="Reexibir avaliação"
         subtitle={`Confirma reexibir a avaliação #${toStr(reviewToUnhide?.id)}?`}
         confirmText="Reexibir"
+        confirmStyle="dark"
         loading={unhideLoading}
         onClose={closeUnhideReview}
         onConfirm={confirmUnhideReview}
+      />
+
+      {/* MODAL: Bloquear/Desbloquear */}
+      <BlockUserModal
+        open={blockModalOpen}
+        user={blockUser}
+        mode={blockMode}
+        loading={blockModalLoading}
+        onClose={closeBlockModal}
+        onConfirm={confirmBlockModal}
+      />
+
+      {/* MODAL: Excluir usuário */}
+      <ConfirmModal
+        open={deleteUserOpen}
+        title="Excluir usuário"
+        subtitle={`Confirma excluir ${toStr(userToDelete?.name)} (${toStr(
+          userToDelete?.email
+        )})?\n\nIsso remove também dependências (reservas, pets, etc).`}
+        confirmText="Excluir"
+        confirmStyle="danger"
+        loading={deleteUserLoading}
+        onClose={closeDeleteUser}
+        onConfirm={confirmDeleteUser}
+      />
+
+      {/* MODAL: Alterar role */}
+      <RoleModal
+        open={roleModalOpen}
+        user={userToRole}
+        canManageRoles={canManageRoles}
+        loading={roleModalLoading}
+        onClose={closeRoleModal}
+        onConfirm={confirmRoleModal}
+      />
+
+      {/* MODAL: Excluir reserva */}
+      <ConfirmModal
+        open={deleteResOpen}
+        title="Excluir reserva"
+        subtitle={`Confirma excluir a reserva #${toStr(resToDelete?.id)}?`}
+        confirmText="Excluir"
+        confirmStyle="danger"
+        loading={deleteResLoading}
+        onClose={closeDeleteReservation}
+        onConfirm={confirmDeleteReservation}
       />
     </div>
   );

@@ -56,25 +56,24 @@ function baseTemplate({
   const LOGO_URL = safeUrl(process.env.EMAIL_LOGO_URL);
   const logoAlt = escapeHtml(brandName);
 
+  // ✅ Agora o logo fica DENTRO do email e sem o texto redundante abaixo.
+  // (O texto "PeloCaramelo" que aparecia abaixo do logo foi removido.)
   const brandHeaderHtml = `
     <tr>
-      <td align="left" style="padding: 0 12px 12px 12px;">
+      <td align="center" style="padding: 0 12px 14px 12px;">
         <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
           <tr>
-            <td style="font-family: Arial, sans-serif;">
+            <td align="center" style="font-family: Arial, sans-serif;">
               ${
                 LOGO_URL
                   ? `<img
                       src="${LOGO_URL}"
                       alt="${logoAlt}"
-                      width="160"
-                      style="display:block;border:0;outline:none;text-decoration:none;height:auto;max-width:160px;"
+                      width="180"
+                      style="display:block;border:0;outline:none;text-decoration:none;height:auto;max-width:180px;"
                     />`
                   : ""
               }
-              <div style="margin-top:8px;font-size:14px;color:#5A3A22;font-weight:800;">
-                ${escapeHtml(brandName)}
-              </div>
             </td>
           </tr>
         </table>

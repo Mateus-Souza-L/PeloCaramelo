@@ -1,6 +1,11 @@
 // backend/src/controllers/adminController.js
 const pool = require("../config/db");
 const { logAdminAction } = require("../services/adminAuditService");
+const {
+  sendEmail,
+  sendAccountBlockedEmail,
+  sendAccountUnblockedEmail,
+} = require("../services/emailService");
 
 /* Helpers */
 function toStr(v) {
@@ -111,32 +116,122 @@ function normalizeISO(v) {
   return dt.toISOString();
 }
 
+/**
+ * Parse de extras de bloqueio (legado + novo admin UI)
+ * Aceita:
+ * - reason
+ * - blocked_until/blockedUntil/until
+ * - duration_days/durationDays/blockedDays/blocked_days/days
+ * - duration_type/durationType ("days" | "indeterminate")
+ */
 function parseBlockExtras(body) {
   const reason = toStr(body?.reason || "").trim();
 
-  const blockedDaysRaw = body?.blockedDays ?? body?.blocked_days ?? body?.days ?? null;
-  const blockedUntilRaw = body?.blockedUntil ?? body?.blocked_until ?? body?.until ?? null;
+  const durationTypeRaw = toStr(body?.duration_type ?? body?.durationType ?? "")
+    .trim()
+    .toLowerCase();
+  const durationType =
+    durationTypeRaw === "days" || durationTypeRaw === "indeterminate" ? durationTypeRaw : null;
+
+  const durationDaysRaw =
+    body?.duration_days ??
+    body?.durationDays ??
+    body?.blockedDays ??
+    body?.blocked_days ??
+    body?.days ??
+    null;
+
+  const blockedUntilRaw = body?.blocked_until ?? body?.blockedUntil ?? body?.until ?? null;
+
+  let durationDays = null;
+  if (durationDaysRaw != null) {
+    const n = Number(durationDaysRaw);
+    if (Number.isFinite(n) && n > 0) durationDays = Math.floor(n);
+  }
 
   let blockedUntil = null;
 
+  // 1) Se veio "blocked_until", usa
   if (blockedUntilRaw) {
     const dt = new Date(blockedUntilRaw);
     if (!Number.isNaN(dt.getTime())) blockedUntil = dt.toISOString();
   }
 
-  if (!blockedUntil && blockedDaysRaw != null) {
-    const n = Number(blockedDaysRaw);
-    if (Number.isFinite(n) && n > 0) {
-      const dt = new Date();
-      dt.setDate(dt.getDate() + Math.floor(n));
-      blockedUntil = dt.toISOString();
-    }
+  // 2) Senão, se veio "duration_days", calcula
+  if (!blockedUntil && durationDays != null) {
+    const dt = new Date();
+    dt.setDate(dt.getDate() + durationDays);
+    blockedUntil = dt.toISOString();
+  }
+
+  // 3) Se for indeterminado, não define data
+  if (durationType === "indeterminate") {
+    blockedUntil = null;
+    durationDays = null;
   }
 
   return {
     reason: reason || null,
     blockedUntil,
+    durationType: durationType || (blockedUntil ? "days" : "indeterminate"),
+    durationDays,
   };
+}
+
+/* Email (desbloqueio com motivo opcional) */
+function escapeHtml(s) {
+  return String(s ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+async function sendUnblockedWithReasonBestEffort(user, reason) {
+  const email = toStr(user?.email).trim();
+  if (!email) return;
+
+  const name = toStr(user?.name).trim();
+  const safeReason = toStr(reason).trim();
+
+  // Se não tem motivo, usa template padrão do serviço
+  if (!safeReason) {
+    await sendAccountUnblockedEmail(user);
+    return;
+  }
+
+  const subject = "Sua conta foi desbloqueada — PeloCaramelo";
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.5;color:#333">
+      <p style="margin:0 0 12px;">
+        Olá${name ? `, <b>${escapeHtml(name)}</b>` : ""}.
+      </p>
+      <p style="margin:0 0 12px;">
+        Sua conta foi <b>desbloqueada</b> e você já pode voltar a usar a plataforma normalmente.
+      </p>
+      <div style="background:#FFF8F0;border:1px solid rgba(0,0,0,0.08);border-radius:12px;padding:12px;margin:12px 0">
+        <p style="margin:0;"><b>Motivo:</b> ${escapeHtml(safeReason)}</p>
+      </div>
+      <p style="margin:16px 0 0;">
+        Se você tiver qualquer dúvida, é só responder este e-mail 🙂
+      </p>
+    </div>
+  `;
+
+  const text = [
+    "Conta desbloqueada — PeloCaramelo",
+    "",
+    `Olá${name ? `, ${name}` : ""}.`,
+    "",
+    "Sua conta foi desbloqueada e você já pode voltar a usar a plataforma normalmente.",
+    `Motivo: ${safeReason}`,
+    "",
+    "Se você tiver qualquer dúvida, responda este e-mail 🙂",
+  ].join("\n");
+
+  await sendEmail({ to: email, subject, html, text });
 }
 
 async function deleteUserDependencies(client, userId) {
@@ -254,10 +349,7 @@ async function listUsersController(req, res) {
     const offset = Math.max(0, toInt(req.query?.offset) ?? 0);
 
     const roleRaw = toStr(req.query?.role).trim().toLowerCase();
-    const role =
-      roleRaw && roleRaw !== "all"
-        ? roleRaw
-        : null;
+    const role = roleRaw && roleRaw !== "all" ? roleRaw : null;
 
     const blockedRaw = toStr(req.query?.blocked).trim();
     const blocked = blockedRaw ? toBool(blockedRaw) : null;
@@ -344,7 +436,7 @@ async function setUserBlockedController(req, res) {
       });
     }
 
-    const { reason, blockedUntil } = parseBlockExtras(req.body);
+    const { reason, blockedUntil, durationType, durationDays } = parseBlockExtras(req.body);
 
     const hasReason = await columnExists(client, "users", "blocked_reason");
     const hasUntil = await columnExists(client, "users", "blocked_until");
@@ -406,7 +498,28 @@ async function setUserBlockedController(req, res) {
       blocked,
       reason: blocked ? reason : null,
       blockedUntil: blocked ? normalizeISO(blockedUntil) : null,
+      durationType: blocked ? durationType : null,
+      durationDays: blocked ? durationDays : null,
     });
+
+    // ✅ EMAIL (best-effort): notifica usuário
+    // - Bloqueio: usa template do emailService com reason + blockedUntil (ou indeterminado)
+    // - Desbloqueio: usa template padrão, e se tiver motivo, envia com motivo também
+    try {
+      if (blocked) {
+        await sendAccountBlockedEmail(user, {
+          reason: reason || null,
+          blockedUntil: normalizeISO(blockedUntil),
+          durationType,
+          durationDays,
+        });
+      } else {
+        await sendUnblockedWithReasonBestEffort(user, reason);
+      }
+    } catch (err) {
+      console.warn("[ADMIN] Falha ao enviar e-mail de bloqueio/desbloqueio:", err?.message || err);
+      // nunca quebra o endpoint por email
+    }
 
     return res.json({ user });
   } catch (err) {
@@ -667,11 +780,7 @@ async function createAdminController(req, res) {
   }
 }
 
-/* PATCH /admin/users/:id/role
-   - Somente admin_master (rota já está protegida por adminMasterMiddleware)
-   - Permite voltar admin -> tutor (o que você quer)
-   - Não permite criar admin_master
-*/
+/* PATCH /admin/users/:id/role */
 async function setUserRoleController(req, res) {
   const client = await pool.connect();
   try {
@@ -699,12 +808,10 @@ async function setUserRoleController(req, res) {
       });
     }
 
-    // bloqueia qualquer tentativa de elevar alguém acima do master
     if (roleRaw === "admin_master") {
       return res.status(400).json({ error: "Não é permitido definir role como admin_master." });
     }
 
-    // não permite alterar o admin_master alvo (se existir alguém assim no banco)
     const { rows: targetRows } = await client.query(
       `SELECT id, role FROM users WHERE id::text = $1::text LIMIT 1;`,
       [id]
@@ -727,8 +834,6 @@ async function setUserRoleController(req, res) {
     params.push(roleRaw);
     sets.push(`role = $${idx++}`);
 
-    // Se virar admin: admin_level = 2 (se tiver coluna)
-    // Se voltar pra tutor/caregiver: zera admin_level (se tiver coluna)
     if (hasAdminLevel) {
       if (roleRaw === "admin") sets.push(`admin_level = COALESCE(admin_level, 2)`);
       else sets.push(`admin_level = NULL`);
@@ -768,7 +873,6 @@ async function setUserRoleController(req, res) {
     const user = rows?.[0] || null;
     if (!user) return res.status(404).json({ error: "Usuário não encontrado." });
 
-    // ✅ AUDIT LOG (best-effort)
     await logAdminAction(req, "USER_ROLE_CHANGED", {
       targetUserId: id,
       newRole: roleRaw,
