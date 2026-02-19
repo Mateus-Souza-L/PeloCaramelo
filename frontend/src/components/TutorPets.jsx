@@ -20,6 +20,16 @@ const ADJECTIVE_OPTIONS = [
   "Dorminhoco(a)",
   "Curioso(a)",
   "Protetor(a)",
+    "Territorial",
+  "Desconfiado(a) com estranhos",
+  "Agitado(a)",
+  "Ansioso(a)",
+  "Sensível a barulhos",
+  "Precisa de adaptação",
+  "Não gosta de outros animais",
+  "Prefere ambientes tranquilos",
+  "Reativo(a) na guia",
+  "Protetor(a) com a família",
 ];
 
 // Normaliza PET vindo da API (backend) para o formato usado no front
