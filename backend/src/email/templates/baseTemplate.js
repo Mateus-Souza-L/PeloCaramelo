@@ -107,24 +107,16 @@ function baseTemplate({
                 <tr>
                   <td style="
                     background:linear-gradient(90deg,#5A3A22 0%,#4A2E1C 100%);
-                    padding:34px 36px;
+                    padding:40px 36px;
                   ">
-                    ${
-                      LOGO_URL
-                        ? `
-                      <img
-                        src="${LOGO_URL}"
-                        alt="${logoAlt}"
-                        width="190"
-                        style="display:block;border:0;height:auto;max-width:190px;"
-                      />
-                    `
-                        : `
-                      <div style="color:#FFD700;font-weight:800;font-size:20px;">
-                        ${escapeHtml(brandName)}
-                      </div>
-                    `
-                    }
+                    <div style="
+                      font-family: Arial, Helvetica, sans-serif;
+                      font-size:26px;
+                      font-weight:800;
+                      letter-spacing:0.5px;
+                    ">
+                      <span style="color:#FFFFFF;">Pelo</span><span style="color:#FFD700;">Caramelo</span>
+                    </div>
                   </td>
                 </tr>
 
