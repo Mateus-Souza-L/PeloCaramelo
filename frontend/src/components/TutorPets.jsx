@@ -20,14 +20,14 @@ const ADJECTIVE_OPTIONS = [
   "Dorminhoco(a)",
   "Curioso(a)",
   "Protetor(a)",
-    "Territorial",
-  "Desconfiado(a) com estranhos",
+  "Territorial",
   "Agitado(a)",
   "Ansioso(a)",
+  "Desconfiado(a) com estranhos",
   "Sensível a barulhos",
-  "Precisa de adaptação",
-  "Não gosta de outros animais",
   "Prefere ambientes tranquilos",
+  "Precisa de adaptação",
+  "Não gosta de outros animais",  
   "Reativo(a) na guia",
   "Protetor(a) com a família",
 ];
@@ -498,11 +498,10 @@ export default function TutorPets() {
                       key={adj}
                       type="button"
                       onClick={() => toggleAdjective(adj)}
-                      className={`px-3 py-1 rounded-full text-xs border transition ${
-                        active
+                      className={`px-3 py-1 rounded-full text-xs border transition ${active
                           ? "bg-[#5A3A22] text-white border-[#5A3A22]"
                           : "bg-white text-[#5A3A22] border-[#D2A679] hover:bg-[#FFF3D0]"
-                      }`}
+                        }`}
                     >
                       {adj}
                     </button>
@@ -548,11 +547,10 @@ export default function TutorPets() {
                 <motion.div
                   key={pid}
                   whileHover={{ scale: 1.01 }}
-                  className={`flex gap-3 items-center border rounded-xl p-3 shadow-sm bg-[#FFF8F0] transition ${
-                    isEditing
+                  className={`flex gap-3 items-center border rounded-xl p-3 shadow-sm bg-[#FFF8F0] transition ${isEditing
                       ? "border-[#5A3A22] bg-[#FFF3D0]"
                       : "border-transparent"
-                  }`}
+                    }`}
                 >
                   <button
                     type="button"
