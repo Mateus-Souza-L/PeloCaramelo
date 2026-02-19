@@ -28,6 +28,7 @@ const cors = require("cors");
 const morgan = require("morgan");
 const http = require("http");
 const compression = require("compression"); // ✅ ADD
+const rateLimit = require("express-rate-limit"); // ✅ ADD (anti-spam)
 
 const app = express();
 
@@ -209,6 +210,9 @@ const notificationRoutes = require("./routes/notificationRoutes");
 // ✅ NOVO: Contato (orçamento de palestra)
 const contactRoutes = require("./routes/contactRoutes");
 
+// ✅ NOVO: Reports (denúncias)
+const reportRoutes = require("./routes/reportRoutes");
+
 /* ===========================================================
    ✅ Middlewares
    =========================================================== */
@@ -307,6 +311,27 @@ async function blockedGuard(req, res, next) {
 }
 
 /* ===========================================================
+   ✅ Anti-spam: Reports (rate limit por usuário)
+   =========================================================== */
+const reportsLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000, // 10 min
+  max: 5, // 5 denúncias / 10 min
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const uid = req.user?.id ? String(req.user.id) : null;
+    return uid || req.ip;
+  },
+  handler: (req, res) => {
+    return res.status(429).json({
+      ok: false,
+      code: "REPORT_RATE_LIMIT",
+      message: "Muitas denúncias em pouco tempo. Tente novamente em alguns minutos.",
+    });
+  },
+});
+
+/* ===========================================================
    ✅ Rotas públicas
    =========================================================== */
 app.use("/auth", authRoutes);
@@ -328,6 +353,9 @@ app.use("/users", authMiddleware, blockedGuard, userRoutes);
 app.use("/reservations", authMiddleware, blockedGuard, reservationRoutes);
 app.use("/chat", authMiddleware, blockedGuard, chatRoutes);
 app.use("/pets", authMiddleware, blockedGuard, petRoutes);
+
+// ✅ NOVO: denúncias (protegido) — front chama authRequest("/reports", token, ...)
+app.use("/reports", authMiddleware, blockedGuard, reportsLimiter, reportRoutes);
 
 /* ===========================================================
    ✅ Rotas admin

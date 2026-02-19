@@ -11,6 +11,9 @@ import {
   adminListReviews,
   adminHideReview,
   adminUnhideReview,
+  // ✅ NOVO: denúncias (reports)
+  adminListReports,
+  adminUpdateReportStatus,
 } from "../services/adminApi";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../components/ToastProvider";
@@ -103,8 +106,8 @@ function ConfirmModal({
     confirmStyle === "primary"
       ? { background: "#FFD700", color: "#5A3A22" }
       : confirmStyle === "dark"
-        ? { background: "#5A3A22", color: "#fff" }
-        : { background: "#95301F", color: "#fff" };
+      ? { background: "#5A3A22", color: "#fff" }
+      : { background: "#95301F", color: "#fff" };
 
   return (
     <ModalBase open={open} title={title} subtitle={subtitle} onClose={loading ? null : onClose}>
@@ -259,11 +262,7 @@ function BlockUserModal({
     <ModalBase
       open={open}
       title={isBlock ? "Bloquear usuário" : "Desbloquear usuário"}
-      subtitle={
-        uid
-          ? `${uName} • ${uEmail} • ID #${uid}`
-          : `${uName} • ${uEmail}`
-      }
+      subtitle={uid ? `${uName} • ${uEmail} • ID #${uid}` : `${uName} • ${uEmail}`}
       onClose={loading ? null : onClose}
     >
       <div className="bg-white rounded-2xl border border-black/10 p-4">
@@ -279,9 +278,7 @@ function BlockUserModal({
               rows={4}
               className="mt-2 w-full rounded-xl border border-black/10 p-3 text-sm outline-none focus:ring-2 focus:ring-black/10"
               placeholder={
-                isBlock
-                  ? "Ex.: Violação de termos / tentativa de golpe / spam…"
-                  : "Ex.: Revisado e liberado / bloqueio indevido…"
+                isBlock ? "Ex.: Violação de termos / tentativa de golpe / spam…" : "Ex.: Revisado e liberado…"
               }
             />
           </div>
@@ -289,9 +286,7 @@ function BlockUserModal({
           {isBlock && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm font-extrabold text-[#5A3A22]">
-                  Tempo do bloqueio
-                </label>
+                <label className="block text-sm font-extrabold text-[#5A3A22]">Tempo do bloqueio</label>
                 <select
                   value={durationType}
                   onChange={(e) => setDurationType(e.target.value)}
@@ -305,9 +300,7 @@ function BlockUserModal({
 
               {durationType === "days" && (
                 <div>
-                  <label className="block text-sm font-extrabold text-[#5A3A22]">
-                    Duração
-                  </label>
+                  <label className="block text-sm font-extrabold text-[#5A3A22]">Duração</label>
                   <div className="mt-2 flex gap-2">
                     <select
                       value={daysPreset}
@@ -339,8 +332,7 @@ function BlockUserModal({
                   <div className="mt-2 text-xs text-[#5A3A22]/75">
                     {blockedUntilLabel ? (
                       <>
-                        Vai ficar bloqueado até:{" "}
-                        <b className="text-[#5A3A22]">{blockedUntilLabel}</b>
+                        Vai ficar bloqueado até: <b className="text-[#5A3A22]">{blockedUntilLabel}</b>
                       </>
                     ) : durationType === "indeterminate" ? (
                       "Bloqueio sem data para expirar."
@@ -375,7 +367,7 @@ function BlockUserModal({
                 reason: toStr(reason).trim() || null,
                 duration_type: isBlock ? durationType : null,
                 duration_days: isBlock && durationType === "days" ? finalDays : null,
-                blocked_until: blockedUntilISO, // backend pode usar ou ignorar por enquanto
+                blocked_until: blockedUntilISO,
               })
             }
             disabled={!canSubmit}
@@ -383,10 +375,7 @@ function BlockUserModal({
               "px-4 py-2 rounded-xl font-extrabold",
               !canSubmit ? "opacity-60 cursor-not-allowed" : "hover:opacity-90",
             ].join(" ")}
-            style={{
-              background: isBlock ? "#95301F" : "#5A3A22",
-              color: "#fff",
-            }}
+            style={{ background: isBlock ? "#95301F" : "#5A3A22", color: "#fff" }}
           >
             {loading ? "Aguarde…" : isBlock ? "Bloquear" : "Desbloquear"}
           </button>
@@ -396,14 +385,7 @@ function BlockUserModal({
   );
 }
 
-function RoleModal({
-  open,
-  user,
-  canManageRoles,
-  loading = false,
-  onClose,
-  onConfirm,
-}) {
+function RoleModal({ open, user, canManageRoles, loading = false, onClose, onConfirm }) {
   const [role, setRole] = useState("tutor");
 
   useEffect(() => {
@@ -476,6 +458,83 @@ function RoleModal({
   );
 }
 
+/* ===================== NOVO: Modal de status da denúncia ===================== */
+
+function ReportStatusModal({ open, report, loading = false, onClose, onConfirm }) {
+  const [status, setStatus] = useState("reviewing");
+  const [note, setNote] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+    const current = String(report?.status || "open").toLowerCase();
+    setStatus(["open", "reviewing", "resolved", "dismissed"].includes(current) ? current : "reviewing");
+    setNote("");
+  }, [open, report]);
+
+  const rid = toStr(report?.id);
+
+  return (
+    <ModalBase
+      open={open}
+      title="Atualizar denúncia"
+      subtitle={rid ? `Denúncia #${rid}` : "Atualize o status e salve."}
+      onClose={loading ? null : onClose}
+    >
+      <div className="bg-white rounded-2xl border border-black/10 p-4">
+        <label className="block text-sm font-extrabold text-[#5A3A22]">Novo status</label>
+        <select
+          value={status}
+          onChange={(e) => setStatus(e.target.value)}
+          disabled={loading}
+          className="mt-2 w-full rounded-xl border border-black/10 px-3 py-2 text-sm bg-white"
+        >
+          <option value="open">Aberta</option>
+          <option value="reviewing">Em análise</option>
+          <option value="resolved">Resolvida</option>
+          <option value="dismissed">Descartada</option>
+        </select>
+
+        <label className="block text-sm font-extrabold text-[#5A3A22] mt-3">Nota interna (opcional)</label>
+        <textarea
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          disabled={loading}
+          rows={3}
+          className="mt-2 w-full rounded-xl border border-black/10 p-3 text-sm outline-none focus:ring-2 focus:ring-black/10"
+          placeholder="Ex.: Revisado, evidências insuficientes / usuário bloqueado / orientado…"
+        />
+
+        <div className="flex justify-end gap-2 mt-4">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={loading}
+            className={[
+              "px-4 py-2 rounded-xl font-extrabold border",
+              loading ? "opacity-70 cursor-not-allowed" : "hover:bg-black/5",
+            ].join(" ")}
+            style={{ borderColor: "#ddd", color: "#5A3A22", background: "#fff" }}
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={() => onConfirm?.({ status, note: toStr(note).trim() || null })}
+            disabled={loading}
+            className={[
+              "px-4 py-2 rounded-xl font-extrabold",
+              loading ? "opacity-80 cursor-not-allowed" : "hover:opacity-90",
+            ].join(" ")}
+            style={{ background: "#FFD700", color: "#5A3A22" }}
+          >
+            {loading ? "Salvando…" : "Salvar"}
+          </button>
+        </div>
+      </div>
+    </ModalBase>
+  );
+}
+
 /* ===================== Dashboard ===================== */
 
 export default function AdminDashboard() {
@@ -496,14 +555,14 @@ export default function AdminDashboard() {
     return String(u?.role || "").toLowerCase() === "admin_master";
   }
 
-
-  const [tab, setTab] = useState("users"); // users | reservations | reviews | logs
+  const [tab, setTab] = useState("users"); // users | reservations | reviews | reports | logs
   const [loading, setLoading] = useState(false);
 
   // data
   const [users, setUsers] = useState([]);
   const [reservations, setReservations] = useState([]);
   const [reviews, setReviews] = useState([]);
+  const [reports, setReports] = useState([]);
   const [logs, setLogs] = useState([]);
 
   // -------- Pagination (per tab) --------
@@ -515,6 +574,9 @@ export default function AdminDashboard() {
 
   const [reviewOffset, setReviewOffset] = useState(0);
   const reviewLimit = 200;
+
+  const [reportsOffset, setReportsOffset] = useState(0);
+  const reportsLimit = 50;
 
   const [logOffset, setLogOffset] = useState(0);
   const logLimit = 50;
@@ -534,6 +596,10 @@ export default function AdminDashboard() {
   const [reviewRatingFilter, setReviewRatingFilter] = useState("all");
   const [reviewSearch, setReviewSearch] = useState("");
 
+  // ✅ Filters (Reports)
+  const [reportStatusFilter, setReportStatusFilter] = useState("all"); // all | open | reviewing | resolved | dismissed
+  const [reportSearch, setReportSearch] = useState("");
+
   // -------- Modals reviews --------
   const [hideModalOpen, setHideModalOpen] = useState(false);
   const [hideModalLoading, setHideModalLoading] = useState(false);
@@ -542,6 +608,11 @@ export default function AdminDashboard() {
   const [unhideConfirmOpen, setUnhideConfirmOpen] = useState(false);
   const [unhideLoading, setUnhideLoading] = useState(false);
   const [reviewToUnhide, setReviewToUnhide] = useState(null);
+
+  // ✅ Modais reports
+  const [reportStatusOpen, setReportStatusOpen] = useState(false);
+  const [reportStatusLoading, setReportStatusLoading] = useState(false);
+  const [reportToUpdate, setReportToUpdate] = useState(null);
 
   // -------- Modals users/actions --------
   const [blockModalOpen, setBlockModalOpen] = useState(false);
@@ -670,6 +741,34 @@ export default function AdminDashboard() {
     [token, showToast, reviewLimit, reviewOffset, reviewHiddenFilter, reviewRatingFilter]
   );
 
+  // ✅ NOVO: load reports
+  const loadReports = useCallback(
+    async (offset = reportsOffset) => {
+      if (!token) return;
+
+      const status = reportStatusFilter === "all" ? null : reportStatusFilter;
+
+      setLoading(true);
+      try {
+        const data = await adminListReports(token, {
+          limit: reportsLimit,
+          offset,
+          status,
+          q: reportSearch,
+        });
+
+        const list = data?.items || data?.reports || [];
+        setReports(Array.isArray(list) ? list : []);
+        setReportsOffset(data?.offset ?? data?.meta?.offset ?? offset);
+      } catch (err) {
+        showToast(err?.message || "Erro ao carregar denúncias.", "error");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [token, showToast, reportsLimit, reportsOffset, reportStatusFilter, reportSearch]
+  );
+
   const loadLogs = useCallback(
     async (offset = 0) => {
       if (!token) return;
@@ -692,6 +791,7 @@ export default function AdminDashboard() {
     if (tab === "users") loadUsers(0);
     if (tab === "reservations") loadReservations(0);
     if (tab === "reviews") loadReviews(0);
+    if (tab === "reports") loadReports(0);
     if (tab === "logs") loadLogs(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
@@ -705,8 +805,19 @@ export default function AdminDashboard() {
     const totalReviews = reviews?.length || 0;
     const hiddenReviews = (reviews || []).filter((rv) => !!rv?.is_hidden).length;
 
-    return { totalUsers, blockedUsers, totalReservations, totalReviews, hiddenReviews };
-  }, [users, reservations, reviews]);
+    const totalReports = reports?.length || 0;
+    const openReports = (reports || []).filter((rp) => String(rp?.status || "open").toLowerCase() === "open").length;
+
+    return {
+      totalUsers,
+      blockedUsers,
+      totalReservations,
+      totalReviews,
+      hiddenReviews,
+      totalReports,
+      openReports,
+    };
+  }, [users, reservations, reviews, reports]);
 
   /* ===================== FILTERS client ===================== */
 
@@ -752,6 +863,28 @@ export default function AdminDashboard() {
     });
   }, [reviews, reviewSearch]);
 
+  const reportsFilteredClient = useMemo(() => {
+    const q = toStr(reportSearch).trim().toLowerCase();
+    if (!q) return reports || [];
+    return (reports || []).filter((rp) => {
+      const hay = [
+        rp?.id,
+        rp?.status,
+        rp?.reason,
+        rp?.description,
+        rp?.reported_name,
+        rp?.reported_email,
+        rp?.reporter_name,
+        rp?.reporter_email,
+        rp?.reported_id,
+        rp?.reporter_id,
+      ]
+        .map((x) => toStr(x).toLowerCase())
+        .join(" | ");
+      return hay.includes(q);
+    });
+  }, [reports, reportSearch]);
+
   /* ===================== ACTIONS: USERS ===================== */
 
   function openBlockModal(u) {
@@ -779,7 +912,6 @@ export default function AdminDashboard() {
       const body = {
         blocked: next,
         reason: payload?.reason ?? null,
-        // extras (backend pode ignorar agora; no próximo passo vamos suportar)
         duration_type: payload?.duration_type ?? null,
         duration_days: payload?.duration_days ?? null,
         blocked_until: payload?.blocked_until ?? null,
@@ -921,10 +1053,10 @@ export default function AdminDashboard() {
         (prev || []).map((rv) =>
           toStr(rv?.id) === id
             ? {
-              ...rv,
-              is_hidden: true,
-              hidden_reason: toStr(reason).trim() || rv?.hidden_reason,
-            }
+                ...rv,
+                is_hidden: true,
+                hidden_reason: toStr(reason).trim() || rv?.hidden_reason,
+              }
             : rv
         )
       );
@@ -958,9 +1090,7 @@ export default function AdminDashboard() {
 
       setReviews((prev) =>
         (prev || []).map((rv) =>
-          toStr(rv?.id) === id
-            ? { ...rv, is_hidden: false, hidden_reason: null, hidden_at: null }
-            : rv
+          toStr(rv?.id) === id ? { ...rv, is_hidden: false, hidden_reason: null, hidden_at: null } : rv
         )
       );
 
@@ -970,6 +1100,48 @@ export default function AdminDashboard() {
       showToast(err?.message || "Erro ao reexibir avaliação.", "error");
     } finally {
       setUnhideLoading(false);
+    }
+  }
+
+  /* ===================== ACTIONS: REPORTS ===================== */
+
+  function openReportStatus(rp) {
+    setReportToUpdate(rp);
+    setReportStatusOpen(true);
+  }
+  function closeReportStatus() {
+    if (reportStatusLoading) return;
+    setReportStatusOpen(false);
+    setReportToUpdate(null);
+  }
+
+  async function confirmReportStatus(payload) {
+    const rp = reportToUpdate;
+    const id = toStr(rp?.id);
+    if (!id) return;
+
+    const nextStatus = String(payload?.status || "").toLowerCase();
+    if (!["open", "reviewing", "resolved", "dismissed"].includes(nextStatus)) {
+      showToast("Status inválido.", "error");
+      return;
+    }
+
+    setReportStatusLoading(true);
+    try {
+      const data = await adminUpdateReportStatus(token, id, {
+        status: nextStatus,
+        note: payload?.note ?? null,
+      });
+
+      const updated = data?.report || { ...rp, status: nextStatus, admin_note: payload?.note ?? rp?.admin_note };
+      setReports((prev) => (prev || []).map((x) => (toStr(x?.id) === id ? updated : x)));
+
+      showToast("Denúncia atualizada.", "success");
+      closeReportStatus();
+    } catch (err) {
+      showToast(err?.message || "Erro ao atualizar denúncia.", "error");
+    } finally {
+      setReportStatusLoading(false);
     }
   }
 
@@ -1011,6 +1183,36 @@ export default function AdminDashboard() {
       </span>
     );
 
+  const reportBadge = (rp) => {
+    const st = String(rp?.status || "open").toLowerCase();
+    if (st === "resolved") {
+      return (
+        <span className="inline-flex items-center gap-2 px-2 py-1 rounded-full bg-green-100 text-green-800 font-extrabold text-xs">
+          ✅ Resolvida
+        </span>
+      );
+    }
+    if (st === "dismissed") {
+      return (
+        <span className="inline-flex items-center gap-2 px-2 py-1 rounded-full bg-gray-200 text-gray-800 font-extrabold text-xs">
+          ⚪ Descartada
+        </span>
+      );
+    }
+    if (st === "reviewing") {
+      return (
+        <span className="inline-flex items-center gap-2 px-2 py-1 rounded-full bg-yellow-100 text-yellow-900 font-extrabold text-xs">
+          🟡 Em análise
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-2 px-2 py-1 rounded-full bg-red-100 text-red-800 font-extrabold text-xs">
+        🔴 Aberta
+      </span>
+    );
+  };
+
   function Pager({ onPrev, onNext, offset, limit }) {
     return (
       <div className="flex items-center justify-between gap-2 mt-3">
@@ -1032,6 +1234,7 @@ export default function AdminDashboard() {
   return (
     <div className="min-h-[calc(100vh-120px)] px-3 sm:px-6 lg:px-10 py-6">
       <div className="max-w-7xl mx-auto">
+        {/* ✅ card padrão do site */}
         <div className="bg-white/80 rounded-2xl shadow-sm border border-black/10 p-4 sm:p-5">
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
             <div>
@@ -1045,17 +1248,19 @@ export default function AdminDashboard() {
               <TabButton value="users">Usuários</TabButton>
               <TabButton value="reservations">Reservas</TabButton>
               <TabButton value="reviews">Avaliações</TabButton>
+              <TabButton value="reports">Denúncias</TabButton>
               <TabButton value="logs">Audit Logs</TabButton>
             </div>
           </div>
 
           {/* STATS */}
-          <div className="mt-4 grid grid-cols-2 lg:grid-cols-5 gap-3">
+          <div className="mt-4 grid grid-cols-2 lg:grid-cols-6 gap-3">
             <StatCard label="Usuários" value={stats.totalUsers} />
             <StatCard label="Bloqueados" value={stats.blockedUsers} hint="nesta página" />
             <StatCard label="Reservas" value={stats.totalReservations} hint="nesta página" />
             <StatCard label="Avaliações" value={stats.totalReviews} />
             <StatCard label="Ocultas" value={stats.hiddenReviews} hint="nesta página" />
+            <StatCard label="Denúncias" value={stats.totalReports} hint={`${stats.openReports} abertas (nesta página)`} />
           </div>
 
           <div className="mt-4">
@@ -1064,7 +1269,6 @@ export default function AdminDashboard() {
             {/* USERS */}
             {tab === "users" && (
               <div className="mt-3">
-                {/* filtros */}
                 <div className="flex flex-col lg:flex-row gap-3 lg:items-end lg:justify-between">
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <div>
@@ -1113,7 +1317,6 @@ export default function AdminDashboard() {
                   </div>
                 </div>
 
-                {/* DESKTOP tabela */}
                 <div className="hidden md:block mt-3 overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
@@ -1145,9 +1348,7 @@ export default function AdminDashboard() {
                               <span className="text-green-700 font-semibold">Não</span>
                             )}
                           </td>
-                          <td className="py-2 pr-2">
-                            {u.created_at ? formatDateBR(u.created_at) : "-"}
-                          </td>
+                          <td className="py-2 pr-2">{u.created_at ? formatDateBR(u.created_at) : "-"}</td>
                           <td className="py-2">
                             <div className="flex flex-wrap gap-2">
                               <button
@@ -1162,15 +1363,17 @@ export default function AdminDashboard() {
                               <button
                                 onClick={() => openRoleModal(u)}
                                 disabled={!canManageRoles || isSelf(u) || isTargetAdminMaster(u)}
-                                className={!canManageRoles || isSelf(u) || isTargetAdminMaster(u) ? btnNeutral() : btnDark()}
+                                className={
+                                  !canManageRoles || isSelf(u) || isTargetAdminMaster(u) ? btnNeutral() : btnDark()
+                                }
                                 title={
                                   !canManageRoles
                                     ? "Apenas admin_master pode alterar roles"
                                     : isSelf(u)
-                                      ? "Você não pode alterar sua própria role"
-                                      : isTargetAdminMaster(u)
-                                        ? "Não é permitido alterar o admin_master"
-                                        : "Alterar role"
+                                    ? "Você não pode alterar sua própria role"
+                                    : isTargetAdminMaster(u)
+                                    ? "Não é permitido alterar o admin_master"
+                                    : "Alterar role"
                                 }
                               >
                                 Role
@@ -1200,7 +1403,6 @@ export default function AdminDashboard() {
                   </table>
                 </div>
 
-                {/* MOBILE lista */}
                 <div className="md:hidden mt-3 space-y-3">
                   {(usersFilteredClient || []).map((u) => (
                     <div key={toStr(u.id)} className="bg-white rounded-2xl border border-black/10 p-3">
@@ -1244,10 +1446,10 @@ export default function AdminDashboard() {
                             !canManageRoles
                               ? "Apenas admin_master pode alterar roles"
                               : isSelf(u)
-                                ? "Você não pode alterar sua própria role"
-                                : isTargetAdminMaster(u)
-                                  ? "Não é permitido alterar o admin_master"
-                                  : "Alterar role"
+                              ? "Você não pode alterar sua própria role"
+                              : isTargetAdminMaster(u)
+                              ? "Não é permitido alterar o admin_master"
+                              : "Alterar role"
                           }
                         >
                           Role
@@ -1270,7 +1472,6 @@ export default function AdminDashboard() {
                   )}
                 </div>
 
-                {/* paginação */}
                 <Pager
                   offset={usersOffset}
                   limit={usersLimit}
@@ -1283,7 +1484,6 @@ export default function AdminDashboard() {
             {/* RESERVATIONS */}
             {tab === "reservations" && (
               <div className="mt-3">
-                {/* filtros */}
                 <div className="flex flex-col lg:flex-row gap-3 lg:items-end lg:justify-between">
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <div>
@@ -1335,7 +1535,6 @@ export default function AdminDashboard() {
                   </div>
                 </div>
 
-                {/* DESKTOP tabela */}
                 <div className="hidden md:block mt-3 overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
@@ -1382,7 +1581,6 @@ export default function AdminDashboard() {
                   </table>
                 </div>
 
-                {/* MOBILE lista */}
                 <div className="md:hidden mt-3 space-y-3">
                   {(reservationsFilteredClient || []).map((r) => (
                     <div key={toStr(r.id)} className="bg-white rounded-2xl border border-black/10 p-3">
@@ -1425,7 +1623,6 @@ export default function AdminDashboard() {
                   )}
                 </div>
 
-                {/* paginação */}
                 <Pager
                   offset={resOffset}
                   limit={resLimit}
@@ -1438,7 +1635,6 @@ export default function AdminDashboard() {
             {/* REVIEWS */}
             {tab === "reviews" && (
               <div className="mt-3">
-                {/* filtros */}
                 <div className="flex flex-col lg:flex-row gap-3 lg:items-end lg:justify-between">
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <div>
@@ -1562,6 +1758,104 @@ export default function AdminDashboard() {
               </div>
             )}
 
+            {/* REPORTS */}
+            {tab === "reports" && (
+              <div className="mt-3">
+                <div className="flex flex-col lg:flex-row gap-3 lg:items-end lg:justify-between">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div>
+                      <div className="text-xs font-bold text-[#5A3A22]/70 mb-1">Status</div>
+                      <select
+                        value={reportStatusFilter}
+                        onChange={(e) => setReportStatusFilter(e.target.value)}
+                        className="w-full rounded-xl border border-black/10 px-3 py-2 text-sm bg-white"
+                      >
+                        <option value="all">Todos</option>
+                        <option value="open">Abertas</option>
+                        <option value="reviewing">Em análise</option>
+                        <option value="resolved">Resolvidas</option>
+                        <option value="dismissed">Descartadas</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <div className="text-xs font-bold text-[#5A3A22]/70 mb-1">Buscar</div>
+                      <input
+                        value={reportSearch}
+                        onChange={(e) => setReportSearch(e.target.value)}
+                        className="w-full rounded-xl border border-black/10 px-3 py-2 text-sm bg-white outline-none focus:ring-2 focus:ring-black/10"
+                        placeholder="Usuário, email, motivo, id…"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button onClick={() => loadReports(0)} className={btnPrimary()}>
+                      Aplicar filtros
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-3 overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-[#5A3A22]">
+                        <th className="py-2">ID</th>
+                        <th className="py-2">Denunciado</th>
+                        <th className="py-2">Denunciante</th>
+                        <th className="py-2">Motivo</th>
+                        <th className="py-2">Descrição</th>
+                        <th className="py-2">Status</th>
+                        <th className="py-2">Criada</th>
+                        <th className="py-2">Ações</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(reportsFilteredClient || []).map((rp) => (
+                        <tr key={toStr(rp?.id)} className="border-t border-black/10">
+                          <td className="py-2 pr-2">{toStr(rp?.id)}</td>
+                          <td className="py-2 pr-2">
+                            <div className="font-extrabold text-[#5A3A22]">{toStr(rp?.reported_name) || "-"}</div>
+                            <div className="text-xs text-[#5A3A22]/70 break-all">{toStr(rp?.reported_email) || ""}</div>
+                          </td>
+                          <td className="py-2 pr-2">
+                            <div className="font-extrabold text-[#5A3A22]">{toStr(rp?.reporter_name) || "-"}</div>
+                            <div className="text-xs text-[#5A3A22]/70 break-all">{toStr(rp?.reporter_email) || ""}</div>
+                          </td>
+                          <td className="py-2 pr-2">{toStr(rp?.reason) || "-"}</td>
+                          <td className="py-2 pr-2 max-w-[420px]">
+                            <div className="line-clamp-2">{toStr(rp?.description) || "-"}</div>
+                          </td>
+                          <td className="py-2 pr-2">{reportBadge(rp)}</td>
+                          <td className="py-2 pr-2">{rp?.created_at ? formatDateBR(rp.created_at) : "-"}</td>
+                          <td className="py-2">
+                            <button onClick={() => openReportStatus(rp)} className={btnPrimary()}>
+                              Atualizar
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+
+                      {!reportsFilteredClient?.length && (
+                        <tr>
+                          <td colSpan={8} className="py-6 text-center text-[#5A3A22]/70">
+                            Nenhuma denúncia encontrada.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <Pager
+                  offset={reportsOffset}
+                  limit={reportsLimit}
+                  onPrev={() => loadReports(Math.max(reportsOffset - reportsLimit, 0))}
+                  onNext={() => loadReports(reportsOffset + reportsLimit)}
+                />
+              </div>
+            )}
+
             {/* LOGS */}
             {tab === "logs" && (
               <div className="mt-3">
@@ -1629,6 +1923,7 @@ export default function AdminDashboard() {
                 if (tab === "users") loadUsers(usersOffset);
                 if (tab === "reservations") loadReservations(resOffset);
                 if (tab === "reviews") loadReviews(reviewOffset);
+                if (tab === "reports") loadReports(reportsOffset);
                 if (tab === "logs") loadLogs(logOffset);
               }}
               className={btnPrimary()}
@@ -1673,9 +1968,7 @@ export default function AdminDashboard() {
       <ConfirmModal
         open={deleteUserOpen}
         title="Excluir usuário"
-        subtitle={`Confirma excluir ${toStr(userToDelete?.name)} (${toStr(
-          userToDelete?.email
-        )})?\n\nIsso remove também dependências (reservas, pets, etc).`}
+        subtitle={`Confirma excluir ${toStr(userToDelete?.name)} (${toStr(userToDelete?.email)})?\n\nIsso remove também dependências (reservas, pets, etc).`}
         confirmText="Excluir"
         confirmStyle="danger"
         loading={deleteUserLoading}
@@ -1703,6 +1996,15 @@ export default function AdminDashboard() {
         loading={deleteResLoading}
         onClose={closeDeleteReservation}
         onConfirm={confirmDeleteReservation}
+      />
+
+      {/* ✅ MODAL: Atualizar denúncia */}
+      <ReportStatusModal
+        open={reportStatusOpen}
+        report={reportToUpdate}
+        loading={reportStatusLoading}
+        onClose={closeReportStatus}
+        onConfirm={confirmReportStatus}
       />
     </div>
   );

@@ -35,41 +35,110 @@ const PG_POOL_MAX = Math.max(1, Math.min(20, Number(process.env.PG_POOL_MAX || 5
 const PG_CONN_TIMEOUT_MS = Number(process.env.PG_CONN_TIMEOUT_MS || 10000);
 const PG_IDLE_TIMEOUT_MS = Number(process.env.PG_IDLE_TIMEOUT_MS || 30000);
 
-const pool = new Pool({
-  connectionString: DATABASE_URL,
-  ssl: sslConfig,
+// ✅ KeepAlive ajuda a reduzir quedas "Connection terminated unexpectedly" em algumas redes/proxy
+const PG_KEEPALIVE = String(process.env.PG_KEEPALIVE || "true").toLowerCase() === "true";
+const PG_KEEPALIVE_INITIAL_DELAY_MS = Number(process.env.PG_KEEPALIVE_INITIAL_DELAY_MS || 0);
 
-  // 🔥 o que faltava:
-  max: PG_POOL_MAX,
+// ✅ Reconnect simples quando o pool entra em estado ruim:
+// - recria o pool em erro "terminado" / "ECONNRESET" etc.
+// - mantém uma referência estável via getPool()
+let _pool = null;
+let _recreating = false;
 
-  // opcional: evita travar em conexões ruins
-  connectionTimeoutMillis: PG_CONN_TIMEOUT_MS,
-  idleTimeoutMillis: PG_IDLE_TIMEOUT_MS,
-});
+function createPool() {
+  const p = new Pool({
+    connectionString: DATABASE_URL,
+    ssl: sslConfig,
 
-pool.on("error", (err) => {
-  console.error("🔥 Erro inesperado no pool PostgreSQL:", err?.message || err);
-});
+    max: PG_POOL_MAX,
+    connectionTimeoutMillis: PG_CONN_TIMEOUT_MS,
+    idleTimeoutMillis: PG_IDLE_TIMEOUT_MS,
+
+    keepAlive: PG_KEEPALIVE,
+    keepAliveInitialDelayMillis: PG_KEEPALIVE_INITIAL_DELAY_MS,
+  });
+
+  p.on("error", async (err) => {
+    const msg = String(err?.message || err || "");
+    console.error("🔥 Erro inesperado no pool PostgreSQL:", msg);
+
+    // tenta recriar o pool em erros comuns de queda de conexão
+    const shouldRecreate =
+      /Connection terminated unexpectedly/i.test(msg) ||
+      /ECONNRESET/i.test(msg) ||
+      /server closed the connection/i.test(msg) ||
+      /terminating connection/i.test(msg);
+
+    if (shouldRecreate) {
+      await recreatePool("pool_error");
+    }
+  });
+
+  return p;
+}
+
+async function recreatePool(reason = "unknown") {
+  if (_recreating) return;
+  _recreating = true;
+
+  try {
+    const old = _pool;
+    _pool = createPool();
+
+    console.log("🔁 Pool PostgreSQL recriado:", {
+      reason,
+      poolMax: PG_POOL_MAX,
+      ssl: Boolean(useSSL),
+      keepAlive: PG_KEEPALIVE,
+    });
+
+    // encerra o pool antigo sem derrubar a aplicação
+    if (old) {
+      try {
+        await old.end();
+      } catch {
+        // ignore
+      }
+    }
+
+    // opcional: testa a nova conexão
+    await testConnection(_pool);
+  } finally {
+    _recreating = false;
+  }
+}
+
+function getPool() {
+  if (_pool) return _pool;
+  _pool = createPool();
+  return _pool;
+}
 
 // ✅ teste de conexão (roda ao iniciar)
-async function testConnection() {
+async function testConnection(poolInstance = getPool()) {
   if (!DATABASE_URL) return;
 
   try {
-    const client = await pool.connect();
+    const client = await poolInstance.connect();
     const { rows } = await client.query("select now() as now, current_user as user");
     console.log("🐘 PostgreSQL conectado com sucesso!", rows[0], {
       poolMax: PG_POOL_MAX,
       ssl: Boolean(useSSL),
+      keepAlive: PG_KEEPALIVE,
     });
     client.release();
   } catch (err) {
-    console.error("❌ Falha ao conectar no PostgreSQL:", err.message);
+    console.error("❌ Falha ao conectar no PostgreSQL:", err?.message || err);
     console.error("ℹ️ SSL ligado?", useSSL);
     console.error("ℹ️ pool max:", PG_POOL_MAX);
+    console.error("ℹ️ keepAlive:", PG_KEEPALIVE);
+
+    // tenta recriar ao falhar logo no boot
+    await recreatePool("boot_test_failed");
   }
 }
 
 testConnection();
 
-module.exports = pool;
+// ✅ exporta o pool diretamente (mantém compatibilidade com `pool.query(...)`)
+module.exports = getPool();

@@ -14,14 +14,16 @@ const {
   deleteReservationController,
   createAdminController,
   setUserRoleController,
-  listAuditLogsController, // 
+  listAuditLogsController,
 } = require("../controllers/adminController");
 
+const { listAllReviews, hideReview, unhideReview } = require("../controllers/adminReviewController");
+
+// ✅ NOVO: Denúncias (Reports)
 const {
-  listAllReviews,
-  hideReview,
-  unhideReview,
-} = require("../controllers/adminReviewController");
+  listReportsController,
+  updateReportStatusController,
+} = require("../controllers/adminReportController");
 
 // 🔒 Todas as rotas de admin exigem autenticação + role=admin*
 router.use(authMiddleware, adminMiddleware);
@@ -45,11 +47,7 @@ router.delete("/users/:id", adminMasterMiddleware, deleteUserController);
 
 router.get("/reservations", listReservationsController);
 
-router.delete(
-  "/reservations/:id",
-  adminMasterMiddleware,
-  deleteReservationController
-);
+router.delete("/reservations/:id", adminMasterMiddleware, deleteReservationController);
 
 /* ===================== Avaliações ===================== */
 
@@ -58,6 +56,15 @@ router.get("/reviews", listAllReviews);
 router.patch("/reviews/:id/hide", hideReview);
 
 router.patch("/reviews/:id/unhide", unhideReview);
+
+/* ===================== Denúncias (Reports) ===================== */
+
+// lista denúncias (admin)
+// filtros opcionais: ?status=open | reviewing | resolved | dismissed
+router.get("/reports", listReportsController);
+
+// atualiza status (admin)
+router.patch("/reports/:id/status", updateReportStatusController);
 
 /* ===================== Audit Logs ===================== */
 

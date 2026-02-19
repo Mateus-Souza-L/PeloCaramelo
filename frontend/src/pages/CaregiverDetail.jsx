@@ -225,6 +225,38 @@ export default function CaregiverDetail() {
   // ✅ opcional: feedback de capacidade (quando 409 CAPACITY_FULL)
   const [capacityInfo, setCapacityInfo] = useState(null);
 
+  // ✅ Denúncia (report)
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportReason, setReportReason] = useState("");
+  const [reportDetails, setReportDetails] = useState("");
+  const [reportSending, setReportSending] = useState(false);
+
+  const canReport = useMemo(() => {
+    // precisa estar logado (tutor ou caregiver), mas não pode denunciar a si mesmo
+    if (!user?.id) return false;
+    if (String(user.id) === String(id)) return false;
+    return true;
+  }, [user?.id, id]);
+
+  const openReport = () => {
+    if (!user?.id) {
+      showToast("Faça login para denunciar um perfil.", "error");
+      navigate("/login");
+      return;
+    }
+    setReportReason("");
+    setReportDetails("");
+    setReportOpen(true);
+
+    // ✅ analytics
+    trackEvent("open_report_user", {
+      reported_user_id: String(id),
+      reporter_role: user?.role || null,
+    });
+  };
+
+  const closeReport = () => setReportOpen(false);
+
   // ✅ animação suave para itens recém inseridos
   const [revealedIds, setRevealedIds] = useState(() => new Set());
   const revealTimerRef = useRef(null);
@@ -976,13 +1008,24 @@ export default function CaregiverDetail() {
     loadInitial();
 
     return () => {
-      cancelled = false;
+      cancelled = true; // ✅ correto
       if (revealTimerRef.current) {
         clearTimeout(revealTimerRef.current);
         revealTimerRef.current = null;
       }
     };
   }, [id, token]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!galleryOpen) return;
+    if (!galleryPhotos.length) return;
+
+    setActivePhotoIndex((prev) => {
+      if (prev < 0) return 0;
+      if (prev >= galleryPhotos.length) return galleryPhotos.length - 1;
+      return prev;
+    });
+  }, [galleryOpen, galleryPhotos.length]);
 
   const handleLoadMoreReviews = async () => {
     if (reviewsLoadingMore || reviewsLoading) return;
@@ -1679,6 +1722,64 @@ export default function CaregiverDetail() {
     }
   };
 
+  const submitReport = async () => {
+    if (reportSending) return;
+
+    if (!user?.id || !token) {
+      showToast("Sessão expirada. Faça login novamente.", "error");
+      navigate("/login");
+      return;
+    }
+
+    const reason = String(reportReason || "").trim();
+    const details = String(reportDetails || "").trim();
+
+    if (!reason) {
+      showToast("Selecione o motivo da denúncia.", "error");
+      return;
+    }
+    if (details.length < 10) {
+      showToast("Descreva melhor o ocorrido (mínimo 10 caracteres).", "error");
+      return;
+    }
+
+    try {
+      setReportSending(true);
+
+      await authRequest("/reports", token, {
+        method: "POST",
+        body: {
+          reportedUserId: String(id),
+          reported_user_id: String(id),
+          reason,
+          details,
+
+          // ✅ contexto útil pro admin (não é ação automática!)
+          context: {
+            page: "caregiver_detail",
+            caregiverName: caregiver?.name || null,
+            createdAt: new Date().toISOString(),
+          },
+        },
+      });
+
+      // ✅ analytics
+      trackEvent("submit_report_user", {
+        reported_user_id: String(id),
+        reason,
+        reporter_role: user?.role || null,
+      });
+
+      showToast("Denúncia enviada. Obrigado por ajudar a manter a plataforma segura.", "success");
+      setReportOpen(false);
+    } catch (err) {
+      console.error("Erro ao enviar denúncia:", err);
+      showToast(err?.message || "Não foi possível enviar a denúncia. Tente novamente.", "error");
+    } finally {
+      setReportSending(false);
+    }
+  };
+
   const openMaps = () => {
     const q = encodeURIComponent([caregiver?.neighborhood, caregiver?.city].filter(Boolean).join(", "));
     window.open(`https://www.google.com/maps/search/?api=1&query=${q}`, "_blank");
@@ -2006,26 +2107,43 @@ export default function CaregiverDetail() {
                 {/* bolinhas (mobile-first) */}
                 {galleryPhotos.length > 1 && (
                   <div className="absolute bottom-2 left-0 right-0 flex items-center justify-center gap-1.5 px-3">
-                    {galleryPhotos.slice(0, 10).map((p, i) => {
-                      const idx = i; // aqui é 0..9 (só preview)
-                      const isActive = idx === activePhotoIndex;
+                    {(() => {
+                      const max = 10;
+                      const total = galleryPhotos.length;
+                      const current = Math.max(0, activePhotoIndex);
+                      const half = Math.floor(max / 2);
+
+                      let start = Math.max(0, current - half);
+                      let end = Math.min(total, start + max);
+                      start = Math.max(0, end - max);
+
+                      const windowPhotos = galleryPhotos.slice(start, end);
+
                       return (
-                        <button
-                          key={p.id}
-                          type="button"
-                          onClick={() => setActivePhotoIndex(idx)}
-                          className={`w-2 h-2 rounded-full transition ${isActive ? "bg-[#FFD700]" : "bg-white/70 hover:bg-white"
-                            }`}
-                          aria-label={`Ir para foto ${idx + 1}`}
-                          title={`Foto ${idx + 1}`}
-                        />
+                        <>
+                          {start > 0 && <span className="text-[11px] text-white/80 mr-1">…</span>}
+
+                          {windowPhotos.map((p, i) => {
+                            const idxGlobal = start + i;
+                            const isActive = idxGlobal === activePhotoIndex;
+
+                            return (
+                              <button
+                                key={p.id}
+                                type="button"
+                                onClick={() => setActivePhotoIndex(idxGlobal)}
+                                className={`w-2 h-2 rounded-full transition ${isActive ? "bg-[#FFD700]" : "bg-white/70 hover:bg-white"
+                                  }`}
+                                aria-label={`Ir para foto ${idxGlobal + 1}`}
+                                title={`Foto ${idxGlobal + 1}`}
+                              />
+                            );
+                          })}
+
+                          {end < total && <span className="text-[11px] text-white/80 ml-1">…</span>}
+                        </>
                       );
-                    })}
-                    {galleryPhotos.length > 10 && (
-                      <span className="text-[11px] text-white/80 ml-1">
-                        +{galleryPhotos.length - 10}
-                      </span>
-                    )}
+                    })()}
                   </div>
                 )}
               </div>
@@ -2340,6 +2458,17 @@ export default function CaregiverDetail() {
           >
             Ver no mapa
           </button>
+
+          {canReport && (
+            <button
+              type="button"
+              onClick={openReport}
+              className="bg-white hover:bg-[#FFF8F0] text-[#95301F] px-4 py-2 rounded-lg font-semibold shadow-md transition border border-[#95301F]/30"
+              title="Denunciar este perfil para revisão do admin"
+            >
+              Denunciar usuário
+            </button>
+          )}
         </div>
 
         <p className="text-xs text-[#5A3A22] opacity-80 mb-8">
@@ -2460,6 +2589,96 @@ export default function CaregiverDetail() {
             </>
           )}
         </section>
+        {reportOpen && (
+          <div
+            className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
+            onClick={closeReport}
+            role="dialog"
+            aria-modal="true"
+          >
+            <div
+              className="w-full max-w-xl bg-white rounded-2xl shadow-xl overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-5 py-4 border-b flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className="text-lg font-bold text-[#5A3A22]">Denunciar perfil</h3>
+                  <p className="text-xs text-[#5A3A22]/70 mt-1">
+                    Sua denúncia será analisada pela equipe antes de qualquer medida.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={closeReport}
+                  className="text-[#5A3A22] font-bold px-2 py-1 rounded hover:bg-gray-100"
+                  aria-label="Fechar"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="px-5 py-4 space-y-3">
+                <div className="text-sm text-[#5A3A22]">
+                  Perfil: <b>{caregiver?.name || "Usuário"}</b>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-[#5A3A22] mb-1">
+                    Motivo
+                  </label>
+                  <select
+                    value={reportReason}
+                    onChange={(e) => setReportReason(e.target.value)}
+                    className="w-full border rounded-lg px-3 py-2 bg-white text-sm"
+                  >
+                    <option value="">Selecione…</option>
+                    <option value="conteudo_inadequado">Conteúdo inadequado</option>
+                    <option value="comportamento_suspeito">Comportamento suspeito</option>
+                    <option value="fraude_golpe">Fraude / golpe</option>
+                    <option value="maus_tratos">Maus-tratos</option>
+                    <option value="outro">Outro</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-[#5A3A22] mb-1">
+                    Descreva o ocorrido
+                  </label>
+                  <textarea
+                    value={reportDetails}
+                    onChange={(e) => setReportDetails(e.target.value)}
+                    rows={5}
+                    className="w-full border rounded-lg px-3 py-2 text-sm"
+                    placeholder="Ex: Vi fotos que parecem de outra pessoa, conversa suspeita, etc..."
+                  />
+                  <p className="text-[11px] text-[#5A3A22]/70 mt-1">
+                    Mínimo recomendado: 10 caracteres. Evite dados sensíveis (CPF, cartão, etc.).
+                  </p>
+                </div>
+              </div>
+
+              <div className="px-5 py-4 border-t flex items-center justify-end gap-2 bg-[#FFF8F0]">
+                <button
+                  type="button"
+                  onClick={closeReport}
+                  className="px-4 py-2 rounded-lg font-semibold border bg-white text-[#5A3A22] hover:bg-gray-50"
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  type="button"
+                  onClick={submitReport}
+                  disabled={reportSending}
+                  className="px-4 py-2 rounded-lg font-semibold text-white bg-[#95301F] hover:opacity-95 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {reportSending ? "Enviando..." : "Enviar denúncia"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
