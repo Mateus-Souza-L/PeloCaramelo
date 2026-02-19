@@ -45,7 +45,7 @@ function baseTemplate({
     cta?.label && cta?.url
       ? `
         <tr>
-          <td style="padding: 26px 28px 0 28px;">
+          <td style="padding: 30px 36px 0 36px;">
             <a
               href="${String(cta.url)}"
               target="_blank"
@@ -56,7 +56,7 @@ function baseTemplate({
                 color:#5A3A22;
                 text-decoration:none;
                 font-weight:700;
-                padding:14px 20px;
+                padding:14px 22px;
                 border-radius:14px;
                 font-size:14px;
               "
@@ -71,7 +71,7 @@ function baseTemplate({
   const footerNoteHtml = footerNote
     ? `
       <tr>
-        <td style="padding: 18px 28px 0 28px; color:#6b7280; font-size:12px; line-height:18px;">
+        <td style="padding: 20px 36px 0 36px; color:#6b7280; font-size:12px; line-height:18px;">
           ${escapeHtml(footerNote)}
         </td>
       </tr>
@@ -91,33 +91,36 @@ function baseTemplate({
 <body style="margin:0;padding:0;background:#EBCBA9;">
   ${preheaderHtml}
 
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#EBCBA9;padding:40px 0;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#EBCBA9;padding:60px 0;">
     <tr>
       <td align="center">
 
-        <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;">
+        <table role="presentation" width="640" cellpadding="0" cellspacing="0" style="width:640px;max-width:640px;">
 
           <!-- CARD -->
           <tr>
-            <td style="padding:0 16px;">
+            <td style="padding:0 20px;">
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
-                style="background:#ffffff;border-radius:20px;overflow:hidden;box-shadow:0 18px 40px rgba(0,0,0,0.08);">
+                style="background:#ffffff;border-radius:22px;overflow:hidden;box-shadow:0 25px 60px rgba(0,0,0,0.12);">
 
-                <!-- TOP HEADER -->
+                <!-- HEADER PREMIUM -->
                 <tr>
-                  <td style="background:#5A3A22;padding:26px 28px;">
+                  <td style="
+                    background:linear-gradient(90deg,#5A3A22 0%,#4A2E1C 100%);
+                    padding:34px 36px;
+                  ">
                     ${
                       LOGO_URL
                         ? `
                       <img
                         src="${LOGO_URL}"
                         alt="${logoAlt}"
-                        width="170"
-                        style="display:block;border:0;height:auto;max-width:170px;"
+                        width="190"
+                        style="display:block;border:0;height:auto;max-width:190px;"
                       />
                     `
                         : `
-                      <div style="color:#FFD700;font-weight:800;font-size:18px;">
+                      <div style="color:#FFD700;font-weight:800;font-size:20px;">
                         ${escapeHtml(brandName)}
                       </div>
                     `
@@ -125,10 +128,15 @@ function baseTemplate({
                   </td>
                 </tr>
 
+                <!-- GOLD DIVIDER -->
+                <tr>
+                  <td style="height:4px;background:#FFD700;"></td>
+                </tr>
+
                 <!-- TITLE -->
                 <tr>
-                  <td style="padding:32px 28px 0 28px;font-family:Arial,sans-serif;">
-                    <div style="font-size:22px;line-height:28px;font-weight:800;color:#5A3A22;">
+                  <td style="padding:40px 36px 0 36px;font-family:Arial,sans-serif;">
+                    <div style="font-size:24px;line-height:30px;font-weight:800;color:#5A3A22;">
                       ${safeTitle}
                     </div>
                   </td>
@@ -136,8 +144,8 @@ function baseTemplate({
 
                 <!-- BODY -->
                 <tr>
-                  <td style="padding:18px 28px 0 28px;font-family:Arial,sans-serif;color:#2b2b2b;">
-                    <div style="font-size:15px;line-height:24px;">
+                  <td style="padding:22px 36px 0 36px;font-family:Arial,sans-serif;color:#2c2c2c;">
+                    <div style="font-size:16px;line-height:26px;">
                       ${bodyHtml || ""}
                     </div>
                   </td>
@@ -148,18 +156,18 @@ function baseTemplate({
 
                 <!-- DIVIDER -->
                 <tr>
-                  <td style="padding:30px 28px 0 28px;">
+                  <td style="padding:40px 36px 0 36px;">
                     <div style="height:1px;background:#e5e7eb;"></div>
                   </td>
                 </tr>
 
                 <!-- FOOTER -->
                 <tr>
-                  <td style="padding:18px 28px 28px 28px;font-family:Arial,sans-serif;color:#6b7280;">
+                  <td style="padding:22px 36px 36px 36px;font-family:Arial,sans-serif;color:#6b7280;">
                     <div style="font-size:12px;line-height:18px;">
                       Este e-mail é automático. Se você não solicitou isso, pode ignorar com segurança.
                     </div>
-                    <div style="font-size:12px;line-height:18px;margin-top:6px;">
+                    <div style="font-size:12px;line-height:18px;margin-top:8px;">
                       © ${new Date().getFullYear()} ${escapeHtml(brandName)}
                     </div>
                   </td>
@@ -171,7 +179,7 @@ function baseTemplate({
 
           <!-- SMALL PRINT -->
           <tr>
-            <td align="center" style="padding:18px 16px 0 16px;font-family:Arial,sans-serif;color:#9ca3af;font-size:12px;">
+            <td align="center" style="padding:24px 16px 0 16px;font-family:Arial,sans-serif;color:#9ca3af;font-size:12px;">
               Dica: adicione este remetente aos seus contatos para garantir a entrega.
             </td>
           </tr>
