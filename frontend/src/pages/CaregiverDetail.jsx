@@ -2450,11 +2450,11 @@ export default function CaregiverDetail() {
         </section>
 
         {/* Ações secundárias */}
-        <div className="flex flex-wrap gap-2 mb-2">
+        <div className="flex flex-nowrap sm:flex-wrap gap-2 mb-2">
           <button
             type="button"
             onClick={openMaps}
-            className="bg-gray-200 hover:bg-gray-300 text-[#5A3A22] px-4 py-2 rounded-lg font-semibold shadow-md transition"
+            className="flex-1 sm:flex-none bg-gray-200 hover:bg-gray-300 text-[#5A3A22] px-4 py-2 rounded-lg font-semibold shadow-md transition"
           >
             Ver no mapa
           </button>
@@ -2463,14 +2463,13 @@ export default function CaregiverDetail() {
             <button
               type="button"
               onClick={openReport}
-              className="bg-white hover:bg-[#FFF8F0] text-[#95301F] px-4 py-2 rounded-lg font-semibold shadow-md transition border border-[#95301F]/30"
+              className="flex-1 sm:flex-none bg-white hover:bg-[#FFF8F0] text-[#95301F] px-4 py-2 rounded-lg font-semibold shadow-md transition border border-[#95301F]/30"
               title="Denunciar este perfil para revisão do admin"
             >
               Denunciar usuário
             </button>
           )}
         </div>
-
         <p className="text-xs text-[#5A3A22] opacity-80 mb-8">
           O chat interno fica disponível nos <b>detalhes da reserva</b> assim que ela for <b>Aceita</b> e
           permanece liberado por até <b>24 horas após o término</b>. Depois disso, para iniciar uma nova
