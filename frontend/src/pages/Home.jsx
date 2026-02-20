@@ -101,9 +101,10 @@ export default function Home() {
             relative w-full
             h-[calc(100svh-56px)]
             sm:h-[calc(100svh-72px)]
+            [@media(max-width:639px)_and_(orientation:landscape)]:h-auto
           "
           style={{
-            // ✅ MOBILE: fica com cara 9x16 (alto o suficiente) sem mexer no web
+            // ✅ MOBILE: 9x16 sem mexer no web
             minHeight: isMobile ? "calc(100svh - 56px)" : "640px",
             maxHeight: isMobile ? "unset" : "760px",
             backgroundImage: `url('${heroBg}')`,
@@ -167,6 +168,8 @@ export default function Home() {
                   absolute
                   inset-x-4 sm:inset-x-6
                   bottom-5 sm:bottom-3
+                  [@media(max-width:639px)_and_(orientation:landscape)]:static
+                  [@media(max-width:639px)_and_(orientation:landscape)]:mt-6
                 "
               >
                 {/* Texto (web) mantém como estava */}
