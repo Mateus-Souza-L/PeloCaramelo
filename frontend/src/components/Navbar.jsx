@@ -1,7 +1,7 @@
 // frontend/src/components/Navbar.jsx
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
-import { Bell, Menu, X, ChevronDown } from "lucide-react";
+import { Bell, Menu, X, ChevronDown, Instagram } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { authRequest } from "../services/api";
 import {
@@ -538,6 +538,8 @@ export default function Navbar() {
 
   const navigate = useNavigate();
   const location = useLocation();
+
+  const INSTAGRAM_URL = "https://www.instagram.com/pelo_caramelo/";
 
   // ============================================================
   // session helpers (usar o mesmo STORAGE_KEY do AuthContext)
@@ -1250,8 +1252,25 @@ export default function Navbar() {
     </div>
   );
 
+  // ✅ botão Instagram (mesmo estilo do sininho) — vai ao lado do sininho no desktop e no mobile
+  const InstagramButton = (
+    <a
+      href={INSTAGRAM_URL}
+      target="_blank"
+      rel="noreferrer"
+      className="relative w-9 h-9 rounded-full bg-[#D2A679] text-[#5A3A22] flex items-center justify-center hover:brightness-95 transition"
+      title="Instagram da PeloCaramelo"
+      aria-label="Abrir Instagram da PeloCaramelo"
+    >
+      <Instagram className="w-5 h-5" />
+    </a>
+  );
+
   const desktopAuth = (
     <div className="hidden md:flex gap-3 items-center">
+      {/* Instagram ao lado do sininho (desktop) */}
+      {InstagramButton}
+
       {user && (
         <button
           onClick={handleBellClick}
@@ -1292,9 +1311,26 @@ export default function Navbar() {
     </div>
   );
 
-  // ✅ MOBILE MENU (somente mobile): sininho ao lado do sanduíche + remove item "Notificações" do dropdown
+  // ✅ MOBILE MENU (somente mobile): Instagram ao lado do sininho + sanduíche
   const MobileMenu = (
     <div className="md:hidden flex items-center gap-2">
+      {/* Instagram ao lado do sininho (mobile) */}
+      <a
+        href={INSTAGRAM_URL}
+        target="_blank"
+        rel="noreferrer"
+        className="relative w-10 h-10 rounded-lg bg-[#D2A679] text-[#5A3A22] flex items-center justify-center hover:brightness-95 transition"
+        title="Instagram da PeloCaramelo"
+        aria-label="Abrir Instagram da PeloCaramelo"
+        onClick={() => {
+          // se o menu estiver aberto, pode fechar pra ficar “limpo” ao voltar
+          closeMobile();
+          setPanelOpen(false);
+        }}
+      >
+        <Instagram className="w-5 h-5" />
+      </a>
+
       {user && canUseBell && (
         <button
           onClick={handleBellClick}
