@@ -1078,7 +1078,7 @@ export default function Navbar() {
 
       try {
         await refreshMe?.(token, { preferCaregiver: true });
-      } catch {}
+      } catch { }
 
       setCreateCareOpen(false);
 
@@ -1092,7 +1092,7 @@ export default function Navbar() {
         emitRoleChanged("caregiver");
         try {
           await refreshMe?.(token, { preferCaregiver: true });
-        } catch {}
+        } catch { }
         setCreateCareOpen(false);
         navigateDashboardAfterMode("caregiver");
       } catch (e2) {
@@ -1315,12 +1315,14 @@ export default function Navbar() {
     <div className="md:hidden flex items-center gap-2">
       <a
         href={INSTAGRAM_WEB_URL}
-        target="_blank"
-        rel="noreferrer"
-        onClick={() => {
+        onClick={(e) => {
+          e.preventDefault(); // evita abrir nova aba / popup e reduz interceptação no Chrome
           closeMobile();
           setPanelOpen(false);
           maybeShowInstagramMobileHint();
+
+          // abre na mesma aba (melhor chance de ficar no navegador)
+          window.location.href = INSTAGRAM_WEB_URL;
         }}
         className="relative w-10 h-10 rounded-lg bg-[#D2A679] text-[#5A3A22] flex items-center justify-center hover:brightness-95 transition"
         title="Instagram da PeloCaramelo"
@@ -1328,7 +1330,6 @@ export default function Navbar() {
       >
         <Instagram className="w-5 h-5" />
       </a>
-
       {user && canUseBell && (
         <button
           onClick={handleBellClick}
@@ -1420,8 +1421,8 @@ export default function Navbar() {
                       ? "Cuidador"
                       : "Ser cuidador"
                     : hasTutorProfile
-                    ? "Tutor"
-                    : "Ser tutor"}
+                      ? "Tutor"
+                      : "Ser tutor"}
                 </button>
 
                 <button
