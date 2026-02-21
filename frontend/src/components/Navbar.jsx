@@ -538,48 +538,9 @@ export default function Navbar() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // ✅ Somente link web (sem deep link) — se o Android abrir o app, é configuração do aparelho
   const INSTAGRAM_USERNAME = "pelo_caramelo";
   const INSTAGRAM_WEB_URL = `https://www.instagram.com/${INSTAGRAM_USERNAME}/`;
-
-  // Universal link do Instagram: abre no app (quando possível) já no perfil
-  const INSTAGRAM_UNIVERSAL_URL = `https://www.instagram.com/_u/${INSTAGRAM_USERNAME}/`;
-
-  // Android Intent: geralmente o mais confiável para abrir o app no perfil
-  const INSTAGRAM_ANDROID_INTENT = `intent://instagram.com/_u/${INSTAGRAM_USERNAME}/#Intent;package=com.instagram.android;scheme=https;end`;
-
-  // ============================================================
-  // Deep link (mobile) com fallback — resolve abrir no app e ir pro perfil certo
-  // ============================================================
-  const openInstagramProfile = useCallback(() => {
-    const ua = (navigator?.userAgent || "").toLowerCase();
-    const isAndroid = ua.includes("android");
-    const isIOS = /iphone|ipad|ipod/.test(ua);
-
-    // alvo principal (tenta abrir app no perfil)
-    const primary = isAndroid ? INSTAGRAM_ANDROID_INTENT : INSTAGRAM_UNIVERSAL_URL;
-
-    // fallback (web normal) — SEM popup (mesma aba)
-    const fallback = INSTAGRAM_WEB_URL;
-
-    // tenta abrir app
-    try {
-      window.location.assign(primary);
-    } catch {
-      // ignore
-    }
-
-    // fallback: se o app não abrir / deep link falhar, cai no web
-    // (tempo um pouco maior ajuda no iOS)
-    const waitMs = isIOS ? 1400 : 900;
-
-    setTimeout(() => {
-      try {
-        window.location.assign(fallback);
-      } catch {
-        window.location.href = fallback;
-      }
-    }, waitMs);
-  }, [INSTAGRAM_ANDROID_INTENT, INSTAGRAM_UNIVERSAL_URL, INSTAGRAM_WEB_URL]);
 
   // ============================================================
   // session helpers (usar o mesmo STORAGE_KEY do AuthContext)
@@ -666,11 +627,10 @@ export default function Navbar() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, role]);
 
-  // ✅ FIX EXTRA (resolve seu print): se role é caregiver, garante modo caregiver
+  // ✅ FIX EXTRA: se role é caregiver, garante modo caregiver
   useEffect(() => {
     if (!user || isAdminLike) return;
 
-    // Se backend diz caregiver, não faz sentido a Navbar ficar em tutor
     if (role === "caregiver" && activeMode !== "caregiver") {
       setMode?.("caregiver");
       emitRoleChanged("caregiver");
@@ -735,7 +695,6 @@ export default function Navbar() {
   const openLogoutConfirm = () => {
     setLogoutConfirmOpen(true);
     setPanelOpen(false);
-    // não fecha o mobile menu automaticamente — deixa o modal por cima
   };
 
   const navigateDashboardAfterMode = useCallback(
@@ -1108,7 +1067,7 @@ export default function Navbar() {
 
       try {
         await refreshMe?.(token, { preferCaregiver: true });
-      } catch { }
+      } catch {}
 
       setCreateCareOpen(false);
 
@@ -1122,7 +1081,7 @@ export default function Navbar() {
         emitRoleChanged("caregiver");
         try {
           await refreshMe?.(token, { preferCaregiver: true });
-        } catch { }
+        } catch {}
         setCreateCareOpen(false);
         navigateDashboardAfterMode("caregiver");
       } catch (e2) {
@@ -1169,10 +1128,8 @@ export default function Navbar() {
   const otherActionLabel = useMemo(() => {
     if (isAdminLike) return null;
 
-    // Se estou em Tutor, alterno para Cuidador (ou "Ser cuidador")
     if (isTutor) return hasCaregiverProfile ? "Cuidador" : "Ser cuidador";
 
-    // Se estou em Cuidador, alterno para Tutor (ou "Ser tutor")
     if (isCaregiver) return hasTutorProfile ? "Tutor" : "Ser tutor";
 
     return null;
@@ -1292,7 +1249,7 @@ export default function Navbar() {
     </div>
   );
 
-  // ✅ botão Instagram (desktop: link normal funciona melhor)
+  // ✅ botão Instagram (desktop: link web)
   const InstagramButtonDesktop = (
     <a
       href={INSTAGRAM_WEB_URL}
@@ -1351,16 +1308,16 @@ export default function Navbar() {
     </div>
   );
 
-  // ✅ MOBILE MENU: Instagram ao lado do sininho (usa deep link + fallback)
+  // ✅ MOBILE MENU: Instagram ao lado do sininho (somente link web)
   const MobileMenu = (
     <div className="md:hidden flex items-center gap-2">
       <a
-        href={INSTAGRAM_UNIVERSAL_URL}
-        onClick={(e) => {
-          e.preventDefault();
+        href={INSTAGRAM_WEB_URL}
+        target="_blank"
+        rel="noreferrer"
+        onClick={() => {
           closeMobile();
           setPanelOpen(false);
-          openInstagramProfile();
         }}
         className="relative w-10 h-10 rounded-lg bg-[#D2A679] text-[#5A3A22] flex items-center justify-center hover:brightness-95 transition"
         title="Instagram da PeloCaramelo"
@@ -1368,6 +1325,7 @@ export default function Navbar() {
       >
         <Instagram className="w-5 h-5" />
       </a>
+
       {user && canUseBell && (
         <button
           onClick={handleBellClick}
@@ -1459,8 +1417,8 @@ export default function Navbar() {
                       ? "Cuidador"
                       : "Ser cuidador"
                     : hasTutorProfile
-                      ? "Tutor"
-                      : "Ser tutor"}
+                    ? "Tutor"
+                    : "Ser tutor"}
                 </button>
 
                 <button
