@@ -3,19 +3,20 @@ const express = require("express");
 const authMiddleware = require("../middleware/authMiddleware");
 
 const {
-  // perfil
+  // 👤 Perfil
   getMeController,
   updateMeController,
+  changeMyPasswordController, // ✅ troca de senha
 
-  // disponibilidade
+  // 📅 Disponibilidade
   getMyAvailabilityController,
   updateMyAvailabilityController,
 
-  // ✅ capacidade do cuidador
+  // 🧮 Capacidade do cuidador
   getMyDailyCapacityController,
   updateMyDailyCapacityController,
 
-  // admin
+  // 🛠️ Admin
   adminListUsersController,
   adminBlockUserController,
 } = require("../controllers/userController");
@@ -33,6 +34,9 @@ router.use(authMiddleware);
 router.get("/me", getMeController);
 router.patch("/me", updateMeController);
 
+// 🔐 Trocar senha (logado)
+router.put("/me/password", changeMyPasswordController);
+
 // ===========================================================
 // 📅 Disponibilidade do cuidador
 // ===========================================================
@@ -42,9 +46,6 @@ router.patch("/me/availability", updateMyAvailabilityController);
 // ===========================================================
 // 🧮 Capacidade diária do cuidador
 // ===========================================================
-// GET  -> retorna capacidade atual
-// PUT  -> define capacidade (1–100)
-// PATCH-> alias do PUT (frontend pode usar qualquer um)
 router.get("/me/capacity", getMyDailyCapacityController);
 router.put("/me/capacity", updateMyDailyCapacityController);
 router.patch("/me/capacity", updateMyDailyCapacityController);

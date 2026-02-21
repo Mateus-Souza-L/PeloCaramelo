@@ -1,5 +1,6 @@
 // backend/src/controllers/userController.js
 const pool = require("../config/db");
+const bcrypt = require("bcryptjs"); // ✅ NOVO
 
 const {
   findUserById,
@@ -330,17 +331,14 @@ async function updateMeController(req, res) {
         updates.image = up.publicUrl;
 
         // ✅ salva também no caregivers.photo_url (para busca ficar rápida e padronizada)
-        // (não quebra se o user não for cuidador — só cria o registro em caregivers)
         try {
           await upsertCaregiverPhotoUrl(userId, up.publicUrl);
         } catch (e) {
-          // não falha a requisição por isso; mas loga
           console.error("Falha ao salvar caregivers.photo_url:", e?.message || e);
         }
       } else {
         // se já vier URL
         updates.image = String(incoming).trim();
-        // opcional: manter sincronizado
         try {
           await upsertCaregiverPhotoUrl(userId, updates.image);
         } catch {
@@ -425,6 +423,62 @@ async function updateMeController(req, res) {
   } catch (err) {
     console.error("Erro em PATCH /users/me:", err);
     return res.status(500).json({ error: "Erro ao atualizar perfil." });
+  }
+}
+
+// -----------------------------------------------------------------------------
+// ✅ PUT /users/me/password
+// Trocar senha logado (perfil)
+// Body: { currentPassword, newPassword }
+// -----------------------------------------------------------------------------
+async function changeMyPasswordController(req, res) {
+  try {
+    const userId = getAuthenticatedUserId(req, res);
+    if (!userId) return;
+
+    const currentPassword = String(req.body?.currentPassword || "");
+    const newPassword = String(req.body?.newPassword || "");
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: "Informe currentPassword e newPassword." });
+    }
+
+    if (newPassword.length < 8) {
+      return res.status(400).json({ error: "A nova senha deve ter no mínimo 8 caracteres." });
+    }
+
+    // ✅ seu schema usa password_hash (não existe users.password)
+    const { rows } = await pool.query(
+      `
+      SELECT id, password_hash
+      FROM users
+      WHERE id = $1
+      LIMIT 1
+      `,
+      [Number(userId)]
+    );
+
+    const user = rows?.[0];
+    if (!user) return res.status(404).json({ error: "Usuário não encontrado." });
+
+    const hash = String(user.password_hash || "");
+    if (!hash) return res.status(400).json({ error: "Usuário sem senha cadastrada." });
+
+    const ok = await bcrypt.compare(currentPassword, hash);
+    if (!ok) return res.status(401).json({ error: "Senha atual incorreta." });
+
+    const saltRounds = Number(process.env.BCRYPT_SALT_ROUNDS || 10);
+    const newHash = await bcrypt.hash(newPassword, saltRounds);
+
+    await pool.query(
+      `UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2`,
+      [newHash, Number(userId)]
+    );
+
+    return res.json({ ok: true, message: "Senha atualizada com sucesso." });
+  } catch (err) {
+    console.error("Erro em PUT /users/me/password:", err);
+    return res.status(500).json({ error: "Erro ao trocar senha." });
   }
 }
 
@@ -588,6 +642,10 @@ async function adminBlockUserController(req, res) {
 module.exports = {
   getMeController,
   updateMeController,
+
+  // ✅ NOVO
+  changeMyPasswordController,
+
   getMyAvailabilityController,
   updateMyAvailabilityController,
   getMyDailyCapacityController,

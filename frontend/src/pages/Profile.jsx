@@ -101,6 +101,7 @@ const buildFormFromUser = (user) => {
       cep: "",
       bio: "",
       image: "",
+      currentPassword: "", // ✅ NOVO
       newPassword: "",
       services: { ...EMPTY_SERVICES },
       prices: { ...EMPTY_PRICES },
@@ -133,6 +134,7 @@ const buildFormFromUser = (user) => {
     cep: user.cep ?? "",
     bio: user.bio ?? "",
     image: user.image ?? "",
+    currentPassword: "", // ✅ NOVO
     newPassword: "",
     services: { ...EMPTY_SERVICES, ...safeServices },
     prices: { ...EMPTY_PRICES, ...safePrices },
@@ -732,8 +734,8 @@ export default function Profile() {
           err?.code === "GIF_TOO_LARGE"
             ? `"${file.name}" é um GIF grande demais.`
             : err?.code === "CANNOT_COMPRESS"
-              ? `"${file.name}" é grande demais. Tente uma imagem um pouco menor.`
-              : `"${file.name}" não pôde ser processada.`;
+            ? `"${file.name}" é grande demais. Tente uma imagem um pouco menor.`
+            : `"${file.name}" não pôde ser processada.`;
 
         showToast(msg, "error");
         console.warn("[Profile] falha ao processar imagem:", file?.name, err);
@@ -855,7 +857,13 @@ export default function Profile() {
       }
 
       // sempre ignora email (nunca muda)
-      const { newPassword, newCourse, email: _ignoredEmail, ...restForm } = form;
+      const {
+        currentPassword, // ✅ ignora no PATCH /users/me
+        newPassword,
+        newCourse,
+        email: _ignoredEmail,
+        ...restForm
+      } = form;
 
       // Se temos backend (token) → envia PATCH /users/me
       if (token) {
@@ -972,6 +980,10 @@ export default function Profile() {
         setShowPasswordChange(false);
         setShowConfirmModal(false);
         setPasswordConfirm("");
+
+        // ✅ limpa campos de senha no form (não muda nada do perfil)
+        setForm((f) => ({ ...f, currentPassword: "", newPassword: "" }));
+
         return;
       }
 
@@ -1026,6 +1038,7 @@ export default function Profile() {
     if (!user) return;
     setEditing(false);
     setShowPasswordChange(false);
+    setForm((f) => ({ ...f, currentPassword: "", newPassword: "" })); // ✅ limpa
     setForm(buildFormFromUser(user));
   };
 
@@ -1059,7 +1072,10 @@ export default function Profile() {
         {lightboxOpen && lightboxPhoto ? (
           <div
             className="fixed inset-0 z-[60] bg-black/70 flex items-center justify-center p-4"
-            onClick={closeLightbox}
+            onClick={() => {
+              setLightboxOpen(false);
+              setLightboxPhoto(null);
+            }}
           >
             <div
               className="bg-white w-full max-w-5xl rounded-2xl shadow-lg overflow-hidden"
@@ -1072,14 +1088,21 @@ export default function Profile() {
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => openCaptionModal(lightboxPhoto)}
+                    onClick={() => {
+                      setCaptionPhoto(lightboxPhoto);
+                      setCaptionValue(String(lightboxPhoto.caption || ""));
+                      setCaptionOpen(true);
+                    }}
                     className="hidden sm:inline-flex bg-[#FFD700] hover:bg-yellow-400 text-[#5A3A22] font-semibold px-3 py-1 rounded-lg"
                   >
                     Editar legenda
                   </button>
                   <button
                     type="button"
-                    onClick={closeLightbox}
+                    onClick={() => {
+                      setLightboxOpen(false);
+                      setLightboxPhoto(null);
+                    }}
                     className="w-9 h-9 rounded-full bg-gray-100 hover:bg-gray-200 text-[#5A3A22] font-bold flex items-center justify-center"
                     aria-label="Fechar"
                   >
@@ -1111,7 +1134,11 @@ export default function Profile() {
         {captionOpen && captionPhoto ? (
           <div
             className="fixed inset-0 z-[65] bg-black/60 flex items-center justify-center p-4"
-            onClick={closeCaptionModal}
+            onClick={() => {
+              setCaptionOpen(false);
+              setCaptionPhoto(null);
+              setCaptionValue("");
+            }}
           >
             <div
               className="bg-white w-full max-w-lg rounded-2xl shadow-lg p-4"
@@ -1121,7 +1148,11 @@ export default function Profile() {
                 <h3 className="text-base font-semibold text-[#5A3A22]">Editar legenda</h3>
                 <button
                   type="button"
-                  onClick={closeCaptionModal}
+                  onClick={() => {
+                    setCaptionOpen(false);
+                    setCaptionPhoto(null);
+                    setCaptionValue("");
+                  }}
                   className="w-9 h-9 rounded-full bg-gray-100 hover:bg-gray-200 text-[#5A3A22] font-bold flex items-center justify-center"
                   aria-label="Fechar"
                 >
@@ -1155,7 +1186,11 @@ export default function Profile() {
                   <div className="mt-auto flex gap-2">
                     <button
                       type="button"
-                      onClick={closeCaptionModal}
+                      onClick={() => {
+                        setCaptionOpen(false);
+                        setCaptionPhoto(null);
+                        setCaptionValue("");
+                      }}
                       className="w-full bg-gray-200 hover:bg-gray-300 text-[#5A3A22] font-semibold px-3 py-2 rounded-lg"
                       disabled={captionSaving}
                     >
@@ -1163,7 +1198,51 @@ export default function Profile() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => savePhotoCaption(captionPhoto.id, captionValue)}
+                      onClick={async () => {
+                        if (!token) {
+                          showToast("Faça login novamente para editar a legenda.", "error");
+                          return;
+                        }
+                        if (!captionPhoto?.id) return;
+
+                        setCaptionSaving(true);
+                        try {
+                          const resp = await authRequest(`/caregivers/me/photos/${captionPhoto.id}`, token, {
+                            method: "PATCH",
+                            body: JSON.stringify({
+                              caption: String(captionValue || "").trim() || null,
+                            }),
+                          });
+
+                          const updated = resp?.photo ? normalizeGalleryPhoto(resp.photo, 0) : null;
+
+                          setGalleryPhotos((prev) =>
+                            (Array.isArray(prev) ? prev : []).map((p) => {
+                              if (String(p.id) !== String(captionPhoto.id)) return p;
+                              const nextCaption =
+                                updated?.caption ?? (String(captionValue || "").trim() || "");
+                              return { ...p, caption: nextCaption };
+                            })
+                          );
+
+                          setLightboxPhoto((cur) => {
+                            if (!cur || String(cur.id) !== String(captionPhoto.id)) return cur;
+                            const nextCaption =
+                              updated?.caption ?? (String(captionValue || "").trim() || "");
+                            return { ...cur, caption: nextCaption };
+                          });
+
+                          showToast("Legenda atualizada! ✅", "success");
+                          setCaptionOpen(false);
+                          setCaptionPhoto(null);
+                          setCaptionValue("");
+                        } catch (err) {
+                          console.error("Erro ao salvar legenda:", err);
+                          showToast("Não foi possível salvar a legenda (backend).", "error");
+                        } finally {
+                          setCaptionSaving(false);
+                        }
+                      }}
                       className={`w-full bg-[#5A3A22] hover:bg-[#95301F] text-white font-semibold px-3 py-2 rounded-lg ${
                         captionSaving ? "opacity-70 cursor-wait" : ""
                       }`}
@@ -1224,7 +1303,9 @@ export default function Profile() {
                     )}
 
                     <h3 className="font-semibold mt-4">Capacidade diária</h3>
-                    <p className="text-sm">{Number(form.daily_capacity) || DEFAULT_DAILY_CAPACITY} reserva(s) por dia</p>
+                    <p className="text-sm">
+                      {Number(form.daily_capacity) || DEFAULT_DAILY_CAPACITY} reserva(s) por dia
+                    </p>
                   </>
                 )}
               </div>
@@ -1273,7 +1354,11 @@ export default function Profile() {
                       <button
                         key={p.id}
                         type="button"
-                        onClick={() => openLightbox(p)}
+                        onClick={() => {
+                          if (!p?.photo_url) return;
+                          setLightboxPhoto(p);
+                          setLightboxOpen(true);
+                        }}
                         className="rounded-xl overflow-hidden border bg-white text-left hover:shadow-md transition"
                         title="Clique para ver a foto inteira"
                       >
@@ -1493,7 +1578,10 @@ export default function Profile() {
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {form.courses.map((c, i) => (
-                      <span key={i} className="bg-[#FFF6CC] px-3 py-1 rounded-full flex items-center gap-2">
+                      <span
+                        key={i}
+                        className="bg-[#FFF6CC] px-3 py-1 rounded-full flex items-center gap-2"
+                      >
                         {c}
                         <button type="button" onClick={() => removeCourse(i)} className="text-[#95301F]">
                           ×
@@ -1567,7 +1655,11 @@ export default function Profile() {
                         <div key={p.id} className="rounded-xl overflow-hidden border bg-white">
                           <button
                             type="button"
-                            onClick={() => openLightbox(p)}
+                            onClick={() => {
+                              if (!p?.photo_url) return;
+                              setLightboxPhoto(p);
+                              setLightboxOpen(true);
+                            }}
                             className="block w-full text-left"
                             title="Clique para ver a foto inteira"
                           >
@@ -1588,7 +1680,11 @@ export default function Profile() {
                             <div className="mt-2 flex items-center justify-between gap-2">
                               <button
                                 type="button"
-                                onClick={() => openCaptionModal(p)}
+                                onClick={() => {
+                                  setCaptionPhoto(p);
+                                  setCaptionValue(String(p.caption || ""));
+                                  setCaptionOpen(true);
+                                }}
                                 className="text-xs font-semibold bg-[#FFD700] hover:bg-yellow-400 text-[#5A3A22] px-2 py-1 rounded"
                                 title="Editar legenda"
                               >
@@ -1614,7 +1710,7 @@ export default function Profile() {
               </div>
             )}
 
-            {/* Troca de senha (modo antigo/local) */}
+            {/* ✅ Troca de senha (backend) */}
             <div>
               {!showPasswordChange ? (
                 <button
@@ -1625,14 +1721,68 @@ export default function Profile() {
                   Trocar Senha
                 </button>
               ) : (
-                <input
-                  type="password"
-                  value={form.newPassword}
-                  onChange={(e) => handleChange("newPassword", e.target.value)}
-                  placeholder={token ? "Troca de senha será feita futuramente pelo backend" : "Nova senha"}
-                  autoComplete="new-password"
-                  className="w-full border p-2 rounded-lg"
-                />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <input
+                    type="password"
+                    value={form.currentPassword}
+                    onChange={(e) => handleChange("currentPassword", e.target.value)}
+                    placeholder="Senha atual"
+                    autoComplete="current-password"
+                    className="w-full border p-2 rounded-lg"
+                  />
+                  <input
+                    type="password"
+                    value={form.newPassword}
+                    onChange={(e) => handleChange("newPassword", e.target.value)}
+                    placeholder="Nova senha (mín. 8 caracteres)"
+                    autoComplete="new-password"
+                    className="w-full border p-2 rounded-lg"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!token) {
+                        showToast("Faça login novamente para trocar a senha.", "error");
+                        return;
+                      }
+
+                      const cur = String(form.currentPassword || "");
+                      const nxt = String(form.newPassword || "");
+
+                      if (!cur || !nxt) {
+                        showToast("Preencha a senha atual e a nova senha.", "error");
+                        return;
+                      }
+                      if (nxt.length < 8) {
+                        showToast("A nova senha deve ter no mínimo 8 caracteres.", "error");
+                        return;
+                      }
+
+                      try {
+                        await authRequest("/users/me/password", token, {
+                          method: "PUT",
+                          body: JSON.stringify({
+                            currentPassword: cur,
+                            newPassword: nxt,
+                          }),
+                        });
+
+                        showToast("Senha atualizada com sucesso! ✅", "success");
+
+                        setForm((f) => ({ ...f, currentPassword: "", newPassword: "" }));
+                        setShowPasswordChange(false);
+                      } catch (err) {
+                        console.error("Erro ao trocar senha:", err);
+                        const msg = err?.message || "Não foi possível trocar a senha.";
+                        showToast(msg, "error");
+                      }
+                    }}
+                    className="md:col-span-2 bg-[#5A3A22] hover:bg-[#95301F] text-white font-semibold px-4 py-2 rounded-lg"
+                  >
+                    Salvar nova senha
+                  </button>
+                </div>
               )}
             </div>
 
