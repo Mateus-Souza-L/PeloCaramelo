@@ -1445,7 +1445,7 @@ export default function Search() {
                 <p className="text-sm text-[#5A3A22]/80 mt-2">
                   Ajude a PeloCaramelo a crescer por aqui! Convide um amigo que goste de cuidar de
                   pets para começar como cuidador(a) e ganhar renda extra — sem pagar taxa para
-                  criar perfil.
+                  intermediários.
                 </p>
 
                 <div className="mt-4 flex flex-col sm:flex-row gap-2">
