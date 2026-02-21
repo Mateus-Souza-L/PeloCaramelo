@@ -6,10 +6,11 @@ const SOUND_PATHS = {
   success: "/sounds/success.wav",
   error: "/sounds/error.wav",
   notify: "/sounds/notify.wav",
+  logout: "/sounds/error.wav",
 
   // ✅ eventos recomendados (mapeie para os mesmos arquivos se quiser)
   login: "/sounds/notify.wav",
-  logout: "/sounds/notify.wav",
+  logout: "/sounds/error.wav", // ✅ voltou pro error.wav
   reservation_accept: "/sounds/success.wav",
   reservation_cancel: "/sounds/error.wav",
   chat_new: "/sounds/notify.wav",
@@ -37,6 +38,7 @@ const DEFAULT_COOLDOWNS_MS = {
 };
 
 let _lastPlayedAt = Object.create(null);
+let _audioCache = Object.create(null);
 
 // 🔹 Lê as configurações do localStorage
 export function getSoundSettings() {
@@ -98,11 +100,11 @@ export function playSound(type = "notify", opts = {}) {
 
   _lastPlayedAt[t] = now;
 
-  const src = SOUND_PATHS[t] || SOUND_PATHS.notify;
+  const src = SOUND_PATHS[t] || SOUND_PATHS.logout;
   if (!src) return;
 
   try {
-    const sound = new Audio(src);
+    const sound = _audioCache[src] || (_audioCache[src] = new Audio(src));
 
     // 🔊 Ajuste dinâmico de volume por tipo/evento
     let volume =

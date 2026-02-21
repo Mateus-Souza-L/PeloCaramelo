@@ -486,7 +486,9 @@ function CaregiverSetupModal({
                     color: "#222",
                   }}
                 />
-                <span style={{ fontSize: 13, color: "#555" }}>Dica: você pode ajustar depois no painel.</span>
+                <span style={{ fontSize: 13, color: "#555" }}>
+                  Dica: você pode ajustar depois no painel.
+                </span>
               </div>
             </div>
 
@@ -626,42 +628,37 @@ export function AuthProvider({ children }) {
   }
 
   function handleLogout() {
-    // ✅ toca som de logout (somente aqui; toast não toca mais)
+    // ✅ toca som de logout (forçado)
     try {
-      playSoundEvent("logout");
+      playSoundEvent("logout", { force: true, cooldownMs: 0, volume: 0.55 });
     } catch {
       // ignore
     }
 
-    // ✅ limpa storage primeiro
-    try {
-      localStorage.removeItem(STORAGE_KEY);
-    } catch {
-      // ignore
-    }
+    // ✅ NÃO remove o localStorage agora (senão o guard joga pro /login e corta o som)
+    // ✅ NÃO zera state agora (mesmo motivo)
 
-    // ✅ redireciona IMEDIATAMENTE para a Home
-    // (antes de qualquer setState que dispare ProtectedRoute)
-    try {
-      window.location.replace("/");
-      return;
-    } catch {
-      // fallback continua abaixo
-    }
+    // ✅ espera o som “respirar” e só então limpa tudo
+    setTimeout(() => {
+      try {
+        localStorage.removeItem(STORAGE_KEY);
+      } catch {
+        // ignore
+      }
 
-    // 🔻 fallback (só roda se o replace falhar)
-    setUser(null);
-    setToken(null);
-    setHasCaregiverProfile(false);
-    setActiveMode("tutor");
+      setUser(null);
+      setToken(null);
+      setHasCaregiverProfile(false);
+      setActiveMode("tutor");
 
-    setConfirmCreateOpen(false);
-    setCreatingProfile(false);
+      setConfirmCreateOpen(false);
+      setCreatingProfile(false);
 
-    setCaregiverSetupOpen(false);
-    setCaregiverSetupError("");
+      setCaregiverSetupOpen(false);
+      setCaregiverSetupError("");
 
-    emitAuthChanged("logged_out");
+      emitAuthChanged("logged_out");
+    }, 650);
   }
 
   /**
@@ -984,7 +981,8 @@ export function AuthProvider({ children }) {
 
       // ✅ se vier role caregiver já no login, não deixa has=false
       const role = normalizeRole(immediateUser?.role);
-      const hasGuess = role === "caregiver" ? true : Boolean(readSession()?.hasCaregiverProfile ?? false);
+      const hasGuess =
+        role === "caregiver" ? true : Boolean(readSession()?.hasCaregiverProfile ?? false);
 
       persistSession({
         user: immediateUser,
@@ -1028,7 +1026,12 @@ export function AuthProvider({ children }) {
         activeMode: nextMode,
       });
 
-      return { user: fullUser, token: newToken, activeMode: nextMode, hasCaregiverProfile: finalHas };
+      return {
+        user: fullUser,
+        token: newToken,
+        activeMode: nextMode,
+        hasCaregiverProfile: finalHas,
+      };
     } catch (err) {
       console.error("Erro ao buscar /auth/me após login:", err);
 

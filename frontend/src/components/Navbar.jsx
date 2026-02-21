@@ -611,6 +611,9 @@ export default function Navbar() {
   // ✅ modal (logout confirm)
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
 
+  // ✅ (opcional) trava do modal enquanto sai
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
   const chatUnreadCount = chatUnreadIds.length;
   const totalUnread = chatUnreadCount + reservationUnreadCount;
 
@@ -692,6 +695,12 @@ export default function Navbar() {
 
   const handleLogout = () => {
     try {
+      setIsLoggingOut(true);
+
+      // ✅ sai da rota protegida ANTES da sessão cair
+      navigate("/", { replace: true });
+
+      // ✅ toca som + faz limpeza com delay (AuthContext)
       logout?.();
     } finally {
       setChatUnreadIds([]);
@@ -699,7 +708,8 @@ export default function Navbar() {
       closeMobile();
       setPanelOpen(false);
       setLogoutConfirmOpen(false);
-      navigate("/", { replace: true });
+
+      setTimeout(() => setIsLoggingOut(false), 700);
     }
   };
 
@@ -1511,9 +1521,9 @@ export default function Navbar() {
 
       <ConfirmLogoutModal
         open={logoutConfirmOpen}
-        onClose={() => setLogoutConfirmOpen(false)}
+        onClose={() => (isLoggingOut ? null : setLogoutConfirmOpen(false))}
         onConfirm={handleLogout}
-        loading={false}
+        loading={isLoggingOut}
       />
     </>
   );
