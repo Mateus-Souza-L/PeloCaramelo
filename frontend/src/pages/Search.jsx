@@ -459,14 +459,14 @@ export default function Search() {
     const itemList =
       !loading && !filteringDates && Array.isArray(filteredAsync)
         ? filteredAsync
-            .filter((c) => c && c.id != null)
-            .slice(0, 50)
-            .map((c, i) => ({
-              "@type": "ListItem",
-              position: i + 1,
-              name: String(c.name || "Cuidador"),
-              url: `${origin}/caregiver/${c.id}`,
-            }))
+          .filter((c) => c && c.id != null)
+          .slice(0, 50)
+          .map((c, i) => ({
+            "@type": "ListItem",
+            position: i + 1,
+            name: String(c.name || "Cuidador"),
+            url: `${origin}/caregiver/${c.id}`,
+          }))
         : [];
 
     return {
@@ -576,7 +576,7 @@ export default function Search() {
 
     try {
       abortRef.current?.abort?.();
-    } catch {}
+    } catch { }
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -745,7 +745,7 @@ export default function Search() {
 
     try {
       availabilityReqAbortRef.current?.abort?.();
-    } catch {}
+    } catch { }
 
     const controller = new AbortController();
     availabilityReqAbortRef.current = controller;
@@ -791,6 +791,14 @@ export default function Search() {
 
   const totalResults = filtered.length;
 
+  // ✅ Mostra CTA quando houver menos de 20 cuidadores (mas pelo menos 1)
+  const shouldShowMoreOptionsCta = useMemo(() => {
+    if (loading || filteringDates) return false;
+
+    const count = Number(totalResults || 0);
+    return count > 0 && count < 20;
+  }, [loading, filteringDates, totalResults]);
+
   const totalPages = useMemo(() => {
     return Math.max(1, Math.ceil(totalResults / SEARCH_PAGE_SIZE));
   }, [totalResults]);
@@ -833,11 +841,10 @@ export default function Search() {
             type="button"
             onClick={() => setPage((p) => Math.max(1, Number(p || 1) - 1))}
             disabled={!canPrev}
-            className={`px-3 py-2 rounded-lg text-xs font-semibold shadow ${
-              canPrev
-                ? "bg-[#D2A679] hover:bg-[#B25B38] text-[#5A3A22]"
-                : "bg-gray-200 text-[#5A3A22]/50 cursor-not-allowed"
-            }`}
+            className={`px-3 py-2 rounded-lg text-xs font-semibold shadow ${canPrev
+              ? "bg-[#D2A679] hover:bg-[#B25B38] text-[#5A3A22]"
+              : "bg-gray-200 text-[#5A3A22]/50 cursor-not-allowed"
+              }`}
           >
             ← Anterior
           </button>
@@ -846,11 +853,10 @@ export default function Search() {
             type="button"
             onClick={() => setPage((p) => Math.min(totalPages, Number(p || 1) + 1))}
             disabled={!canNext}
-            className={`px-3 py-2 rounded-lg text-xs font-semibold shadow ${
-              canNext
-                ? "bg-[#D2A679] hover:bg-[#B25B38] text-[#5A3A22]"
-                : "bg-gray-200 text-[#5A3A22]/50 cursor-not-allowed"
-            }`}
+            className={`px-3 py-2 rounded-lg text-xs font-semibold shadow ${canNext
+              ? "bg-[#D2A679] hover:bg-[#B25B38] text-[#5A3A22]"
+              : "bg-gray-200 text-[#5A3A22]/50 cursor-not-allowed"
+              }`}
           >
             Próxima →
           </button>
@@ -1430,7 +1436,7 @@ export default function Search() {
               })}
             </div>
 
-            {showInviteAfterResults && (
+            {shouldShowMoreOptionsCta && (
               <div className="mt-10 rounded-2xl border border-[#5A3A22]/10 bg-[#FFF8F0] p-6">
                 <p className="text-lg font-bold text-[#5A3A22]">
                   Quer mais opções nessa região? 🐾
