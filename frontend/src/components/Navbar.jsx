@@ -287,7 +287,6 @@ function CreateCaregiverProfileModal({
 
 /* ============================================================
    Modal: Criar perfil de tutor (confirmação)
-   - Igual ao cuidador, mas sem backend (tutor-profile é "conceito do front")
    ============================================================ */
 
 function CreateTutorProfileModal({ open, loading, onClose, onConfirm }) {
@@ -406,7 +405,7 @@ function CreateTutorProfileModal({ open, loading, onClose, onConfirm }) {
 }
 
 /* ============================================================
-   Modal: Confirmar logout (padrão do app)
+   Modal: Confirmar logout
    ============================================================ */
 
 function ConfirmLogoutModal({ open, onClose, onConfirm, loading = false }) {
@@ -539,7 +538,41 @@ export default function Navbar() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const INSTAGRAM_URL = "https://www.instagram.com/pelo_caramelo/";
+  const INSTAGRAM_USERNAME = "pelo_caramelo";
+  const INSTAGRAM_WEB_URL = `https://www.instagram.com/${INSTAGRAM_USERNAME}/`;
+
+  // ============================================================
+  // Deep link (mobile) com fallback — resolve abrir no app e ir pro perfil certo
+  // ============================================================
+  const openInstagramProfile = useCallback(() => {
+    const ua = (navigator?.userAgent || "").toLowerCase();
+    const isIOS = /iphone|ipad|ipod/.test(ua);
+    const isAndroid = /android/.test(ua);
+
+    // 1) tenta abrir APP no perfil
+    try {
+      if (isAndroid) {
+        // Android Intent (abre o perfil direto no app)
+        const intent = `intent://instagram.com/_u/${INSTAGRAM_USERNAME}/#Intent;package=com.instagram.android;scheme=https;end`;
+        window.location.href = intent;
+      } else {
+        // iOS + outros: url scheme do instagram por username
+        // (no iOS costuma ir para o perfil certo quando o app existe)
+        window.location.href = `instagram://user?username=${INSTAGRAM_USERNAME}`;
+      }
+    } catch {
+      // ignore
+    }
+
+    // 2) fallback pro web (caso não tenha app / scheme bloqueado)
+    setTimeout(() => {
+      try {
+        window.open(INSTAGRAM_WEB_URL, "_blank", "noreferrer");
+      } catch {
+        window.location.href = INSTAGRAM_WEB_URL;
+      }
+    }, isIOS ? 650 : 450);
+  }, [INSTAGRAM_USERNAME, INSTAGRAM_WEB_URL]);
 
   // ============================================================
   // session helpers (usar o mesmo STORAGE_KEY do AuthContext)
@@ -1252,10 +1285,10 @@ export default function Navbar() {
     </div>
   );
 
-  // ✅ botão Instagram (mesmo estilo do sininho) — vai ao lado do sininho no desktop e no mobile
-  const InstagramButton = (
+  // ✅ botão Instagram (desktop: link normal funciona melhor)
+  const InstagramButtonDesktop = (
     <a
-      href={INSTAGRAM_URL}
+      href={INSTAGRAM_WEB_URL}
       target="_blank"
       rel="noreferrer"
       className="relative w-9 h-9 rounded-full bg-[#D2A679] text-[#5A3A22] flex items-center justify-center hover:brightness-95 transition"
@@ -1269,7 +1302,7 @@ export default function Navbar() {
   const desktopAuth = (
     <div className="hidden md:flex gap-3 items-center">
       {/* Instagram ao lado do sininho (desktop) */}
-      {InstagramButton}
+      {InstagramButtonDesktop}
 
       {user && (
         <button
@@ -1311,25 +1344,22 @@ export default function Navbar() {
     </div>
   );
 
-  // ✅ MOBILE MENU (somente mobile): Instagram ao lado do sininho + sanduíche
+  // ✅ MOBILE MENU: Instagram ao lado do sininho (usa deep link + fallback)
   const MobileMenu = (
     <div className="md:hidden flex items-center gap-2">
-      {/* Instagram ao lado do sininho (mobile) */}
-      <a
-        href={INSTAGRAM_URL}
-        target="_blank"
-        rel="noreferrer"
+      <button
+        type="button"
+        onClick={() => {
+          closeMobile();
+          setPanelOpen(false);
+          openInstagramProfile();
+        }}
         className="relative w-10 h-10 rounded-lg bg-[#D2A679] text-[#5A3A22] flex items-center justify-center hover:brightness-95 transition"
         title="Instagram da PeloCaramelo"
         aria-label="Abrir Instagram da PeloCaramelo"
-        onClick={() => {
-          // se o menu estiver aberto, pode fechar pra ficar “limpo” ao voltar
-          closeMobile();
-          setPanelOpen(false);
-        }}
       >
         <Instagram className="w-5 h-5" />
-      </a>
+      </button>
 
       {user && canUseBell && (
         <button
