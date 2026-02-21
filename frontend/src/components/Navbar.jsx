@@ -541,38 +541,45 @@ export default function Navbar() {
   const INSTAGRAM_USERNAME = "pelo_caramelo";
   const INSTAGRAM_WEB_URL = `https://www.instagram.com/${INSTAGRAM_USERNAME}/`;
 
+  // Universal link do Instagram: abre no app (quando possível) já no perfil
+  const INSTAGRAM_UNIVERSAL_URL = `https://www.instagram.com/_u/${INSTAGRAM_USERNAME}/`;
+
+  // Android Intent: geralmente o mais confiável para abrir o app no perfil
+  const INSTAGRAM_ANDROID_INTENT = `intent://instagram.com/_u/${INSTAGRAM_USERNAME}/#Intent;package=com.instagram.android;scheme=https;end`;
+
   // ============================================================
   // Deep link (mobile) com fallback — resolve abrir no app e ir pro perfil certo
   // ============================================================
   const openInstagramProfile = useCallback(() => {
     const ua = (navigator?.userAgent || "").toLowerCase();
+    const isAndroid = ua.includes("android");
     const isIOS = /iphone|ipad|ipod/.test(ua);
-    const isAndroid = /android/.test(ua);
 
-    // 1) tenta abrir APP no perfil
+    // alvo principal (tenta abrir app no perfil)
+    const primary = isAndroid ? INSTAGRAM_ANDROID_INTENT : INSTAGRAM_UNIVERSAL_URL;
+
+    // fallback (web normal) — SEM popup (mesma aba)
+    const fallback = INSTAGRAM_WEB_URL;
+
+    // tenta abrir app
     try {
-      if (isAndroid) {
-        // Android Intent (abre o perfil direto no app)
-        const intent = `intent://instagram.com/_u/${INSTAGRAM_USERNAME}/#Intent;package=com.instagram.android;scheme=https;end`;
-        window.location.href = intent;
-      } else {
-        // iOS + outros: url scheme do instagram por username
-        // (no iOS costuma ir para o perfil certo quando o app existe)
-        window.location.href = `instagram://user?username=${INSTAGRAM_USERNAME}`;
-      }
+      window.location.assign(primary);
     } catch {
       // ignore
     }
 
-    // 2) fallback pro web (caso não tenha app / scheme bloqueado)
+    // fallback: se o app não abrir / deep link falhar, cai no web
+    // (tempo um pouco maior ajuda no iOS)
+    const waitMs = isIOS ? 1400 : 900;
+
     setTimeout(() => {
       try {
-        window.open(INSTAGRAM_WEB_URL, "_blank", "noreferrer");
+        window.location.assign(fallback);
       } catch {
-        window.location.href = INSTAGRAM_WEB_URL;
+        window.location.href = fallback;
       }
-    }, isIOS ? 650 : 450);
-  }, [INSTAGRAM_USERNAME, INSTAGRAM_WEB_URL]);
+    }, waitMs);
+  }, [INSTAGRAM_ANDROID_INTENT, INSTAGRAM_UNIVERSAL_URL, INSTAGRAM_WEB_URL]);
 
   // ============================================================
   // session helpers (usar o mesmo STORAGE_KEY do AuthContext)
@@ -1101,7 +1108,7 @@ export default function Navbar() {
 
       try {
         await refreshMe?.(token, { preferCaregiver: true });
-      } catch {}
+      } catch { }
 
       setCreateCareOpen(false);
 
@@ -1115,7 +1122,7 @@ export default function Navbar() {
         emitRoleChanged("caregiver");
         try {
           await refreshMe?.(token, { preferCaregiver: true });
-        } catch {}
+        } catch { }
         setCreateCareOpen(false);
         navigateDashboardAfterMode("caregiver");
       } catch (e2) {
@@ -1347,9 +1354,10 @@ export default function Navbar() {
   // ✅ MOBILE MENU: Instagram ao lado do sininho (usa deep link + fallback)
   const MobileMenu = (
     <div className="md:hidden flex items-center gap-2">
-      <button
-        type="button"
-        onClick={() => {
+      <a
+        href={INSTAGRAM_UNIVERSAL_URL}
+        onClick={(e) => {
+          e.preventDefault();
           closeMobile();
           setPanelOpen(false);
           openInstagramProfile();
@@ -1359,8 +1367,7 @@ export default function Navbar() {
         aria-label="Abrir Instagram da PeloCaramelo"
       >
         <Instagram className="w-5 h-5" />
-      </button>
-
+      </a>
       {user && canUseBell && (
         <button
           onClick={handleBellClick}
@@ -1452,8 +1459,8 @@ export default function Navbar() {
                       ? "Cuidador"
                       : "Ser cuidador"
                     : hasTutorProfile
-                    ? "Tutor"
-                    : "Ser tutor"}
+                      ? "Tutor"
+                      : "Ser tutor"}
                 </button>
 
                 <button
