@@ -79,9 +79,34 @@ export default function Register() {
 
   useEffect(() => {
     document.title = "PeloCaramelo | Cadastro";
+
+    // ===========================================================
+    // ✅ Convite: /register?mode=caregiver&ref=XXXX
+    // - aceita também ?role=...
+    // ===========================================================
     const qpRole = q.get("role");
-    if (qpRole === "tutor" || qpRole === "caregiver") {
-      setRole(qpRole);
+    const qpMode = q.get("mode"); // "caregiver" | "tutor"
+    const qpRef = q.get("ref") || q.get("referral") || q.get("r") || "";
+
+    // salva referral para futuro "indique e ganhe"
+    if (qpRef) {
+      try {
+        localStorage.setItem("pc_ref", String(qpRef));
+      } catch {
+        // ignore
+      }
+    }
+
+    // prioridade: role (legado) > mode (novo)
+    const picked =
+      qpRole === "tutor" || qpRole === "caregiver"
+        ? qpRole
+        : qpMode === "tutor" || qpMode === "caregiver"
+          ? qpMode
+          : "";
+
+    if (picked) {
+      setRole(picked);
       setStep("form");
     }
   }, [q]);
@@ -367,7 +392,6 @@ export default function Register() {
                 Já tenho conta
               </button>
             </div>
-            
           </div>
         ) : (
           // PASSO 2 — Formulário

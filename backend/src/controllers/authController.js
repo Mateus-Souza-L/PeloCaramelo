@@ -71,8 +71,8 @@ function isStrongPassword(pw) {
 }
 
 /* ============================================================
-   ✅ NORMALIZAÇÃO DE ROLE NO REGISTER (FIX DO SEU BUG)
-   - Aceita variações comuns do front ("Cuidador", "cuidador(a)", etc.)
+   ✅ NORMALIZAÇÃO DE ROLE NO REGISTER
+   - Aceita body.role ou body.mode (pra links /register?mode=caregiver)
    - Só permite "tutor" ou "caregiver"
    - Nunca permite admin via register
    ============================================================ */
@@ -90,10 +90,12 @@ function normalizeRegisterRole(input) {
     "cuidador (a)",
     "cuidador - cuidadora",
     "cuidadores",
+    // compat: mode do link
+    "modo cuidador",
   ]);
 
   // variações que significam tutor
-  const tutorAliases = new Set(["tutor", "tutora", "tutores"]);
+  const tutorAliases = new Set(["tutor", "tutora", "tutores", "modo tutor"]);
 
   if (caregiverAliases.has(raw)) return "caregiver";
   if (tutorAliases.has(raw)) return "tutor";
@@ -101,7 +103,7 @@ function normalizeRegisterRole(input) {
   // se vier vazio, cai no padrão tutor (comportamento seguro)
   if (!raw) return "tutor";
 
-  // qualquer outra coisa: inválido (evita você criar “tutor” sem querer por default silencioso)
+  // qualquer outra coisa: inválido
   return null;
 }
 
@@ -153,9 +155,7 @@ async function hasCaregiverProfileByUserId(userId) {
   try {
     const cols = await detectCaregiverProfilesColumns();
 
-    // 1) caminho ideal: usamos SOMENTE colunas existentes
     if (cols) {
-      // prioridade: user_id (se existir)
       if (cols.hasUserId) {
         const { rows } = await pool.query(
           `SELECT 1 FROM caregiver_profiles WHERE user_id::text = $1 LIMIT 1`,
@@ -164,7 +164,6 @@ async function hasCaregiverProfileByUserId(userId) {
         if (rows?.length) return true;
       }
 
-      // fallback: id == users.id (se existir)
       if (cols.hasId) {
         const { rows } = await pool.query(
           `SELECT 1 FROM caregiver_profiles WHERE id::text = $1 LIMIT 1`,
@@ -173,7 +172,6 @@ async function hasCaregiverProfileByUserId(userId) {
         if (rows?.length) return true;
       }
 
-      // só tenta caregiver_id se EXISTE mesmo
       if (cols.hasCaregiverId) {
         const { rows } = await pool.query(
           `SELECT 1 FROM caregiver_profiles WHERE caregiver_id::text = $1 LIMIT 1`,
@@ -185,17 +183,14 @@ async function hasCaregiverProfileByUserId(userId) {
       return false;
     }
 
-    // 2) fallback sem information_schema:
-    // ✅ tenta user_id, depois id. NÃO tenta caregiver_id aqui.
+    // fallback sem information_schema:
     try {
       const { rows } = await pool.query(
         `SELECT 1 FROM caregiver_profiles WHERE user_id::text = $1 LIMIT 1`,
         [idStr]
       );
       if (rows?.length) return true;
-    } catch {
-      // ignore
-    }
+    } catch {}
 
     try {
       const { rows } = await pool.query(
@@ -203,14 +198,96 @@ async function hasCaregiverProfileByUserId(userId) {
         [idStr]
       );
       if (rows?.length) return true;
-    } catch {
-      // ignore
-    }
+    } catch {}
 
     return false;
   } catch (err) {
     console.error("[authController] hasCaregiverProfileByUserId error:", err?.message || err);
     return false;
+  }
+}
+
+/* ============================================================
+   ✅ Referral (convite) — tolerante ao schema
+   - Aceita body.ref / body.referrer / body.referredBy (string)
+   - Só grava se existir coluna no banco
+   ============================================================ */
+
+let cachedUsersReferralCols = null; // { col: 'referred_by' | 'referrer_id' | ... } | null
+let cachedUsersReferralColsAt = 0;
+
+async function detectUsersReferralColumn() {
+  const now = Date.now();
+  if (cachedUsersReferralCols && now - cachedUsersReferralColsAt < 5 * 60 * 1000) {
+    return cachedUsersReferralCols;
+  }
+
+  try {
+    // tente alguns nomes comuns (você pode padronizar depois via migration)
+    const candidates = [
+      "referred_by",
+      "referrer_id",
+      "invited_by",
+      "ref_by",
+      "referrer",
+      "ref_source",
+    ];
+
+    const sql = `
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'users'
+        AND column_name = ANY($1::text[])
+      LIMIT 10
+    `;
+    const { rows } = await pool.query(sql, [candidates]);
+
+    const set = new Set((rows || []).map((r) => String(r.column_name)));
+    const first = candidates.find((c) => set.has(c)) || null;
+
+    cachedUsersReferralCols = { col: first };
+    cachedUsersReferralColsAt = now;
+    return cachedUsersReferralCols;
+  } catch {
+    cachedUsersReferralCols = { col: null };
+    cachedUsersReferralColsAt = now;
+    return cachedUsersReferralCols;
+  }
+}
+
+function normalizeRefValue(v) {
+  const s = String(v || "").trim();
+  if (!s) return null;
+  if (s.toLowerCase() === "guest") return "guest";
+
+  // se for id numérico (ex: user.id)
+  const n = Number(s);
+  if (Number.isFinite(n) && n > 0) return n;
+
+  // fallback: string curta (ex: código)
+  return s.slice(0, 120);
+}
+
+async function trySaveReferralForUser(newUserId, refValue) {
+  if (!newUserId || refValue == null) return;
+
+  const meta = await detectUsersReferralColumn();
+  const col = meta?.col;
+  if (!col) return;
+
+  // atualiza sem quebrar se o tipo for diferente (número vs texto)
+  try {
+    await pool.query(`UPDATE users SET ${col} = $1 WHERE id = $2`, [refValue, newUserId]);
+  } catch (err) {
+    // se a coluna for integer e veio string, tenta converter; se falhar, ignora (fail-safe)
+    try {
+      const n = Number(refValue);
+      if (Number.isFinite(n)) {
+        await pool.query(`UPDATE users SET ${col} = $1 WHERE id = $2`, [n, newUserId]);
+      }
+    } catch {}
+    console.warn("[referral] Não foi possível gravar referral:", err?.message || err);
   }
 }
 
@@ -233,8 +310,9 @@ async function register(req, res) {
     const email = String(body?.email || "").trim();
     const password = String(body?.password || "");
 
-    // ✅ FIX: normaliza e valida role
-    const roleNorm = normalizeRegisterRole(body?.role);
+    // ✅ aceita role OU mode (pra não depender 100% do front)
+    const roleInput = body?.role ?? body?.mode ?? "";
+    const roleNorm = normalizeRegisterRole(roleInput);
     if (roleNorm == null) {
       return res.status(400).json({
         error: "Tipo de perfil inválido. Escolha Tutor ou Cuidador.",
@@ -251,11 +329,14 @@ async function register(req, res) {
     const phone = body?.phone ?? null;
     const address = body?.address ?? null;
 
+    // ✅ convite/ref (opcional)
+    const refRaw = body?.ref ?? body?.referrer ?? body?.referredBy ?? body?.invitedBy ?? null;
+    const refValue = normalizeRefValue(refRaw);
+
     if (!name || !email || !password) {
       return res.status(400).json({ error: "Nome, e-mail e senha são obrigatórios." });
     }
 
-    // ✅ city + neighborhood obrigatórios (e não aceitam vazio)
     if (!city) {
       return res.status(400).json({
         error: "Cidade é obrigatória.",
@@ -290,19 +371,26 @@ async function register(req, res) {
       name,
       email: normalizedEmail,
       passwordHash,
-      role, // ✅ agora vem sempre "tutor" ou "caregiver"
+      role, // ✅ sempre "tutor" ou "caregiver"
       city,
       neighborhood,
       phone: phone ? String(phone).trim() : null,
       address: address ? String(address).trim() : null,
     });
 
-    // ✅ tenta mandar e-mail de boas-vindas (com PDF opcional) sem travar o cadastro
+    // ✅ grava referral se houver coluna (fail-safe)
+    try {
+      await trySaveReferralForUser(newUser?.id, refValue);
+    } catch {
+      // ignore
+    }
+
+    // ✅ tenta mandar e-mail de boas-vindas sem travar o cadastro
     try {
       await sendWelcomeEmail({
         email: newUser.email,
         name: newUser?.name || name,
-        role: newUser?.role || role, // "tutor" | "caregiver"
+        role: newUser?.role || role,
       });
     } catch (e) {
       console.error("[welcomeEmail] Falha ao enviar e-mail de boas-vindas:", e?.message || e);
@@ -414,9 +502,7 @@ async function forgotPassword(req, res) {
 
     try {
       await cleanupPasswordResets();
-    } catch {
-      // ignore
-    }
+    } catch {}
 
     const token = crypto.randomBytes(32).toString("hex");
 
@@ -427,7 +513,7 @@ async function forgotPassword(req, res) {
     await invalidateAllActiveByUserId(user.id);
     await createPasswordReset({ userId: user.id, token, expiresAt });
 
-    // ✅ CRÍTICO: reset deve usar SEMPRE FRONTEND_URL (evita origin/referer errados)
+    // ✅ CRÍTICO: reset deve usar SEMPRE FRONTEND_URL
     const base = getFrontendBaseStrict();
 
     if (!base) {
@@ -478,7 +564,7 @@ async function resetPassword(req, res) {
       return res.status(400).json({ error: "Token inválido ou senha ausente." });
     }
 
-    // ✅ senha forte também no reset (não deixa “furar”)
+    // ✅ senha forte também no reset
     if (!isStrongPassword(newPassword)) {
       return res.status(400).json({
         error: "Senha fraca. Use no mínimo 8 caracteres, com letras e números.",

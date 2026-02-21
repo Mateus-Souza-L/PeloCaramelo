@@ -337,7 +337,10 @@ function SkeletonCard() {
 }
 
 export default function Search() {
-  const { token } = useAuth();
+  const auth = useAuth();
+  const token = auth?.token;
+  const user = auth?.user;
+
   const location = useLocation();
 
   // filtros
@@ -381,6 +384,46 @@ export default function Search() {
   const searchTrackTimerRef = useRef(null);
   const lastSearchPayloadRef = useRef("");
 
+  // ===========================================================
+  // ✅ Convite (WhatsApp) — abre cadastro no modo cuidador
+  // ===========================================================
+  // (Passo 5 - futuro) TODO: implementar "indique e ganhe" com tracking real (referral_code)
+  const inviteUrl = useMemo(() => {
+    const origin = window.location.origin;
+
+    // ✅ aceita tanto `mode=caregiver` quanto `role=caregiver`
+    // (vamos ajustar o Register para ler `mode` também, no próximo passo)
+    const ref = user?.id != null ? String(user.id) : "guest";
+    return `${origin}/register?mode=caregiver&ref=${encodeURIComponent(ref)}`;
+  }, [user?.id]);
+
+  const inviteWhatsAppText = useMemo(() => {
+    return (
+      `Oi! 👋 Vi você gosta de pets e lembrei de você.\n\n` +
+      `A PeloCaramelo está chegando na nossa região e você pode ganhar uma renda extra como cuidador(a), sem pagar taxa pra intermediários.\n\n` +
+      `Como funciona:\n` +
+      `✅ Você cria seu perfil GRATUITAMENTE\n` +
+      `✅ Escolhe os serviços e define seus preços\n` +
+      `✅ Recebe pedidos de tutores da sua região e combina tudo pelo chat da plataforma\n` +
+      `✅ Você ganha pelo seu serviço — sem mensalidade e sem taxa de intermediação\n\n` +
+      `Se quiser, se cadastre por aqui (modo cuidador):\n${inviteUrl}\n`
+    );
+  }, [inviteUrl]);
+
+  const handleSendInviteWhatsApp = useCallback(() => {
+    trackEvent("invite_whatsapp_click", {
+      page: "search",
+      ref: user?.id != null ? String(user.id) : "guest",
+      has_query: String(query || "").trim() ? 1 : 0,
+      has_dates: startDateKey || endDateKey ? 1 : 0,
+      svc: String(normalizeSvcToBackendKey(svc) || "todos"),
+      rating_filter: String(ratingFilter || "all"),
+    });
+
+    const waUrl = `https://wa.me/?text=${encodeURIComponent(inviteWhatsAppText)}`;
+    window.open(waUrl, "_blank", "noopener,noreferrer");
+  }, [inviteWhatsAppText, user?.id, query, startDateKey, endDateKey, svc, ratingFilter]);
+
   // ✅ SEO (title + description + canonical)
   useEffect(() => {
     document.title = "PeloCaramelo | Buscar cuidadores";
@@ -416,14 +459,14 @@ export default function Search() {
     const itemList =
       !loading && !filteringDates && Array.isArray(filteredAsync)
         ? filteredAsync
-          .filter((c) => c && c.id != null)
-          .slice(0, 50)
-          .map((c, i) => ({
-            "@type": "ListItem",
-            position: i + 1,
-            name: String(c.name || "Cuidador"),
-            url: `${origin}/caregiver/${c.id}`,
-          }))
+            .filter((c) => c && c.id != null)
+            .slice(0, 50)
+            .map((c, i) => ({
+              "@type": "ListItem",
+              position: i + 1,
+              name: String(c.name || "Cuidador"),
+              url: `${origin}/caregiver/${c.id}`,
+            }))
         : [];
 
     return {
@@ -461,8 +504,7 @@ export default function Search() {
     const svcRaw = normalizeServiceParam(sp.get("svc") || sp.get("service") || "");
     const sortRaw = (sp.get("sort") || "").trim();
 
-    // ✅ NOVO: avaliações por URL (opcional)
-    // aceita: minRating=4 (vira "4") | onlyRated=true (vira "rated") | rating=...
+    // ✅ avaliações por URL (opcional)
     const onlyRatedRaw = sp.get("onlyRated") || "";
     const minRatingRaw = sp.get("minRating") || "";
     const ratingRaw = sp.get("rating") || "";
@@ -534,7 +576,7 @@ export default function Search() {
 
     try {
       abortRef.current?.abort?.();
-    } catch { }
+    } catch {}
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -591,7 +633,7 @@ export default function Search() {
       list = list.filter((c) => !!c?.services?.[svcBackend]);
     }
 
-    // ✅ NOVO: filtro por avaliação
+    // ✅ filtro por avaliação
     if (ratingFilter && ratingFilter !== "all") {
       if (ratingFilter === "rated") {
         list = list.filter((c) => {
@@ -703,7 +745,7 @@ export default function Search() {
 
     try {
       availabilityReqAbortRef.current?.abort?.();
-    } catch { }
+    } catch {}
 
     const controller = new AbortController();
     availabilityReqAbortRef.current = controller;
@@ -791,10 +833,11 @@ export default function Search() {
             type="button"
             onClick={() => setPage((p) => Math.max(1, Number(p || 1) - 1))}
             disabled={!canPrev}
-            className={`px-3 py-2 rounded-lg text-xs font-semibold shadow ${canPrev
-              ? "bg-[#D2A679] hover:bg-[#B25B38] text-[#5A3A22]"
-              : "bg-gray-200 text-[#5A3A22]/50 cursor-not-allowed"
-              }`}
+            className={`px-3 py-2 rounded-lg text-xs font-semibold shadow ${
+              canPrev
+                ? "bg-[#D2A679] hover:bg-[#B25B38] text-[#5A3A22]"
+                : "bg-gray-200 text-[#5A3A22]/50 cursor-not-allowed"
+            }`}
           >
             ← Anterior
           </button>
@@ -803,10 +846,11 @@ export default function Search() {
             type="button"
             onClick={() => setPage((p) => Math.min(totalPages, Number(p || 1) + 1))}
             disabled={!canNext}
-            className={`px-3 py-2 rounded-lg text-xs font-semibold shadow ${canNext
-              ? "bg-[#D2A679] hover:bg-[#B25B38] text-[#5A3A22]"
-              : "bg-gray-200 text-[#5A3A22]/50 cursor-not-allowed"
-              }`}
+            className={`px-3 py-2 rounded-lg text-xs font-semibold shadow ${
+              canNext
+                ? "bg-[#D2A679] hover:bg-[#B25B38] text-[#5A3A22]"
+                : "bg-gray-200 text-[#5A3A22]/50 cursor-not-allowed"
+            }`}
           >
             Próxima →
           </button>
@@ -832,7 +876,8 @@ export default function Search() {
       !endDateKey &&
       (!svc || svc === "todos") &&
       (!ratingFilter || ratingFilter === "all")
-    ) return "";
+    )
+      return "";
 
     const parts = [];
 
@@ -857,13 +902,9 @@ export default function Search() {
 
   // ✅ Evento GA4: "busca" (debounce + dedupe)
   useEffect(() => {
-    // só mede “busca” quando existe intenção (algum filtro ativo)
     if (!hasActiveFilters && !showResultsHint) return;
-
-    // não dispara durante carregamento/filtro assíncrono
     if (loading || filteringDates) return;
 
-    // debounce
     if (searchTrackTimerRef.current) {
       clearTimeout(searchTrackTimerRef.current);
     }
@@ -970,6 +1011,12 @@ export default function Search() {
   }
 
   const skeletonCount = 9;
+
+  // ✅ mostra CTA no fim quando existir busca/intençao (ex: digitou bairro/cidade)
+  const showInviteAfterResults = useMemo(() => {
+    const q = String(query || "").trim();
+    return !!q || !!startDateKey || !!endDateKey || (svc && svc !== "todos");
+  }, [query, startDateKey, endDateKey, svc]);
 
   return (
     <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] py-8 px-3 sm:px-6">
@@ -1099,7 +1146,7 @@ export default function Search() {
             <option value="banho">Banho & Tosa</option>
           </select>
 
-          {/* ✅ NOVO: filtro por avaliações */}
+          {/* ✅ filtro por avaliações */}
           <select
             value={ratingFilter}
             onChange={(e) => setRatingFilter(e.target.value)}
@@ -1217,7 +1264,6 @@ export default function Search() {
                   <option value="banho">Banho & Tosa</option>
                 </select>
 
-                {/* ✅ NOVO: filtro por avaliações (mobile) */}
                 <select
                   value={ratingFilter}
                   onChange={(e) => setRatingFilter(e.target.value)}
@@ -1271,16 +1317,20 @@ export default function Search() {
           <p className="text-[#5A3A22]">Checando disponibilidade...</p>
         ) : filtered.length === 0 ? (
           <div className="rounded-2xl border border-[#5A3A22]/10 bg-[#FFF8F0] p-6">
-            <p className="text-lg font-bold text-[#5A3A22]">Nenhum cuidador encontrado</p>
+            <p className="text-lg font-bold text-[#5A3A22]">
+              Não encontramos cuidadores nessa localidade 😿
+            </p>
+
             <p className="text-sm text-[#5A3A22]/80 mt-2">
-              Tente ajustar os filtros (principalmente datas e bairro/cidade) ou veja todos os
-              cuidadores disponíveis.
+              Que tal ajudar a PeloCaramelo a crescer por aí? Convide um amigo que goste de cuidar
+              de pets para começar na plataforma e ganhar uma renda extra — sem pagar taxa para
+              criar perfil.
             </p>
 
             <div className="mt-4 flex flex-col sm:flex-row gap-2">
               <button
                 type="button"
-                onClick={clearAllFilters}
+                onClick={handleSendInviteWhatsApp}
                 className="
                   inline-flex items-center justify-center
                   px-4 py-2 rounded-xl font-semibold
@@ -1288,7 +1338,7 @@ export default function Search() {
                   hover:brightness-110 transition
                 "
               >
-                Ver todos cuidadores
+                Enviar no WhatsApp
               </button>
 
               <Link
@@ -1379,6 +1429,48 @@ export default function Search() {
                 );
               })}
             </div>
+
+            {showInviteAfterResults && (
+              <div className="mt-10 rounded-2xl border border-[#5A3A22]/10 bg-[#FFF8F0] p-6">
+                <p className="text-lg font-bold text-[#5A3A22]">
+                  Quer mais opções nessa região? 🐾
+                </p>
+
+                <p className="text-sm text-[#5A3A22]/80 mt-2">
+                  Ajude a PeloCaramelo a crescer por aqui! Convide um amigo que goste de cuidar de
+                  pets para começar como cuidador(a) e ganhar renda extra — sem pagar taxa para
+                  criar perfil.
+                </p>
+
+                <div className="mt-4 flex flex-col sm:flex-row gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSendInviteWhatsApp}
+                    className="
+                      inline-flex items-center justify-center
+                      px-4 py-2 rounded-xl font-semibold
+                      bg-[#5A3A22] text-white
+                      hover:brightness-110 transition
+                    "
+                  >
+                    Convidar pelo WhatsApp
+                  </button>
+
+                  <Link
+                    to="/sobre#como-funciona"
+                    className="
+                      inline-flex items-center justify-center
+                      px-4 py-2 rounded-xl font-semibold
+                      bg-white border border-[#5A3A22]/20
+                      text-[#5A3A22]
+                      hover:bg-[#5A3A22]/5 transition
+                    "
+                  >
+                    Entender como funciona
+                  </Link>
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>
