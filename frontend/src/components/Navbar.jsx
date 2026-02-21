@@ -9,6 +9,7 @@ import {
   getUnreadReservationNotifsCount,
   loadReservationNotifs,
 } from "../utils/reservationNotifs";
+import { useToast } from "./ToastProvider";
 
 /* ============================================================
    Modal: Criar perfil de cuidador (com serviços + capacidade diária)
@@ -535,12 +536,33 @@ export default function Navbar() {
     refreshMe,
   } = useAuth();
 
+  const { addToast } = useToast();
+
   const navigate = useNavigate();
   const location = useLocation();
 
-  // ✅ Somente link web (sem deep link) — se o Android abrir o app, é configuração do aparelho
+  // ✅ Somente link web
   const INSTAGRAM_USERNAME = "pelo_caramelo";
   const INSTAGRAM_WEB_URL = `https://www.instagram.com/${INSTAGRAM_USERNAME}/`;
+
+  // aviso leve no mobile (Android/iOS) caso o sistema abra o app
+  const maybeShowInstagramMobileHint = useCallback(() => {
+    const ua = (navigator?.userAgent || "").toLowerCase();
+    const isMobile =
+      /android|iphone|ipad|ipod/.test(ua) ||
+      (typeof window !== "undefined" && window.matchMedia
+        ? window.matchMedia("(max-width: 767px)").matches
+        : false);
+
+    if (!isMobile) return;
+
+    addToast?.({
+      type: "info",
+      message:
+        "Se o Instagram abrir no app automaticamente, isso é do seu celular. Para ver no navegador: ⋮ (menu) → “Abrir no navegador”.",
+      duration: 5000,
+    });
+  }, [addToast]);
 
   // ============================================================
   // session helpers (usar o mesmo STORAGE_KEY do AuthContext)
@@ -600,14 +622,10 @@ export default function Navbar() {
     window.dispatchEvent(new CustomEvent("active-role-changed", { detail: { role: next } }));
   }, []);
 
-  // ✅ FIX: modo efetivo não pode “defaultar tutor” se o usuário é caregiver
   const inferredDefaultMode = useMemo(() => {
     if (isAdminLike) return "admin";
     if (activeMode === "caregiver" || activeMode === "tutor") return activeMode;
-
-    // Se o usuário é caregiver no backend, o padrão do front deve ser caregiver
     if (role === "caregiver") return "caregiver";
-
     return "tutor";
   }, [isAdminLike, activeMode, role]);
 
@@ -615,22 +633,16 @@ export default function Navbar() {
   const isTutor = effectiveMode === "tutor";
   const isCaregiver = effectiveMode === "caregiver";
 
-  // ✅ Tutor "não existe" no backend como perfil separado: controlamos no front via localStorage
   const hasTutorProfile = useMemo(() => {
     const saved = readSession();
     const savedHasTutor = Boolean(saved?.hasTutorProfile ?? false);
-
-    // se backend já marcou role tutor, considera como tendo perfil
     if (role === "tutor") return true;
-
     return savedHasTutor;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, role]);
 
-  // ✅ FIX EXTRA: se role é caregiver, garante modo caregiver
   useEffect(() => {
     if (!user || isAdminLike) return;
-
     if (role === "caregiver" && activeMode !== "caregiver") {
       setMode?.("caregiver");
       emitRoleChanged("caregiver");
@@ -668,7 +680,6 @@ export default function Navbar() {
     };
   }, [panelOpen]);
 
-  // ✅ fecha modal de logout no ESC
   useEffect(() => {
     if (!logoutConfirmOpen) return;
 
@@ -1103,7 +1114,6 @@ export default function Navbar() {
     closeMobile();
   };
 
-  // ===== Tutor "criar perfil" (confirmação)
   const openCreateTutorModal = () => setCreateTutorOpen(true);
 
   const closeCreateTutorModal = () => {
@@ -1114,10 +1124,7 @@ export default function Navbar() {
   const confirmCreateTutorProfile = async () => {
     setCreateTutorLoading(true);
     try {
-      // marca tutor como "criado" no front
       persistSession({ hasTutorProfile: true });
-
-      // alterna pro modo tutor
       navigateDashboardAfterMode("tutor");
       setCreateTutorOpen(false);
     } finally {
@@ -1127,11 +1134,8 @@ export default function Navbar() {
 
   const otherActionLabel = useMemo(() => {
     if (isAdminLike) return null;
-
     if (isTutor) return hasCaregiverProfile ? "Cuidador" : "Ser cuidador";
-
     if (isCaregiver) return hasTutorProfile ? "Tutor" : "Ser tutor";
-
     return null;
   }, [isAdminLike, isTutor, isCaregiver, hasCaregiverProfile, hasTutorProfile]);
 
@@ -1249,7 +1253,6 @@ export default function Navbar() {
     </div>
   );
 
-  // ✅ botão Instagram (desktop: link web)
   const InstagramButtonDesktop = (
     <a
       href={INSTAGRAM_WEB_URL}
@@ -1265,7 +1268,6 @@ export default function Navbar() {
 
   const desktopAuth = (
     <div className="hidden md:flex gap-3 items-center">
-      {/* Instagram ao lado do sininho (desktop) */}
       {InstagramButtonDesktop}
 
       {user && (
@@ -1308,7 +1310,7 @@ export default function Navbar() {
     </div>
   );
 
-  // ✅ MOBILE MENU: Instagram ao lado do sininho (somente link web)
+  // ✅ MOBILE MENU: Instagram ao lado do sininho (link web + aviso)
   const MobileMenu = (
     <div className="md:hidden flex items-center gap-2">
       <a
@@ -1318,6 +1320,7 @@ export default function Navbar() {
         onClick={() => {
           closeMobile();
           setPanelOpen(false);
+          maybeShowInstagramMobileHint();
         }}
         className="relative w-10 h-10 rounded-lg bg-[#D2A679] text-[#5A3A22] flex items-center justify-center hover:brightness-95 transition"
         title="Instagram da PeloCaramelo"
