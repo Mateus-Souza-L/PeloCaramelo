@@ -1,6 +1,7 @@
 // src/pages/Profile.jsx
 import { useEffect, useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { Eye, EyeOff } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../components/ToastProvider";
 import { authRequest } from "../services/api";
@@ -258,6 +259,11 @@ export default function Profile() {
 
   const [editing, setEditing] = useState(false);
   const [showPasswordChange, setShowPasswordChange] = useState(false);
+
+  // ✅ NOVO: toggles dos olhos (mesmo padrão do Login)
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [passwordConfirm, setPasswordConfirm] = useState("");
   const [cepLoading, setCepLoading] = useState(false);
@@ -984,6 +990,10 @@ export default function Profile() {
         // ✅ limpa campos de senha no form (não muda nada do perfil)
         setForm((f) => ({ ...f, currentPassword: "", newPassword: "" }));
 
+        // ✅ reseta olhinhos
+        setShowCurrentPassword(false);
+        setShowNewPassword(false);
+
         return;
       }
 
@@ -1012,6 +1022,10 @@ export default function Profile() {
         setShowPasswordChange(false);
         setShowConfirmModal(false);
         setPasswordConfirm("");
+
+        // ✅ reseta olhinhos
+        setShowCurrentPassword(false);
+        setShowNewPassword(false);
       } catch (e) {
         console.error(e);
 
@@ -1021,6 +1035,10 @@ export default function Profile() {
           setShowPasswordChange(false);
           setShowConfirmModal(false);
           setPasswordConfirm("");
+
+          // ✅ reseta olhinhos
+          setShowCurrentPassword(false);
+          setShowNewPassword(false);
           return;
         }
 
@@ -1038,7 +1056,14 @@ export default function Profile() {
     if (!user) return;
     setEditing(false);
     setShowPasswordChange(false);
-    setForm((f) => ({ ...f, currentPassword: "", newPassword: "" })); // ✅ limpa
+
+    // ✅ limpa senhas
+    setForm((f) => ({ ...f, currentPassword: "", newPassword: "" }));
+
+    // ✅ reseta olhinhos
+    setShowCurrentPassword(false);
+    setShowNewPassword(false);
+
     setForm(buildFormFromUser(user));
   };
 
@@ -1354,11 +1379,7 @@ export default function Profile() {
                       <button
                         key={p.id}
                         type="button"
-                        onClick={() => {
-                          if (!p?.photo_url) return;
-                          setLightboxPhoto(p);
-                          setLightboxOpen(true);
-                        }}
+                        onClick={() => openLightbox(p)}
                         className="rounded-xl overflow-hidden border bg-white text-left hover:shadow-md transition"
                         title="Clique para ver a foto inteira"
                       >
@@ -1655,11 +1676,7 @@ export default function Profile() {
                         <div key={p.id} className="rounded-xl overflow-hidden border bg-white">
                           <button
                             type="button"
-                            onClick={() => {
-                              if (!p?.photo_url) return;
-                              setLightboxPhoto(p);
-                              setLightboxOpen(true);
-                            }}
+                            onClick={() => openLightbox(p)}
                             className="block w-full text-left"
                             title="Clique para ver a foto inteira"
                           >
@@ -1680,11 +1697,7 @@ export default function Profile() {
                             <div className="mt-2 flex items-center justify-between gap-2">
                               <button
                                 type="button"
-                                onClick={() => {
-                                  setCaptionPhoto(p);
-                                  setCaptionValue(String(p.caption || ""));
-                                  setCaptionOpen(true);
-                                }}
+                                onClick={() => openCaptionModal(p)}
                                 className="text-xs font-semibold bg-[#FFD700] hover:bg-yellow-400 text-[#5A3A22] px-2 py-1 rounded"
                                 title="Editar legenda"
                               >
@@ -1722,22 +1735,45 @@ export default function Profile() {
                 </button>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <input
-                    type="password"
-                    value={form.currentPassword}
-                    onChange={(e) => handleChange("currentPassword", e.target.value)}
-                    placeholder="Senha atual"
-                    autoComplete="current-password"
-                    className="w-full border p-2 rounded-lg"
-                  />
-                  <input
-                    type="password"
-                    value={form.newPassword}
-                    onChange={(e) => handleChange("newPassword", e.target.value)}
-                    placeholder="Nova senha (mín. 8 caracteres)"
-                    autoComplete="new-password"
-                    className="w-full border p-2 rounded-lg"
-                  />
+                  {/* Senha atual com olho */}
+                  <div className="relative">
+                    <input
+                      type={showCurrentPassword ? "text" : "password"}
+                      value={form.currentPassword}
+                      onChange={(e) => handleChange("currentPassword", e.target.value)}
+                      placeholder="Senha atual"
+                      autoComplete="current-password"
+                      className="w-full border p-2 rounded-lg pr-12 focus:outline-none focus:ring-2 focus:ring-[#FFD700]/60 transition"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowCurrentPassword((v) => !v)}
+                      aria-label={showCurrentPassword ? "Ocultar senha atual" : "Mostrar senha atual"}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#5A3A22] hover:text-[#95301F] transition"
+                    >
+                      {showCurrentPassword ? <EyeOff size={20} strokeWidth={2} /> : <Eye size={20} strokeWidth={2} />}
+                    </button>
+                  </div>
+
+                  {/* Nova senha com olho */}
+                  <div className="relative">
+                    <input
+                      type={showNewPassword ? "text" : "password"}
+                      value={form.newPassword}
+                      onChange={(e) => handleChange("newPassword", e.target.value)}
+                      placeholder="Nova senha (mín. 8 caracteres)"
+                      autoComplete="new-password"
+                      className="w-full border p-2 rounded-lg pr-12 focus:outline-none focus:ring-2 focus:ring-[#FFD700]/60 transition"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPassword((v) => !v)}
+                      aria-label={showNewPassword ? "Ocultar nova senha" : "Mostrar nova senha"}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#5A3A22] hover:text-[#95301F] transition"
+                    >
+                      {showNewPassword ? <EyeOff size={20} strokeWidth={2} /> : <Eye size={20} strokeWidth={2} />}
+                    </button>
+                  </div>
 
                   <button
                     type="button"
@@ -1772,6 +1808,10 @@ export default function Profile() {
 
                         setForm((f) => ({ ...f, currentPassword: "", newPassword: "" }));
                         setShowPasswordChange(false);
+
+                        // ✅ reseta olhinhos
+                        setShowCurrentPassword(false);
+                        setShowNewPassword(false);
                       } catch (err) {
                         console.error("Erro ao trocar senha:", err);
                         const msg = err?.message || "Não foi possível trocar a senha.";
