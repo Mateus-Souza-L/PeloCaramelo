@@ -1,6 +1,7 @@
 // frontend/src/pages/Login.jsx
 import { useEffect, useState } from "react";
 import { useNavigate, Link, useLocation } from "react-router-dom";
+import { Eye, EyeOff } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../components/ToastProvider";
 import { loginRequest } from "../services/api";
@@ -17,21 +18,28 @@ function pickBlockedPayload(err) {
 }
 
 export default function Login() {
-  const { login, showBlockedModal, isAuthenticated, loading: authLoading, user } = useAuth();
+  const {
+    login,
+    showBlockedModal,
+    isAuthenticated,
+    loading: authLoading,
+    user,
+  } = useAuth();
+
   const { showToast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     document.title = "PeloCaramelo | Login";
   }, []);
 
-  // ✅ FIX: se já estiver logado (ou logar e o state atualizar depois),
-  // não pode ficar "preso" no /login
+  // Redireciona se já estiver autenticado
   useEffect(() => {
     if (authLoading) return;
     if (!isAuthenticated) return;
@@ -67,7 +75,6 @@ export default function Login() {
         password: pTrim,
       });
 
-      // ✅ bloqueio vindo no body (compat)
       if (loginUser?.blocked) {
         showBlockedModal?.({
           reason: loginUser?.blockedReason ?? null,
@@ -78,14 +85,11 @@ export default function Login() {
 
       showToast("Bem-vindo(a)! 🐾", "success");
 
-      // ✅ FIX PRINCIPAL:
-      // 1) navega IMEDIATAMENTE (não espera /auth/me)
-      // 2) dispara login em paralelo (hidrata contexto/localStorage)
-      const target = loginUser?.role === "admin" ? "/admin" : "/dashboard";
+      const target =
+        loginUser?.role === "admin" ? "/admin" : "/dashboard";
+
       navigate(target, { replace: true });
 
-      // roda em background (sem bloquear o redirect)
-      // se falhar, AuthContext já tem fallback
       Promise.resolve(login(loginUser, token)).catch((err) => {
         console.error("login() falhou após redirect:", err);
       });
@@ -93,9 +97,8 @@ export default function Login() {
       console.error("Erro ao tentar logar:", err);
 
       const status = err?.status ?? err?.response?.status ?? null;
-
-      // ✅ bloqueio vindo como 403 { code: USER_BLOCKED, reason, blockedUntil }
       const bi = pickBlockedPayload(err);
+
       if (status === 403 && bi) {
         showBlockedModal?.(bi);
         return;
@@ -114,11 +117,20 @@ export default function Login() {
   return (
     <div className="bg-[#EBCBA9] min-h-[calc(100vh-120px)] flex items-center justify-center py-10">
       <div className="max-w-[600px] w-full bg-white rounded-2xl shadow-lg p-8 border-l-4 border-[#FFD700]/80">
-        <h1 className="text-3xl font-bold text-[#5A3A22] mb-6 text-center">Login</h1>
+        <h1 className="text-3xl font-bold text-[#5A3A22] mb-6 text-center">
+          Login
+        </h1>
 
-        <form onSubmit={handleSubmit} autoComplete="off" className="space-y-5">
+        <form
+          onSubmit={handleSubmit}
+          autoComplete="off"
+          className="space-y-5"
+        >
+          {/* EMAIL */}
           <div>
-            <label className="block text-sm text-[#5A3A22] mb-1">E-mail</label>
+            <label className="block text-sm text-[#5A3A22] mb-1">
+              E-mail
+            </label>
             <input
               type="email"
               value={email}
@@ -126,20 +138,41 @@ export default function Login() {
               placeholder="seu@email.com"
               autoComplete="username"
               autoFocus
-              className="w-full border rounded-lg p-2"
+              className="w-full border border-[#D2A679] rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-[#FFD700]/60 transition"
             />
           </div>
 
+          {/* SENHA */}
           <div>
-            <label className="block text-sm text-[#5A3A22] mb-1">Senha</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value ?? "")}
-              placeholder="••••••••"
-              autoComplete="current-password"
-              className="w-full border rounded-lg p-2"
-            />
+            <label className="block text-sm text-[#5A3A22] mb-1">
+              Senha
+            </label>
+
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value ?? "")}
+                placeholder="••••••••"
+                autoComplete="current-password"
+                className="w-full border border-[#D2A679] rounded-lg p-2 pr-12 focus:outline-none focus:ring-2 focus:ring-[#FFD700]/60 transition"
+              />
+
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                aria-label={
+                  showPassword ? "Ocultar senha" : "Mostrar senha"
+                }
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-[#5A3A22] hover:text-[#95301F] transition"
+              >
+                {showPassword ? (
+                  <EyeOff size={20} strokeWidth={2} />
+                ) : (
+                  <Eye size={20} strokeWidth={2} />
+                )}
+              </button>
+            </div>
           </div>
 
           <div className="flex items-center justify-end">
@@ -155,7 +188,9 @@ export default function Login() {
             type="submit"
             disabled={loading}
             className={`w-full py-2 rounded-lg font-semibold text-white transition ${
-              loading ? "bg-[#95301F]/70 cursor-not-allowed" : "bg-[#95301F] hover:bg-[#B25B38]"
+              loading
+                ? "bg-[#95301F]/70 cursor-not-allowed"
+                : "bg-[#95301F] hover:bg-[#B25B38]"
             }`}
           >
             {loading ? "Entrando..." : "Entrar"}
@@ -164,7 +199,10 @@ export default function Login() {
 
         <p className="text-center text-sm mt-5 text-[#5A3A22]">
           Não tem conta?{" "}
-          <Link to="/register" className="text-[#95301F] underline hover:opacity-80">
+          <Link
+            to="/register"
+            className="text-[#95301F] underline hover:opacity-80"
+          >
             Cadastre-se
           </Link>
         </p>
