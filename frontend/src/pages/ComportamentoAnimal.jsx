@@ -12,7 +12,7 @@ const API_BASE_URL = (import.meta.env.VITE_API_URL || "http://localhost:4000").r
 );
 
 const BRAND_UTM = "utm_source=pelocaramelo&utm_medium=cta&utm_campaign=comportamento";
-const WHATSAPP_NUMBER = "5531994009734"; // ✅ troque aqui depois
+const WHATSAPP_NUMBER = "553399200215"; 
 
 function buildWhatsAppLink({ text, content = "hero" }) {
   const base = `https://wa.me/${WHATSAPP_NUMBER}`;
